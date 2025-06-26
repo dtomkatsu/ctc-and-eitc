@@ -1,0 +1,95 @@
+2025-06-25 16:24:19,720 - INFO - Loading tax units from data/processed/tax_units_rule_based.parquet
+2025-06-25 16:24:19,735 - ERROR - Error loading data: [Errno 2] No such file or directory: 'data/processed/tax_units_rule_based.parquet'
+Traceback (most recent call last):
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/scripts/validate_tax_units.py", line 46, in load_data
+    self.tax_units = pd.read_parquet(tax_units_path)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/io/parquet.py", line 667, in read_parquet
+    return impl.read(
+           ^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/io/parquet.py", line 267, in read
+    path_or_handle, handles, filesystem = _get_path_or_handle(
+                                          ^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/io/parquet.py", line 140, in _get_path_or_handle
+    handles = get_handle(
+              ^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/io/common.py", line 882, in get_handle
+    handle = open(handle, ioargs.mode)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/processed/tax_units_rule_based.parquet'
+2025-06-25 16:28:42,387 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 16:28:42,471 - INFO - Loading person data from src/data/processed/pums_person_processed.parquet
+2025-06-25 16:28:42,472 - ERROR - Error loading data: [Errno 2] No such file or directory: 'src/data/processed/pums_person_processed.parquet'
+Traceback (most recent call last):
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/scripts/validate_tax_units.py", line 51, in load_data
+    self.person_df = pd.read_parquet(person_path)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/io/parquet.py", line 667, in read_parquet
+    return impl.read(
+           ^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/io/parquet.py", line 267, in read
+    path_or_handle, handles, filesystem = _get_path_or_handle(
+                                          ^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/io/parquet.py", line 140, in _get_path_or_handle
+    handles = get_handle(
+              ^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/io/common.py", line 882, in get_handle
+    handle = open(handle, ioargs.mode)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'src/data/processed/pums_person_processed.parquet'
+2025-06-25 16:29:08,220 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 16:29:08,309 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 16:29:08,320 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 16:29:08,328 - INFO - Using estimated SOI distribution. Replace with actual data when available.
+2025-06-25 16:29:08,328 - INFO - Applying PUMS weights to tax units...
+2025-06-25 16:29:08,328 - ERROR - Error during validation: "None of ['person_id'] are in the columns"
+Traceback (most recent call last):
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/scripts/validate_tax_units.py", line 249, in main
+    validator.apply_weights()
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/scripts/validate_tax_units.py", line 91, in apply_weights
+    weight_map = self.person_df.set_index('person_id')['PWGTP'].to_dict()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/core/frame.py", line 6122, in set_index
+    raise KeyError(f"None of {missing} are in the columns")
+KeyError: "None of ['person_id'] are in the columns"
+2025-06-25 17:11:04,755 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 17:11:04,815 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 17:11:04,824 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 17:11:04,827 - INFO - Using estimated SOI distribution. Replace with actual data when available.
+2025-06-25 17:11:04,827 - INFO - Applying PUMS weights to tax units...
+2025-06-25 17:11:04,874 - INFO - Saved validation report to analysis/tax_unit_validation.csv
+2025-06-25 17:18:59,705 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 17:18:59,786 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 17:18:59,800 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 17:18:59,890 - ERROR - Error loading SOI data: invalid literal for int() with base 10: '(1)'
+2025-06-25 17:18:59,890 - ERROR - Falling back to estimated values
+2025-06-25 17:18:59,890 - INFO - Applying PUMS weights to tax units...
+2025-06-25 17:18:59,959 - INFO - Saved validation report to analysis/tax_unit_validation.csv
+2025-06-25 17:31:06,389 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 17:31:06,465 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 17:31:06,479 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 17:31:06,573 - ERROR - Error loading SOI data: invalid literal for int() with base 10: '(1)'
+2025-06-25 17:31:06,573 - ERROR - Falling back to estimated values
+2025-06-25 17:31:06,573 - INFO - Applying PUMS weights to tax units...
+2025-06-25 17:31:06,624 - INFO - Saved validation report to analysis/tax_unit_validation.csv
+2025-06-25 17:31:44,407 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 17:31:44,491 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 17:31:44,506 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 17:31:44,591 - ERROR - Error loading SOI data: invalid literal for int() with base 10: '(1)'
+2025-06-25 17:31:44,591 - ERROR - Falling back to estimated values
+2025-06-25 17:31:44,591 - INFO - Applying PUMS weights to tax units...
+2025-06-25 17:31:44,643 - INFO - Saved validation report to analysis/tax_unit_validation.csv
+2025-06-25 17:39:05,266 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 17:39:05,344 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 17:39:05,356 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 17:39:05,440 - ERROR - Error loading SOI data: invalid literal for int() with base 10: '(1)'
+2025-06-25 17:39:05,440 - ERROR - Falling back to estimated values
+2025-06-25 17:39:05,440 - INFO - Applying PUMS weights to tax units...
+2025-06-25 17:39:05,489 - INFO - Saved validation report to analysis/tax_unit_validation.csv
+2025-06-25 17:57:22,425 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 17:57:22,508 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 17:57:22,522 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 17:57:22,603 - ERROR - Error loading SOI data: invalid literal for int() with base 10: '(1)'
+2025-06-25 17:57:22,603 - ERROR - Falling back to estimated values
+2025-06-25 17:57:22,603 - INFO - Applying PUMS weights to tax units...
+2025-06-25 17:57:22,674 - INFO - Saved validation report to analysis/tax_unit_validation.csv

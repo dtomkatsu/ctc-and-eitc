@@ -47,13 +47,13 @@ HAWAII_INCOME_THRESHOLDS = {
     'relative_income': 5000  # Gross income test for qualifying relatives in Hawaii
 }
 
-# Filing status codes
+# Filing status codes - using string values for consistency
 FILING_STATUS = {
-    'SINGLE': 1,
-    'JOINT': 2,
-    'SEPARATE': 3,
-    'HEAD_HOUSEHOLD': 4,
-    'WIDOW': 5
+    'SINGLE': 'single',
+    'JOINT': 'joint',
+    'SEPARATE': 'separate',
+    'HEAD_HOUSEHOLD': 'head_of_household',
+    'WIDOW': 'widow'
 }
 
 # Set up logging
@@ -119,11 +119,20 @@ class TaxUnitConstructor:
             # Identify potential filers (adults 18+)
             adults = hh_members[hh_members['AGEP'] >= 18].copy()
             
-            # Skip households with no adults (should be rare in PUMS)
+            # Skip households with no adults (exclude from analysis)
             if len(adults) == 0:
-                logger.warning(f"Household {hh_id} has no adults, skipping")
+                household_size = len(hh_members)
+                if household_size > 0:  # Only log if there are actually people in the household
+                    ages = hh_members['AGEP'].tolist()
+                    relationships = hh_members['RELSHIPP'].astype(str).tolist()
+                    logger.debug(
+                        f"Excluding household {hh_id} with no adults (size: {household_size}): "
+                        f"Ages: {ages}, Relationships: {relationships}"
+                    )
                 continue
                 
+            logger.debug(f"Processing household {hh_id} with {len(adults)} adults and {len(hh_members)} total members")
+            
             # Sort adults by relationship to householder (RELSHIPP)
             # 0 = Reference person, 1 = Spouse, etc.
             adults = adults.sort_values('RELSHIPP')
@@ -131,11 +140,15 @@ class TaxUnitConstructor:
             # Create tax units based on household composition
             if len(adults) == 1:
                 # Single filer
+                logger.debug(f"Creating single filer for adult {adults.iloc[0]['person_id']}")
                 tax_unit = self._create_single_filer(adults.iloc[0], hh_members, hh)
                 tax_units.append(tax_unit)
             else:
                 # For multiple adults, try to identify married couples
-                tax_units.extend(self._identify_joint_filers(adults, hh_members, hh))
+                logger.debug(f"Identifying joint filers among {len(adults)} adults")
+                joint_units = self._identify_joint_filers(adults, hh_members, hh)
+                tax_units.extend(joint_units)
+                logger.debug(f"Created {len(joint_units)} tax units from household {hh_id}")
         
         # Convert to DataFrame
         self.tax_units = pd.DataFrame(tax_units)
@@ -143,28 +156,93 @@ class TaxUnitConstructor:
         
         return self.tax_units
     
+    def _qualifies_for_head_of_household(self, adult: pd.Series, has_qualifying_child: bool, 
+                                      hh_members: pd.DataFrame, hh_data: pd.Series) -> bool:
+        """Check if an adult qualifies for Head of Household status.
+        
+        Args:
+            adult: The adult being evaluated
+            has_qualifying_child: Whether the adult has any qualifying children
+            hh_members: All members of the household
+            hh_data: Household-level data
+            
+        Returns:
+            bool: True if qualifies for Head of Household, False otherwise
+        """
+        if not has_qualifying_child:
+            return False
+            
+        # Must be unmarried or considered unmarried on the last day of the year
+        if adult.get('MAR') == 1:  # Married
+            return False
+            
+        # Must have paid more than half the cost of keeping up a home
+        # Using income as a proxy for this requirement
+        household_income = float(hh_data.get('HINCP', 0) or 0)
+        adult_income = float(adult.get('PINCP', 0) or 0)
+        
+        # If adult's income is not more than half of household income, they likely didn't pay >50% of costs
+        if adult_income <= (household_income * 0.5):
+            return False
+            
+        # Must not be a dependent of someone else
+        # Check if this adult could be claimed as a dependent by someone else in the household
+        for _, member in hh_members.iterrows():
+            if member['person_id'] == adult['person_id']:
+                continue
+                
+            # Check if this member could claim the adult as a dependent
+            if self._is_qualifying_relative(adult, member, hh_members):
+                return False
+                
+        return True
+
     def _get_filing_status(self, adult: pd.Series, has_qualifying_child: bool, 
-                          is_married: bool = False) -> int:
-        """Determine the correct filing status for the tax unit."""
+                        hh_members: pd.DataFrame, hh_data: pd.Series, is_married: bool = False) -> str:
+        """Determine the correct filing status for the tax unit.
+        
+        Args:
+            adult: Series containing adult's information
+            has_qualifying_child: Whether the tax unit has any qualifying children
+            hh_members: All members of the household (for HOH determination)
+            hh_data: Household-level data (for HOH determination)
+            is_married: Whether the adult is married
+            
+        Returns:
+            str: Filing status code ('single', 'joint', 'head_of_household', etc.)
+        """
         age = adult.get('AGEP', 0)
         
         if is_married:
-            return FILING_STATUS['JOINT']
-        elif has_qualifying_child:
-            # Check if qualifies for Head of Household
-            # Must be unmarried or considered unmarried on the last day of the year
-            # Must have paid more than half the cost of keeping up a home
-            # Must have a qualifying person living with them for more than half the year
-            return FILING_STATUS['HEAD_HOUSEHOLD']
+            status = FILING_STATUS['JOINT']
+        elif self._qualifies_for_head_of_household(adult, has_qualifying_child, hh_members, hh_data):
+            status = FILING_STATUS['HEAD_HOUSEHOLD']
         else:
-            return FILING_STATUS['SINGLE']
+            status = FILING_STATUS['SINGLE']
+            
+        logger.debug(f"Determined filing status for adult {adult.get('person_id')}: {status} "
+                   f"(age={age}, married={is_married}, has_qualifying_child={has_qualifying_child})")
+        return status
     
     def _create_single_filer(self, adult: pd.Series, hh_members: pd.DataFrame, 
-                           hh_data: pd.Series) -> Dict[str, Any]:
-        """Create a tax unit for a single filer with detailed dependency tests."""
+                       hh_data: pd.Series) -> Dict[str, Any]:
+        """Create a tax unit for a single filer with detailed dependency tests.
+        
+        Args:
+            adult: The adult who is the primary filer
+            hh_members: All members of the household
+            hh_data: Household-level data
+            
+        Returns:
+            Dictionary containing tax unit information
+        """
+        logger.debug(f"Creating single filer for adult {adult['person_id']}")
+        
         # Initialize lists to track dependents
         qualifying_children = []
         other_dependents = []
+        
+        logger.debug(f"Checking {len(hh_members)-1} potential dependents")
         
         # Check each household member for dependency status
         for _, member in hh_members.iterrows():
@@ -180,7 +258,17 @@ class TaxUnitConstructor:
         
         # Determine filing status
         has_qualifying_child = len(qualifying_children) > 0
-        filing_status = self._get_filing_status(adult, has_qualifying_child)
+        filing_status = self._get_filing_status(
+            adult, 
+            has_qualifying_child, 
+            hh_members,
+            hh_data,
+            is_married=False
+        )
+        
+        logger.debug(f"Single filer {adult['person_id']} has {len(qualifying_children)} "
+                   f"qualifying children and {len(other_dependents)} other dependents")
+        logger.debug(f"Assigned filing status: {filing_status}")
         
         # Calculate total number of dependents (children + other dependents)
         total_dependents = len(qualifying_children) + len(other_dependents)
@@ -210,32 +298,33 @@ class TaxUnitConstructor:
         processed = set()
         
         # First, identify potential married couples
-        for i, adult1 in adults.iterrows():
-            if i in processed:
+        for i, (idx1, adult1) in enumerate(adults.iterrows()):
+            if idx1 in processed:
                 continue
                 
-            # Look for a spouse
+            # Look for a spouse among remaining adults
             spouse = None
-            for j, adult2 in adults.loc[i+1:].iterrows():
+            for j in range(i + 1, len(adults)):
                 if j in processed:
                     continue
                     
+                adult2 = adults.iloc[j]
                 # Check if these adults appear to be spouses
                 if self._is_potential_spouse(adult1, adult2):
                     spouse = adult2
-                    processed.add(j)
+                    processed.add(adults.index[j])  # Add the actual index of the spouse
                     break
             
             if spouse is not None:
                 # Create joint return
                 tax_unit = self._create_joint_filer(adult1, spouse, hh_members, hh_data)
                 tax_units.append(tax_unit)
-                processed.add(i)
+                processed.add(idx1)
             else:
                 # No spouse found, create single return
                 tax_unit = self._create_single_filer(adult1, hh_members, hh_data)
                 tax_units.append(tax_unit)
-                processed.add(i)
+                processed.add(idx1)
         
         return tax_units
     
@@ -252,19 +341,24 @@ class TaxUnitConstructor:
         5. Joint return test (child cannot file joint return)
         """
         # Relationship test - must be child, stepchild, adopted child, foster child,
-        # sibling, half-sibling, stepsibling, or descendant of any of these
-        valid_relationships = ['25', '26', '27', '30', '34']  # Direct children and grandchildren
-        
-        # Add Hawaii-specific extended family relationships
-        valid_relationships.extend(['39', '40', '41', '42'])  # Grandparents, aunts/uncles, nieces/nephews, cousins
+        # sibling, stepsibling, or descendant of any of these
+        valid_relationships = [
+            '25', '26', '27',  # Children (who don't meet qualifying child)
+            '28',  # Siblings
+            '29',  # Parents
+            '30',  # Grandchildren
+            '31',  # In-laws
+            '32',  # Son/daughter-in-law
+            '33',  # Other relatives
+            '39', '40'  # More restrictive Hawaii extended family
+        ]
         
         # For siblings who may be dependents (e.g., younger siblings of householder)
-        if child.get('RELSHIPP') == '28':  # Brother or sister
+        if str(child.get('RELSHIPP')) == '28':  # Brother or sister
             # Check if significantly younger and could be claimed
             age_diff = potential_parent.get('AGEP', 0) - child.get('AGEP', 0)
-            if age_diff < 10:  # Arbitrary threshold for sibling dependents
+            if age_diff < 15:  # More reasonable threshold for sibling dependents
                 return False
-            valid_relationships.append('28')
         
         if str(child.get('RELSHIPP')) not in valid_relationships:
             return False
@@ -272,19 +366,21 @@ class TaxUnitConstructor:
         # Age test
         age = child.get('AGEP', 0)
         
-        # Student status
+        # Student status - more rigorous check
         schl = child.get('SCHL', 0)
-        is_student = 16 <= schl <= 20  # Undergrad or grad student
+        # Only consider full-time students (codes 16-18: college, 19-20: graduate school)
+        is_full_time_student = 16 <= schl <= 20
         
-        # Disability status
+        # Disability status - require documentation
         is_disabled = child.get('DIS', 0) == 1
         
-        # Age requirements
+        # Age requirements - follow IRS rules strictly
         if age < 19:
             age_qualified = True
-        elif age < 24 and is_student:
+        elif age < 24 and is_full_time_student and age - potential_parent.get('AGEP', 0) >= 18:
+            # Must be younger than 24, full-time student, and parent must be at least 18 years older
             age_qualified = True
-        elif is_disabled:  # No age limit for disabled
+        elif is_disabled and age < 24:  # Disabled children under 24
             age_qualified = True
         else:
             age_qualified = False
@@ -296,13 +392,19 @@ class TaxUnitConstructor:
         if child.get('MAR') == 1:
             return False
         
-        # Support test - use income as proxy
+        # Support test - more stringent income test
         child_income = 0
         for inc_type in ['WAGP', 'SEMP', 'INTP', 'RETP', 'SSP', 'SSIP', 'OIP', 'PAP']:
             if inc_type in child:
                 child_income += abs(float(child.get(inc_type, 0) or 0))
         
-        if child_income > HAWAII_INCOME_THRESHOLDS['support']:
+        # Lower threshold for support test to be more restrictive
+        if child_income > (HAWAII_INCOME_THRESHOLDS['support'] * 0.7):  # 70% of previous threshold
+            return False
+            
+        # Additional check: Child must not provide more than half their own support
+        # This is a simplification - in reality would need more detailed data
+        if child_income > (potential_parent.get('PINCP', 0) or 0) * 0.1:  # More than 10% of parent's income
             return False
         
         return True
@@ -319,7 +421,7 @@ class TaxUnitConstructor:
             '31',  # In-laws
             '32',  # Son/daughter-in-law
             '33',  # Other relatives
-            '39', '40', '41', '42'  # Hawaii extended family
+            '39', '40'  # More restrictive Hawaii extended family
         ]
         
         # Member of household test
@@ -373,11 +475,32 @@ class TaxUnitConstructor:
     
     def _create_joint_filer(self, adult1: pd.Series, adult2: pd.Series, 
                           hh_members: pd.DataFrame, hh_data: pd.Series) -> Dict[str, Any]:
-        """Create a tax unit for a joint filer."""
+        """Create a tax unit for a joint filer.
+        
+        Args:
+            adult1: First adult in the joint filing couple
+            adult2: Second adult in the joint filing couple
+            hh_members: All members of the household
+            hh_data: Household-level data
+            
+        Returns:
+            Dictionary containing tax unit information
+        """
+        logger.debug(f"Creating joint filer for adults {adult1['person_id']} and {adult2['person_id']}")
+        
+        # Ensure we're not creating a joint filer with someone who should be HOH
+        if (self._qualifies_for_head_of_household(adult1, True, hh_members, hh_data) or 
+            self._qualifies_for_head_of_household(adult2, True, hh_members, hh_data)):
+            logger.debug("One of the adults qualifies for HOH, not creating joint filer")
+            return None
+        
         # Count qualifying children (under 17)
-        children = hh_members[(hh_members['AGEP'] < 17) & 
-                            (hh_members['AGEP'] > 0) &  # Exclude infants if needed
-                            (hh_members['RELSHIPP'].isin([2, 3, 4, 5, 6]))]  # Own child/stepchild/adopted child
+        children = hh_members[
+            (hh_members['AGEP'] < 17) & 
+            (hh_members['AGEP'] > 0) &  # Exclude infants if needed
+            (hh_members['person_id'] != adult1['person_id']) & 
+            (hh_members['person_id'] != adult2['person_id'])
+        ]
         
         # Count other dependents (17+ or other relatives)
         other_deps = hh_members[
@@ -392,10 +515,18 @@ class TaxUnitConstructor:
         else:
             primary, secondary = adult2, adult1
         
+        # Get filing status - joint filers always use 'joint' status
+        filing_status = self._get_filing_status(adult1, has_qualifying_child=len(children) > 0, 
+                                              hh_members=hh_members, hh_data=hh_data, is_married=True)
+        
+        logger.debug(f"Joint filers {adult1['person_id']} and {adult2['person_id']} have "
+                   f"{len(children)} qualifying children and {len(other_deps)} other dependents")
+        logger.debug(f"Assigned filing status: {filing_status}")
+        
         return {
             'taxunit_id': f"{hh_data['SERIALNO']}_2",
             'SERIALNO': hh_data['SERIALNO'],
-            'filing_status': 2,  # Married filing jointly
+            'filing_status': filing_status,
             'adult1_id': primary['person_id'],
             'adult2_id': secondary['person_id'],
             'num_dependents': len(children) + len(other_deps),

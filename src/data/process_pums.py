@@ -99,7 +99,7 @@ def clean_person_data(df: pd.DataFrame) -> pd.DataFrame:
     income_cols = ['WAGP', 'SSIP', 'RETP', 'SSP', 'INTP', 'PAP', 'OIP', 'SEMP', 'PINCP']
     for col in income_cols:
         if col in df.columns:
-            df[col] = df[col] * (df['ADJINC'] / 1e6)  # ADJINC is in millionths
+            df[col] = df[col] * df['ADJINC']  # ADJINC is the adjustment factor to convert to 2023 dollars
     
     # Create age groups
     bins = [0, 5, 13, 18, 25, 35, 45, 55, 65, 75, 125]
@@ -182,7 +182,7 @@ def clean_household_data(df: pd.DataFrame, person_df: pd.DataFrame = None) -> pd
     
     # Convert household income to 2023 dollars if ADJINC is available
     if 'ADJINC' in df.columns:
-        df['HINCP'] = df['HINCP'] * (1000000 / df['ADJINC'])  # ADJINC is in millionths
+        df['HINCP'] = df['HINCP'] * df['ADJINC']  # ADJINC is the adjustment factor to convert to 2023 dollars
     
     # Create income categories
     income_bins = [-np.inf, 15000, 30000, 50000, 75000, 100000, 150000, 200000, np.inf]
