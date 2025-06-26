@@ -314,10 +314,34 @@ class TaxUnitConstructor:
             logger.error(f"Error processing household {hh_id}: {str(e)}", exc_info=True)
             return []
 
+    def _count_qualifying_relatives(self, person_id: str, hh_members: pd.DataFrame) -> int:
+        """
+        Count the number of qualifying relatives for a potential Head of Household.
+        
+        Args:
+            person_id: ID of the potential HOH
+            hh_members: All members of the household
+            
+        Returns:
+            int: Number of qualifying relatives
+        """
+        count = 0
+        potential_hoh = hh_members[hh_members['person_id'] == person_id].iloc[0]
+        
+        for _, member in hh_members.iterrows():
+            if member['person_id'] == person_id:
+                continue
+                
+            # Check if member is a qualifying relative
+            if self._is_qualifying_relative(member, potential_hoh, hh_members):
+                count += 1
+                
+        return count
+        
     def _qualifies_for_head_of_household(self, adult: pd.Series, has_qualifying_child: bool, 
                                       hh_members: pd.DataFrame, hh_data: pd.Series) -> bool:
         """
-        Determine if an adult qualifies for Head of Household filing status.
+        Determine if an adult qualifies for Head of Household filing status with Hawaii-specific considerations.
         
         Args:
             adult: The adult being evaluated
@@ -328,24 +352,39 @@ class TaxUnitConstructor:
         Returns:
             bool: True if qualifies for Head of Household, False otherwise
         """
+        # Must have at least one qualifying person (child OR dependent)
         if not has_qualifying_child:
-            return False
-            
-        # Must be unmarried or considered unmarried on the last day of the year
-        if adult.get('MAR') == 1:  # Married
-            return False
-            
-        # Must have paid more than half the cost of keeping up a home
-        # Using income as a proxy for this requirement
-        household_income = float(hh_data.get('HINCP', 0) or 0)
-        adult_income = float(adult.get('PINCP', 0) or 0)
+            # Check for other qualifying persons (e.g., parents, other relatives)
+            other_deps = self._count_qualifying_relatives(adult['person_id'], hh_members)
+            if other_deps == 0:
+                return False
         
-        # If adult's income is not more than half of household income, they likely didn't pay >50% of costs
-        if adult_income <= (household_income * 0.5):
+        # Get marital status
+        mar_status = adult.get('MAR', 6)  # Default to never married if missing
+        
+        # Expanded criteria for "considered unmarried"
+        # 1 = Married, spouse present
+        # 2 = Married, spouse absent (can qualify for HOH)
+        # 3 = Separated (can qualify for HOH)
+        # 4 = Divorced
+        # 5 = Widowed
+        # 6 = Never married
+        
+        if mar_status == 1:  # Married, spouse present
+            # Check if living apart (no spouse in household)
+            spouse_in_hh = hh_members[
+                (hh_members['RELSHIPP'].isin(['21', '23'])) &
+                (hh_members['person_id'] != adult['person_id'])
+            ]
+            if len(spouse_in_hh) > 0:
+                return False
+        
+        # Must have some income to maintain household
+        adult_income = float(adult.get('PINCP', 0) or 0)
+        if adult_income < 5000:  # Must have at least $5,000 in income
             return False
             
         # Must not be a dependent of someone else
-        # Check if this adult could be claimed as a dependent by someone else in the household
         for _, member in hh_members.iterrows():
             if member['person_id'] == adult['person_id']:
                 continue
@@ -474,8 +513,8 @@ class TaxUnitConstructor:
         processed = set()
         
         # First, identify potential married couples
-        for i, (idx1, adult1) in enumerate(adults.iterrows()):
-            if idx1 in processed:
+        for i, (_, adult1) in enumerate(adults.iterrows()):
+            if i in processed:
                 continue
                 
             # Look for a spouse among remaining adults
@@ -496,7 +535,7 @@ class TaxUnitConstructor:
                 tax_unit = self._create_joint_filer(adult1, spouse, hh_members, hh_data)
                 if tax_unit is not None:  # Only add if creation was successful
                     tax_units.append(tax_unit)
-                    processed.add(idx1)
+                    processed.add(i)
                 else:
                     # Joint filer creation failed, create single returns instead
                     tax_unit1 = self._create_single_filer(adult1, hh_members, hh_data)
@@ -505,13 +544,13 @@ class TaxUnitConstructor:
                         tax_units.append(tax_unit1)
                     if tax_unit2 is not None:
                         tax_units.append(tax_unit2)
-                    processed.add(idx1)
+                    processed.add(i)
             else:
                 # No spouse found, create single return
                 tax_unit = self._create_single_filer(adult1, hh_members, hh_data)
                 if tax_unit is not None:  # Only add if creation was successful
                     tax_units.append(tax_unit)
-                processed.add(idx1)
+                processed.add(i)
         
         return tax_units
         
@@ -535,6 +574,9 @@ class TaxUnitConstructor:
             adult_indices = adults.index.tolist()
             processed = set()
             
+            # Log household information for debugging
+            logger.debug(f"Processing household with {len(adult_indices)} adults")
+            
             # If there's only one adult, just create a single filer
             if len(adult_indices) == 1:
                 tax_unit = self._create_single_filer(adults.iloc[0], hh_members, hh_data)
@@ -551,6 +593,8 @@ class TaxUnitConstructor:
                 adult1 = adults.loc[idx1]
                 spouse_found = False
                 
+                logger.debug(f"Checking adult {idx1}: age {adult1['AGEP']}, RELSHIPP {adult1.get('RELSHIPP', 'N/A')}, MAR {adult1.get('MAR', 'N/A')}")
+                
                 # Check remaining adults for potential spouses
                 for j in range(i + 1, len(adult_indices)):
                     idx2 = adult_indices[j]
@@ -559,19 +603,29 @@ class TaxUnitConstructor:
                         
                     adult2 = adults.loc[idx2]
                     
+                    logger.debug(f"  Checking potential spouse {idx2}: age {adult2['AGEP']}, RELSHIPP {adult2.get('RELSHIPP', 'N/A')}, MAR {adult2.get('MAR', 'N/A')}")
+                    
                     # Use vectorized spouse check if available
-                    if self._is_potential_spouse(adult1, adult2):
+                    is_spouse = self._is_potential_spouse(adult1, adult2)
+                    logger.debug(f"  Is potential spouse: {is_spouse}")
+                    
+                    if is_spouse:
                         # Create joint return for this couple
+                        logger.debug(f"  Creating joint return for {idx1} and {idx2}")
                         tax_unit = self._create_joint_filer(adult1, adult2, hh_members, hh_data)
                         if tax_unit is not None:
                             tax_units.append(tax_unit)
                             processed.add(idx1)
                             processed.add(idx2)
                             spouse_found = True
+                            logger.debug(f"  Successfully created joint return")
                             break
+                        else:
+                            logger.debug(f"  Failed to create joint return (returned None)")
                 
                 # If no spouse found, create single return
                 if not spouse_found and idx1 not in processed:
+                    logger.debug(f"  No spouse found for {idx1}, creating single return")
                     tax_unit = self._create_single_filer(adult1, hh_members, hh_data)
                     if tax_unit is not None:
                         tax_units.append(tax_unit)
@@ -580,10 +634,12 @@ class TaxUnitConstructor:
             # Create single returns for any remaining unprocessed adults
             for idx in adult_indices:
                 if idx not in processed:
+                    logger.debug(f"Creating single return for remaining adult {idx}")
                     tax_unit = self._create_single_filer(adults.loc[idx], hh_members, hh_data)
                     if tax_unit is not None:
                         tax_units.append(tax_unit)
             
+            logger.debug(f"Created {len(tax_units)} tax units from household")
             return tax_units
             
         except Exception as e:
@@ -1055,25 +1111,51 @@ class TaxUnitConstructor:
             # Spouse/partner relationships
             spouse_relationships = {'21', '22', '23', '24'}
             
-            # Fast path: Direct spouse/partner relationship
+            # 1. Direct spouse/partner relationship (one is reference, other is spouse/partner)
             if (rel1 in spouse_relationships and rel2 == '20') or \
                (rel2 in spouse_relationships and rel1 == '20'):
                 return True
                 
-            # Check if they are both reference persons (20)
+            # 2. Both are reference persons (20) - could be cohabiting couple
             if rel1 == '20' and rel2 == '20':
                 # Additional checks for cohabiting couples
                 age_diff = abs(person1['AGEP'] - person2['AGEP'])
-                max_age_diff = 20  # Maximum age difference for potential spouses
+                max_age_diff = 25  # Increased from 20 to be more inclusive
                 
-                # More likely to be spouses if similar age
+                # More likely to be spouses if similar age, but don't be too strict
                 if age_diff > max_age_diff:
                     return False
-                    
+                
                 # Check if they are the only two adults in the household
                 if 'hh_adults' in person1 and person1['hh_adults'] == 2:
                     return True
                     
+                # Even if not the only adults, they might be a couple if they have children together
+                if 'has_children' in person1 and person1['has_children'] and \
+                   'has_children' in person2 and person2['has_children']:
+                    return True
+            
+            # 3. Check marital status - if both are married, they might be married to each other
+            mar1 = person1.get('MAR', 6)  # Default to never married if missing
+            mar2 = person2.get('MAR', 6)
+            
+            # If both are married (status 1 = married, spouse present)
+            if mar1 == 1 and mar2 == 1:
+                # If they're the only two adults, they're likely married to each other
+                if 'hh_adults' in person1 and person1['hh_adults'] == 2:
+                    return True
+                    
+                # If they have similar last names, more likely to be married
+                if 'NAME_LAST' in person1 and 'NAME_LAST' in person2:
+                    if person1['NAME_LAST'] and person2['NAME_LAST'] and \
+                       person1['NAME_LAST'] == person2['NAME_LAST'] and \
+                       abs(person1['AGEP'] - person2['AGEP']) <= 15:  # Similar age and same last name
+                        return True
+            
+            # 4. Check for common children (if available in the data)
+            if 'children_in_common' in person1 and person1['children_in_common'] > 0:
+                return True
+                
             return False
             
         except Exception as e:
@@ -1095,12 +1177,6 @@ class TaxUnitConstructor:
             Dictionary containing tax unit information or None if not valid
         """
         logger.debug(f"Creating joint filer for adults {adult1['person_id']} and {adult2['person_id']}")
-        
-        # Ensure we're not creating a joint filer with someone who should be HOH
-        if (self._qualifies_for_head_of_household(adult1, True, hh_members, hh_data) or 
-            self._qualifies_for_head_of_household(adult2, True, hh_members, hh_data)):
-            logger.debug("One of the adults qualifies for HOH, not creating joint filer")
-            return None
         
         # Count qualifying children (under 17)
         children = hh_members[

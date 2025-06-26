@@ -8972,3 +8972,347 @@ NameError: name 'HAWAII_STANDARD_DEDUCTIONS' is not defined
 2025-06-25 22:55:32,996 - INFO - Completed batch 33/33
 2025-06-25 22:55:33,040 - INFO - Created 46913 tax units from 32104 households
 2025-06-25 22:55:33,085 - INFO - Saved 46913 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
+2025-06-25 23:07:19,218 - INFO - Loading processed PUMS data...
+2025-06-25 23:07:19,219 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 23:07:19,219 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 23:07:19,347 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-25 23:07:19,347 - INFO - Processing households 1 to 1000 of 32104
+2025-06-25 23:07:22,016 - INFO - Completed batch 1/33
+2025-06-25 23:07:22,016 - INFO - Processing households 1001 to 2000 of 32104
+2025-06-25 23:07:26,745 - INFO - Completed batch 2/33
+2025-06-25 23:07:26,745 - INFO - Processing households 2001 to 3000 of 32104
+2025-06-25 23:07:31,484 - INFO - Completed batch 3/33
+2025-06-25 23:07:31,484 - INFO - Processing households 3001 to 4000 of 32104
+2025-06-25 23:07:36,196 - INFO - Completed batch 4/33
+2025-06-25 23:07:36,196 - INFO - Processing households 4001 to 5000 of 32104
+2025-06-25 23:07:40,786 - INFO - Completed batch 5/33
+2025-06-25 23:07:40,786 - INFO - Processing households 5001 to 6000 of 32104
+2025-06-25 23:07:45,461 - INFO - Completed batch 6/33
+2025-06-25 23:07:45,462 - INFO - Processing households 6001 to 7000 of 32104
+2025-06-25 23:07:48,626 - INFO - Completed batch 7/33
+2025-06-25 23:07:48,626 - INFO - Processing households 7001 to 8000 of 32104
+2025-06-25 23:07:52,569 - INFO - Completed batch 8/33
+2025-06-25 23:07:52,569 - INFO - Processing households 8001 to 9000 of 32104
+2025-06-25 23:07:57,462 - INFO - Completed batch 9/33
+2025-06-25 23:07:57,462 - INFO - Processing households 9001 to 10000 of 32104
+2025-06-25 23:08:02,173 - INFO - Completed batch 10/33
+2025-06-25 23:08:02,173 - INFO - Processing households 10001 to 11000 of 32104
+2025-06-25 23:08:06,976 - INFO - Completed batch 11/33
+2025-06-25 23:08:06,976 - INFO - Processing households 11001 to 12000 of 32104
+2025-06-25 23:08:11,829 - INFO - Completed batch 12/33
+2025-06-25 23:08:11,829 - INFO - Processing households 12001 to 13000 of 32104
+2025-06-25 23:08:16,075 - INFO - Completed batch 13/33
+2025-06-25 23:08:16,075 - INFO - Processing households 13001 to 14000 of 32104
+2025-06-25 23:08:19,647 - INFO - Completed batch 14/33
+2025-06-25 23:08:19,647 - INFO - Processing households 14001 to 15000 of 32104
+2025-06-25 23:08:24,360 - INFO - Completed batch 15/33
+2025-06-25 23:08:24,360 - INFO - Processing households 15001 to 16000 of 32104
+2025-06-25 23:08:29,165 - INFO - Completed batch 16/33
+2025-06-25 23:08:29,165 - INFO - Processing households 16001 to 17000 of 32104
+2025-06-25 23:08:34,036 - INFO - Completed batch 17/33
+2025-06-25 23:08:34,036 - INFO - Processing households 17001 to 18000 of 32104
+2025-06-25 23:08:38,851 - INFO - Completed batch 18/33
+2025-06-25 23:08:38,852 - INFO - Processing households 18001 to 19000 of 32104
+2025-06-25 23:08:43,703 - INFO - Completed batch 19/33
+2025-06-25 23:08:43,703 - INFO - Processing households 19001 to 20000 of 32104
+2025-06-25 23:08:46,437 - INFO - Completed batch 20/33
+2025-06-25 23:08:46,437 - INFO - Processing households 20001 to 21000 of 32104
+2025-06-25 23:08:51,175 - INFO - Completed batch 21/33
+2025-06-25 23:08:51,175 - INFO - Processing households 21001 to 22000 of 32104
+2025-06-25 23:08:55,941 - INFO - Completed batch 22/33
+2025-06-25 23:08:55,941 - INFO - Processing households 22001 to 23000 of 32104
+2025-06-25 23:09:00,890 - INFO - Completed batch 23/33
+2025-06-25 23:09:00,890 - INFO - Processing households 23001 to 24000 of 32104
+2025-06-25 23:09:05,717 - INFO - Completed batch 24/33
+2025-06-25 23:09:05,717 - INFO - Processing households 24001 to 25000 of 32104
+2025-06-25 23:09:10,587 - INFO - Completed batch 25/33
+2025-06-25 23:09:10,588 - INFO - Processing households 25001 to 26000 of 32104
+2025-06-25 23:09:14,345 - INFO - Completed batch 26/33
+2025-06-25 23:09:14,345 - INFO - Processing households 26001 to 27000 of 32104
+2025-06-25 23:09:18,113 - INFO - Completed batch 27/33
+2025-06-25 23:09:18,113 - INFO - Processing households 27001 to 28000 of 32104
+2025-06-25 23:09:22,810 - INFO - Completed batch 28/33
+2025-06-25 23:09:22,810 - INFO - Processing households 28001 to 29000 of 32104
+2025-06-25 23:09:27,830 - INFO - Completed batch 29/33
+2025-06-25 23:09:27,830 - INFO - Processing households 29001 to 30000 of 32104
+2025-06-25 23:09:32,665 - INFO - Completed batch 30/33
+2025-06-25 23:09:32,665 - INFO - Processing households 30001 to 31000 of 32104
+2025-06-25 23:09:37,432 - INFO - Completed batch 31/33
+2025-06-25 23:09:37,432 - INFO - Processing households 31001 to 32000 of 32104
+2025-06-25 23:09:42,357 - INFO - Completed batch 32/33
+2025-06-25 23:09:42,357 - INFO - Processing households 32001 to 32104 of 32104
+2025-06-25 23:09:42,825 - INFO - Completed batch 33/33
+2025-06-25 23:09:42,882 - INFO - Created 60278 tax units from 32104 households
+2025-06-25 23:09:42,929 - INFO - Saved 60278 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
+2025-06-25 23:14:41,934 - INFO - Loading processed PUMS data...
+2025-06-25 23:14:41,934 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 23:14:41,934 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 23:14:42,038 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-25 23:14:42,039 - INFO - Processing households 1 to 1000 of 32104
+2025-06-25 23:14:44,804 - INFO - Completed batch 1/33
+2025-06-25 23:14:44,804 - INFO - Processing households 1001 to 2000 of 32104
+2025-06-25 23:14:49,701 - INFO - Completed batch 2/33
+2025-06-25 23:14:49,701 - INFO - Processing households 2001 to 3000 of 32104
+2025-06-25 23:14:54,423 - INFO - Completed batch 3/33
+2025-06-25 23:14:54,423 - INFO - Processing households 3001 to 4000 of 32104
+2025-06-25 23:14:59,161 - INFO - Completed batch 4/33
+2025-06-25 23:14:59,162 - INFO - Processing households 4001 to 5000 of 32104
+2025-06-25 23:15:03,887 - INFO - Completed batch 5/33
+2025-06-25 23:15:03,888 - INFO - Processing households 5001 to 6000 of 32104
+2025-06-25 23:15:08,668 - INFO - Completed batch 6/33
+2025-06-25 23:15:08,668 - INFO - Processing households 6001 to 7000 of 32104
+2025-06-25 23:15:11,824 - INFO - Completed batch 7/33
+2025-06-25 23:15:11,824 - INFO - Processing households 7001 to 8000 of 32104
+2025-06-25 23:15:15,757 - INFO - Completed batch 8/33
+2025-06-25 23:15:15,758 - INFO - Processing households 8001 to 9000 of 32104
+2025-06-25 23:15:20,652 - INFO - Completed batch 9/33
+2025-06-25 23:15:20,652 - INFO - Processing households 9001 to 10000 of 32104
+2025-06-25 23:15:25,347 - INFO - Completed batch 10/33
+2025-06-25 23:15:25,347 - INFO - Processing households 10001 to 11000 of 32104
+2025-06-25 23:15:30,159 - INFO - Completed batch 11/33
+2025-06-25 23:15:30,159 - INFO - Processing households 11001 to 12000 of 32104
+2025-06-25 23:15:34,999 - INFO - Completed batch 12/33
+2025-06-25 23:15:34,999 - INFO - Processing households 12001 to 13000 of 32104
+2025-06-25 23:15:39,119 - INFO - Completed batch 13/33
+2025-06-25 23:15:39,119 - INFO - Processing households 13001 to 14000 of 32104
+2025-06-25 23:15:42,746 - INFO - Completed batch 14/33
+2025-06-25 23:15:42,747 - INFO - Processing households 14001 to 15000 of 32104
+2025-06-25 23:15:47,530 - INFO - Completed batch 15/33
+2025-06-25 23:15:47,530 - INFO - Processing households 15001 to 16000 of 32104
+2025-06-25 23:15:52,235 - INFO - Completed batch 16/33
+2025-06-25 23:15:52,235 - INFO - Processing households 16001 to 17000 of 32104
+2025-06-25 23:15:57,345 - INFO - Completed batch 17/33
+2025-06-25 23:15:57,345 - INFO - Processing households 17001 to 18000 of 32104
+2025-06-25 23:16:02,285 - INFO - Completed batch 18/33
+2025-06-25 23:16:02,285 - INFO - Processing households 18001 to 19000 of 32104
+2025-06-25 23:16:07,314 - INFO - Completed batch 19/33
+2025-06-25 23:16:07,314 - INFO - Processing households 19001 to 20000 of 32104
+2025-06-25 23:16:10,068 - INFO - Completed batch 20/33
+2025-06-25 23:16:10,068 - INFO - Processing households 20001 to 21000 of 32104
+2025-06-25 23:16:14,850 - INFO - Completed batch 21/33
+2025-06-25 23:16:14,851 - INFO - Processing households 21001 to 22000 of 32104
+2025-06-25 23:16:19,762 - INFO - Completed batch 22/33
+2025-06-25 23:16:19,762 - INFO - Processing households 22001 to 23000 of 32104
+2025-06-25 23:16:24,665 - INFO - Completed batch 23/33
+2025-06-25 23:16:24,665 - INFO - Processing households 23001 to 24000 of 32104
+2025-06-25 23:16:29,838 - INFO - Completed batch 24/33
+2025-06-25 23:16:29,838 - INFO - Processing households 24001 to 25000 of 32104
+2025-06-25 23:16:34,862 - INFO - Completed batch 25/33
+2025-06-25 23:16:34,862 - INFO - Processing households 25001 to 26000 of 32104
+2025-06-25 23:16:38,723 - INFO - Completed batch 26/33
+2025-06-25 23:16:38,724 - INFO - Processing households 26001 to 27000 of 32104
+2025-06-25 23:16:42,678 - INFO - Completed batch 27/33
+2025-06-25 23:16:42,678 - INFO - Processing households 27001 to 28000 of 32104
+2025-06-25 23:16:47,343 - INFO - Completed batch 28/33
+2025-06-25 23:16:47,343 - INFO - Processing households 28001 to 29000 of 32104
+2025-06-25 23:16:52,301 - INFO - Completed batch 29/33
+2025-06-25 23:16:52,302 - INFO - Processing households 29001 to 30000 of 32104
+2025-06-25 23:16:57,298 - INFO - Completed batch 30/33
+2025-06-25 23:16:57,298 - INFO - Processing households 30001 to 31000 of 32104
+2025-06-25 23:17:02,373 - INFO - Completed batch 31/33
+2025-06-25 23:17:02,374 - INFO - Processing households 31001 to 32000 of 32104
+2025-06-25 23:17:07,442 - INFO - Completed batch 32/33
+2025-06-25 23:17:07,442 - INFO - Processing households 32001 to 32104 of 32104
+2025-06-25 23:17:07,928 - INFO - Completed batch 33/33
+2025-06-25 23:17:07,994 - INFO - Created 60278 tax units from 32104 households
+2025-06-25 23:17:08,043 - INFO - Saved 60278 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
+2025-06-25 23:26:47,243 - INFO - Loading processed PUMS data...
+2025-06-25 23:28:13,363 - INFO - Loading processed PUMS data...
+2025-06-25 23:28:13,465 - INFO - Found 11775 households with exactly 2 adults
+2025-06-25 23:28:13,505 - INFO - 
+--- Analyzing household 2019HU0000131 ---
+2025-06-25 23:28:13,508 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,508 - INFO -   Adult 832: Age 52, RELSHIPP 20, MAR 1
+2025-06-25 23:28:13,508 - INFO -   Adult 833: Age 54, RELSHIPP 21, MAR 1
+2025-06-25 23:28:13,508 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,508 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,508 - INFO - 
+--- Analyzing household 2019HU0000931 ---
+2025-06-25 23:28:13,511 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,511 - INFO -   Adult 841: Age 44, RELSHIPP 20, MAR 4
+2025-06-25 23:28:13,511 - INFO -   Adult 842: Age 32, RELSHIPP 22, MAR 5
+2025-06-25 23:28:13,511 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,511 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,511 - INFO - 
+--- Analyzing household 2019HU0001079 ---
+2025-06-25 23:28:13,514 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,514 - INFO -   Adult 851: Age 84, RELSHIPP 20, MAR 1
+2025-06-25 23:28:13,514 - INFO -   Adult 852: Age 82, RELSHIPP 21, MAR 1
+2025-06-25 23:28:13,514 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,514 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,514 - INFO - 
+--- Analyzing household 2019HU0001605 ---
+2025-06-25 23:28:13,517 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,517 - INFO -   Adult 853: Age 76, RELSHIPP 20, MAR 1
+2025-06-25 23:28:13,517 - INFO -   Adult 854: Age 68, RELSHIPP 21, MAR 1
+2025-06-25 23:28:13,517 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,517 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,517 - INFO - 
+--- Analyzing household 2019HU0001723 ---
+2025-06-25 23:28:13,523 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,523 - INFO -   Adult 855: Age 50, RELSHIPP 20, MAR 1
+2025-06-25 23:28:13,523 - INFO -   Adult 856: Age 53, RELSHIPP 21, MAR 1
+2025-06-25 23:28:13,523 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,523 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,523 - INFO - 
+--- Analyzing household 2019HU0001877 ---
+2025-06-25 23:28:13,525 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,525 - INFO -   Adult 859: Age 48, RELSHIPP 20, MAR 3
+2025-06-25 23:28:13,526 - INFO -   Adult 860: Age 52, RELSHIPP 22, MAR 3
+2025-06-25 23:28:13,526 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,526 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,526 - INFO - 
+--- Analyzing household 2019HU0003212 ---
+2025-06-25 23:28:13,528 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,528 - INFO -   Adult 864: Age 43, RELSHIPP 20, MAR 3
+2025-06-25 23:28:13,528 - INFO -   Adult 865: Age 42, RELSHIPP 22, MAR 3
+2025-06-25 23:28:13,528 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,528 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,528 - INFO - 
+--- Analyzing household 2019HU0003306 ---
+2025-06-25 23:28:13,531 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,531 - INFO -   Adult 868: Age 66, RELSHIPP 20, MAR 1
+2025-06-25 23:28:13,531 - INFO -   Adult 869: Age 67, RELSHIPP 21, MAR 1
+2025-06-25 23:28:13,531 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,531 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,531 - INFO - 
+--- Analyzing household 2019HU0003655 ---
+2025-06-25 23:28:13,534 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,534 - INFO -   Adult 870: Age 45, RELSHIPP 20, MAR 1
+2025-06-25 23:28:13,534 - INFO -   Adult 871: Age 43, RELSHIPP 21, MAR 1
+2025-06-25 23:28:13,534 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,534 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,534 - INFO - 
+--- Analyzing household 2019HU0003922 ---
+2025-06-25 23:28:13,536 - INFO - Household has 2 adults:
+2025-06-25 23:28:13,536 - INFO -   Adult 872: Age 82, RELSHIPP 20, MAR 1
+2025-06-25 23:28:13,536 - INFO -   Adult 873: Age 82, RELSHIPP 21, MAR 1
+2025-06-25 23:28:13,537 - INFO - Are they potential spouses? True
+2025-06-25 23:28:13,537 - INFO -   -> This would create a joint filer
+2025-06-25 23:28:13,537 - INFO - 
+--- Summary ---
+2025-06-25 23:28:13,537 - INFO - Analyzed 10 two-adult households
+2025-06-25 23:28:13,537 - INFO - Found 10 potential joint filer households
+2025-06-25 23:28:13,537 - INFO - Joint filer rate in sample: 100.0%
+2025-06-25 23:28:13,537 - INFO - 
+--- Overall Marital Status Distribution ---
+2025-06-25 23:28:13,543 - INFO -   Married, spouse present: 31,829 (52.7%)
+2025-06-25 23:28:13,543 - INFO -   Married, spouse absent: 4,080 (6.7%)
+2025-06-25 23:28:13,543 - INFO -   Separated: 5,836 (9.7%)
+2025-06-25 23:28:13,543 - INFO -   Divorced: 720 (1.2%)
+2025-06-25 23:28:13,543 - INFO -   Widowed: 17,988 (29.8%)
+2025-06-25 23:28:13,543 - INFO - 
+--- Relationship Code Distribution (Adults) ---
+2025-06-25 23:28:13,546 - INFO -   Reference person: 25,040 (41.4%)
+2025-06-25 23:28:13,546 - INFO -   Opposite-sex spouse: 13,105 (21.7%)
+2025-06-25 23:28:13,546 - INFO -   Opposite-sex unmarried partner: 1,404 (2.3%)
+2025-06-25 23:28:13,546 - INFO -   Same-sex spouse: 188 (0.3%)
+2025-06-25 23:28:13,546 - INFO -   Same-sex unmarried partner: 125 (0.2%)
+2025-06-25 23:28:13,546 - INFO -   Other (25): 6,808 (11.3%)
+2025-06-25 23:28:13,546 - INFO -   Other (26): 207 (0.3%)
+2025-06-25 23:28:13,546 - INFO -   Other (27): 267 (0.4%)
+2025-06-25 23:28:13,546 - INFO -   Other (28): 1,164 (1.9%)
+2025-06-25 23:28:13,546 - INFO -   Other (29): 1,448 (2.4%)
+2025-06-25 23:28:13,546 - INFO -   Other (30): 848 (1.4%)
+2025-06-25 23:28:13,546 - INFO -   Other (31): 413 (0.7%)
+2025-06-25 23:28:13,546 - INFO -   Other (32): 1,058 (1.8%)
+2025-06-25 23:28:13,546 - INFO -   Other (33): 1,464 (2.4%)
+2025-06-25 23:28:13,546 - INFO -   Other (34): 1,362 (2.3%)
+2025-06-25 23:28:13,546 - INFO -   Other (35): 6 (0.0%)
+2025-06-25 23:28:13,546 - INFO -   Other (36): 1,527 (2.5%)
+2025-06-25 23:28:13,546 - INFO -   Other (37): 1,297 (2.1%)
+2025-06-25 23:28:13,546 - INFO -   Other (38): 2,722 (4.5%)
+2025-06-25 23:28:13,546 - INFO - 
+--- Households with Married Adults ---
+2025-06-25 23:28:13,554 - INFO - Total households with married adults: 15394
+2025-06-25 23:28:13,558 - INFO - Households with 1 married adult: 1446
+2025-06-25 23:28:13,561 - INFO - Households with 2 married adults: 12581
+2025-06-25 23:28:13,563 - INFO - Households with 3+ married adults: 1367
+2025-06-25 23:32:20,093 - INFO - Loading processed PUMS data...
+2025-06-25 23:32:20,209 - INFO - Constructing tax units...
+2025-06-25 23:32:57,721 - INFO - Loading processed PUMS data...
+2025-06-25 23:32:57,847 - INFO - Constructing tax units...
+2025-06-25 23:32:57,847 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-25 23:32:57,847 - INFO - Processing households 1 to 1000 of 32104
+2025-06-25 23:33:00,225 - INFO - Completed batch 1/33
+2025-06-25 23:33:00,225 - INFO - Processing households 1001 to 2000 of 32104
+2025-06-25 23:33:03,582 - INFO - Completed batch 2/33
+2025-06-25 23:33:03,582 - INFO - Processing households 2001 to 3000 of 32104
+2025-06-25 23:33:06,997 - INFO - Completed batch 3/33
+2025-06-25 23:33:06,997 - INFO - Processing households 3001 to 4000 of 32104
+2025-06-25 23:33:10,372 - INFO - Completed batch 4/33
+2025-06-25 23:33:10,372 - INFO - Processing households 4001 to 5000 of 32104
+2025-06-25 23:33:13,575 - INFO - Completed batch 5/33
+2025-06-25 23:33:13,576 - INFO - Processing households 5001 to 6000 of 32104
+2025-06-25 23:33:16,891 - INFO - Completed batch 6/33
+2025-06-25 23:33:16,891 - INFO - Processing households 6001 to 7000 of 32104
+2025-06-25 23:33:19,577 - INFO - Completed batch 7/33
+2025-06-25 23:33:19,577 - INFO - Processing households 7001 to 8000 of 32104
+2025-06-25 23:33:22,656 - INFO - Completed batch 8/33
+2025-06-25 23:33:22,656 - INFO - Processing households 8001 to 9000 of 32104
+2025-06-25 23:33:26,098 - INFO - Completed batch 9/33
+2025-06-25 23:33:26,098 - INFO - Processing households 9001 to 10000 of 32104
+2025-06-25 23:33:29,475 - INFO - Completed batch 10/33
+2025-06-25 23:33:29,475 - INFO - Processing households 10001 to 11000 of 32104
+2025-06-25 23:33:32,891 - INFO - Completed batch 11/33
+2025-06-25 23:33:32,891 - INFO - Processing households 11001 to 12000 of 32104
+2025-06-25 23:33:36,311 - INFO - Completed batch 12/33
+2025-06-25 23:33:36,311 - INFO - Processing households 12001 to 13000 of 32104
+2025-06-25 23:33:39,341 - INFO - Completed batch 13/33
+2025-06-25 23:33:39,341 - INFO - Processing households 13001 to 14000 of 32104
+2025-06-25 23:33:42,146 - INFO - Completed batch 14/33
+2025-06-25 23:33:42,146 - INFO - Processing households 14001 to 15000 of 32104
+2025-06-25 23:33:45,495 - INFO - Completed batch 15/33
+2025-06-25 23:33:45,495 - INFO - Processing households 15001 to 16000 of 32104
+2025-06-25 23:33:48,730 - INFO - Completed batch 16/33
+2025-06-25 23:33:48,730 - INFO - Processing households 16001 to 17000 of 32104
+2025-06-25 23:33:52,179 - INFO - Completed batch 17/33
+2025-06-25 23:33:52,180 - INFO - Processing households 17001 to 18000 of 32104
+2025-06-25 23:33:55,558 - INFO - Completed batch 18/33
+2025-06-25 23:33:55,558 - INFO - Processing households 18001 to 19000 of 32104
+2025-06-25 23:33:58,922 - INFO - Completed batch 19/33
+2025-06-25 23:33:58,922 - INFO - Processing households 19001 to 20000 of 32104
+2025-06-25 23:34:01,330 - INFO - Completed batch 20/33
+2025-06-25 23:34:01,330 - INFO - Processing households 20001 to 21000 of 32104
+2025-06-25 23:34:04,657 - INFO - Completed batch 21/33
+2025-06-25 23:34:04,657 - INFO - Processing households 21001 to 22000 of 32104
+2025-06-25 23:34:08,014 - INFO - Completed batch 22/33
+2025-06-25 23:34:08,014 - INFO - Processing households 22001 to 23000 of 32104
+2025-06-25 23:34:11,355 - INFO - Completed batch 23/33
+2025-06-25 23:34:11,355 - INFO - Processing households 23001 to 24000 of 32104
+2025-06-25 23:34:14,771 - INFO - Completed batch 24/33
+2025-06-25 23:34:14,771 - INFO - Processing households 24001 to 25000 of 32104
+2025-06-25 23:34:18,148 - INFO - Completed batch 25/33
+2025-06-25 23:34:18,149 - INFO - Processing households 25001 to 26000 of 32104
+2025-06-25 23:34:20,993 - INFO - Completed batch 26/33
+2025-06-25 23:34:20,993 - INFO - Processing households 26001 to 27000 of 32104
+2025-06-25 23:34:23,903 - INFO - Completed batch 27/33
+2025-06-25 23:34:23,903 - INFO - Processing households 27001 to 28000 of 32104
+2025-06-25 23:34:27,130 - INFO - Completed batch 28/33
+2025-06-25 23:34:27,130 - INFO - Processing households 28001 to 29000 of 32104
+2025-06-25 23:34:30,523 - INFO - Completed batch 29/33
+2025-06-25 23:34:30,523 - INFO - Processing households 29001 to 30000 of 32104
+2025-06-25 23:34:33,892 - INFO - Completed batch 30/33
+2025-06-25 23:34:33,892 - INFO - Processing households 30001 to 31000 of 32104
+2025-06-25 23:34:37,197 - INFO - Completed batch 31/33
+2025-06-25 23:34:37,197 - INFO - Processing households 31001 to 32000 of 32104
+2025-06-25 23:34:40,649 - INFO - Completed batch 32/33
+2025-06-25 23:34:40,649 - INFO - Processing households 32001 to 32104 of 32104
+2025-06-25 23:34:40,993 - INFO - Completed batch 33/33
+2025-06-25 23:34:41,032 - INFO - Created 45631 tax units from 32104 households
+2025-06-25 23:34:41,038 - INFO - 
+Tax Unit Construction Results:
+2025-06-25 23:34:41,038 - INFO - Total tax units created: 45631
+2025-06-25 23:34:41,041 - INFO - 
+Filing Status Distribution:
+2025-06-25 23:34:41,041 - INFO -   head_of_household: 5,105 (11.2%)
+2025-06-25 23:34:41,041 - INFO -   joint: 14,822 (32.5%)
+2025-06-25 23:34:41,041 - INFO -   single: 25,704 (56.3%)
+2025-06-25 23:34:41,076 - INFO - 
+Saved tax units to src/data/processed/tax_units_rule_based.parquet
+2025-06-25 23:34:41,076 - INFO - 
+Quick Validation:
+2025-06-25 23:34:41,076 - INFO - Expected joint filers (Hawaii DOTAX 2022): 36.0%
+2025-06-25 23:34:41,076 - INFO - Actual joint filers: 32.5%
+2025-06-25 23:34:41,076 - INFO - Difference: -3.5 percentage points
+2025-06-25 23:34:41,076 - INFO - ✅ Joint filer fix appears successful!
