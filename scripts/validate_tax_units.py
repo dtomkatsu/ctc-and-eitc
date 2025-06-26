@@ -130,12 +130,12 @@ class TaxUnitValidator:
         weight_map = self.person_df.set_index('person_id')['PWGTP'].to_dict()
         
         # Add weights to tax units
-        self.tax_units['weight'] = self.tax_units['adult1_id'].map(weight_map)
+        self.tax_units['weight'] = self.tax_units['primary_filer_id'].map(weight_map)
         
         # For joint filers, average the weights of both adults
         joint_mask = self.tax_units['filing_status'] == 'joint'
         if joint_mask.any():
-            joint_weights = self.tax_units.loc[joint_mask, 'adult2_id'].map(weight_map)
+            joint_weights = self.tax_units.loc[joint_mask, 'secondary_filer_id'].map(weight_map)
             self.tax_units.loc[joint_mask, 'weight'] = (
                 self.tax_units.loc[joint_mask, 'weight'] + joint_weights
             ) / 2

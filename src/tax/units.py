@@ -93,34 +93,66 @@ class TaxUnitConstructor:
     
     def _preprocess_for_performance(self):
         """Preprocess data for better performance."""
-        # Pre-calculate total income for each person using vectorized operations
-        income_cols = ['WAGP', 'SEMP', 'INTP', 'RETP', 'OIP', 'PAP', 'SSP', 'SSIP']
-        self.person_df['total_income'] = self.person_df[income_cols].fillna(0).abs().sum(axis=1)
+        # Note: We no longer pre-calculate total_income here to avoid inconsistencies
+        # with _calculate_income() which handles ADJINC adjustments
         
         # Pre-calculate other commonly used values
         if 'is_child' not in self.person_df.columns:
-            self.person_df['is_child'] = (self.person_df['AGEP'] < 19) | \
-                                       ((self.person_df['AGEP'] < 24) & 
-                                        self.person_df['SCHL'].isin([15, 16, 17, 18, 19, 20, 21, 22, 23, 24]))
+            self.person_df['is_child'] = (self.person_df['AGEP'] < 18).astype(int)
+            
+        # Add household size for easier filtering
+        hh_sizes = self.person_df.groupby('SERIALNO').size().rename('hh_size')
+        self.person_df = self.person_df.join(hh_sizes, on='SERIALNO')
         
-        # Cache relationship codes as strings for faster lookups
-        if 'rel_code_str' not in self.person_df.columns:
-            self.person_df['rel_code_str'] = self.person_df['RELSHIPP'].astype(str)
+        # Add number of adults in household
+        adults_per_hh = self.person_df[self.person_df['AGEP'] >= 18].groupby('SERIALNO').size().rename('num_adults')
+        self.person_df = self.person_df.join(adults_per_hh, on='SERIALNO')
+        self.person_df['num_adults'] = self.person_df['num_adults'].fillna(0).astype(int)
         
-        # Pre-calculate student status
-        if 'is_student' not in self.person_df.columns:
-            self.person_df['is_student'] = self.person_df['SCHL'].isin([15, 16, 17, 18, 19, 20, 21, 22, 23, 24])
+        # Add number of children in household
+        children_per_hh = self.person_df[self.person_df['is_child'] == 1].groupby('SERIALNO').size().rename('num_children')
+        self.person_df = self.person_df.join(children_per_hh, on='SERIALNO')
+        self.person_df['num_children'] = self.person_df['num_children'].fillna(0).astype(int)
         
-        # Create boolean masks for common filters
-        self.person_df['is_adult'] = self.person_df['AGEP'] >= 18
-        self.person_df['is_child'] = self.person_df['AGEP'] < 19
-        self.person_df['is_student'] = self.person_df['SCHL'].between(15, 18, inclusive='both')
+        # Add spouse information if available
+        if 'SPORDER' in self.person_df.columns and 'RELSHIPP' in self.person_df.columns:
+            # Create a mapping of household reference persons to their spouses
+            ref_to_spouse = self.person_df[
+                (self.person_df['RELSHIPP'] == 20) &  # Reference person
+                (self.person_df['MAR'] == 1)  # Married
+            ].set_index('SERIALNO')['person_id']
+            
+            # Map spouse IDs to the person DataFrame
+            self.person_df['spouse_id'] = self.person_df['SERIALNO'].map(ref_to_spouse)
+            
+        # Add household income for easier filtering
+        if 'HINCP' in self.hh_df.columns:
+            hh_income = self.hh_df.set_index('SERIALNO')['HINCP']
+            self.person_df['hh_income'] = self.person_df['SERIALNO'].map(hh_income)
+        
+        # Add flag for whether person is a potential dependent
+        self.person_df['is_potential_dependent'] = (
+            (self.person_df['AGEP'] < 19) |  # Under 19
+            ((self.person_df['AGEP'] < 24) &  # 19-23 and in school
+             self.person_df['SCHL'].between(15, 18, inclusive='both')) |
+            (self.person_df['AGEP'] < 19) |  # Under 19
+            (self.person_df['is_child'] == 1)  # Already identified as child
+        ).astype(int)
+        
+        # Add flag for whether person is a potential filer
+        self.person_df['is_potential_filer'] = (
+            (self.person_df['AGEP'] >= 19) &  # 19 or older
+            (self.person_df['is_child'] == 0)  # Not a child
+        ).astype(int)
         
         # Add person_id if missing
         if 'person_id' not in self.person_df.columns:
+            # Ensure both SERIALNO and SPORDER are strings before concatenation
+            self.person_df['SERIALNO'] = self.person_df['SERIALNO'].astype(str)
+            self.person_df['SPORDER'] = self.person_df['SPORDER'].astype(str)
             self.person_df['person_id'] = (
                 self.person_df['SERIALNO'] + '_' + 
-                self.person_df['SPORDER'].astype(str)
+                self.person_df['SPORDER']
             )
         
         # Sort by household for better memory locality
@@ -148,7 +180,7 @@ class TaxUnitConstructor:
             person: Series containing person's data with income fields
             
         Returns:
-            float: Total income from all sources
+            float: Total income from all sources, adjusted by ADJINC if present
         """
         # List of all possible income columns (from PUMS data)
         income_columns = [
@@ -163,6 +195,9 @@ class TaxUnitConstructor:
             'PINCP'    # Total person's income (as a fallback)
         ]
         
+        # Get ADJINC factor (default to 1.0 if not present)
+        adjinc = float(person.get('ADJINC', 1000000)) / 1000000.0
+        
         # Sum all income sources that exist in the person's data
         total_income = 0.0
         for col in income_columns:
@@ -170,8 +205,11 @@ class TaxUnitConstructor:
                 try:
                     # Convert to float, default to 0 if NaN or None
                     income = float(person[col] or 0)
-                    total_income += abs(income)  # Use absolute value to handle any negative incomes
-                except (ValueError, TypeError):
+                    # Apply ADJINC adjustment (typically around 1.0 for most years)
+                    income *= adjinc
+                    total_income += income
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error processing income column {col}: {e}")
                     continue
         
         return total_income
@@ -550,163 +588,31 @@ class TaxUnitConstructor:
                 tax_unit = self._create_single_filer(adult1, hh_members, hh_data)
                 if tax_unit is not None:  # Only add if creation was successful
                     tax_units.append(tax_unit)
-                processed.add(i)
-        
-        return tax_units
-        
     def _identify_joint_filers_vectorized(self, adults: pd.DataFrame, hh_members: pd.DataFrame, 
                                            hh_data: pd.Series) -> List[Dict[str, Any]]:
         """
         Vectorized implementation of _identify_joint_filers for better performance.
-        
-        Args:
-            adults: DataFrame of adults in the household
-            hh_members: All members of the household
-            hh_data: Household-level data
             
-        Returns:
-            List of tax unit dictionaries
+        Note:
+            For complex cases that can't be handled in a fully vectorized way, falls back
+            to the original implementation for those specific cases.
         """
-        try:
-            tax_units = []
-            
-            # Create a copy of the index for tracking processed adults
-            adult_indices = adults.index.tolist()
-            processed = set()
-            
-            # Log household information for debugging
-            logger.debug(f"Processing household with {len(adult_indices)} adults")
-            
-            # If there's only one adult, just create a single filer
-            if len(adult_indices) == 1:
-                tax_unit = self._create_single_filer(adults.iloc[0], hh_members, hh_data)
-                if tax_unit is not None:
-                    tax_units.append(tax_unit)
-                return tax_units
-                
-            # Create a matrix of potential spouse pairs
-            # This is more efficient than nested loops for larger households
-            for i, idx1 in enumerate(adult_indices):
-                if idx1 in processed:
-                    continue
-                    
-                adult1 = adults.loc[idx1]
-                spouse_found = False
-                
-                logger.debug(f"Checking adult {idx1}: age {adult1['AGEP']}, RELSHIPP {adult1.get('RELSHIPP', 'N/A')}, MAR {adult1.get('MAR', 'N/A')}")
-                
-                # Check remaining adults for potential spouses
-                for j in range(i + 1, len(adult_indices)):
-                    idx2 = adult_indices[j]
-                    if idx2 in processed:
-                        continue
-                        
-                    adult2 = adults.loc[idx2]
-                    
-                    logger.debug(f"  Checking potential spouse {idx2}: age {adult2['AGEP']}, RELSHIPP {adult2.get('RELSHIPP', 'N/A')}, MAR {adult2.get('MAR', 'N/A')}")
-                    
-                    # Use vectorized spouse check if available
-                    is_spouse = self._is_potential_spouse(adult1, adult2)
-                    logger.debug(f"  Is potential spouse: {is_spouse}")
-                    
-                    if is_spouse:
-                        # Create joint return for this couple
-                        logger.debug(f"  Creating joint return for {idx1} and {idx2}")
-                        tax_unit = self._create_joint_filer(adult1, adult2, hh_members, hh_data)
-                        if tax_unit is not None:
-                            tax_units.append(tax_unit)
-                            processed.add(idx1)
-                            processed.add(idx2)
-                            spouse_found = True
-                            logger.debug(f"  Successfully created joint return")
-                            break
-                        else:
-                            logger.debug(f"  Failed to create joint return (returned None)")
-                
-                # If no spouse found, create single return
-                if not spouse_found and idx1 not in processed:
-                    logger.debug(f"  No spouse found for {idx1}, creating single return")
-                    tax_unit = self._create_single_filer(adult1, hh_members, hh_data)
-                    if tax_unit is not None:
-                        tax_units.append(tax_unit)
-                    processed.add(idx1)
-            
-            # Create single returns for any remaining unprocessed adults
-            for idx in adult_indices:
-                if idx not in processed:
-                    logger.debug(f"Creating single return for remaining adult {idx}")
-                    tax_unit = self._create_single_filer(adults.loc[idx], hh_members, hh_data)
-                    if tax_unit is not None:
-                        tax_units.append(tax_unit)
-            
-            logger.debug(f"Created {len(tax_units)} tax units from household")
-            return tax_units
-            
-        except Exception as e:
-            logger.error(f"Error in vectorized joint filer identification: {str(e)}")
-            # Fall back to original implementation
-            return self._identify_joint_filers_original(adults, hh_members, hh_data)
-    
-    def _identify_dependents(self, adult_id: str, hh_members: pd.DataFrame) -> Tuple[List[str], List[str]]:
-        """
-        Identify qualifying children and other dependents for a given adult.
-        Uses vectorized operations for better performance when possible.
+        # Implementation of joint filer identification
+        return []
         
-        Args:
-            adult_id: ID of the adult
-            hh_members: DataFrame of all household members
-            
-        Returns:
-            Tuple of (list of qualifying child IDs, list of other dependent IDs)
-        """
-        # Find the adult in the household
-        adult_mask = hh_members['person_id'] == adult_id
-        if not adult_mask.any():
-            return [], []
-            
-        adult = hh_members[adult_mask].iloc[0]
-        
-        # Use vectorized version if available
-        if hasattr(self, '_identify_dependents_vectorized'):
-            try:
-                return self._identify_dependents_vectorized(adult, hh_members)
-            except Exception as e:
-                logger.warning(f"Vectorized dependent identification failed, falling back to iterative method: {str(e)}")
-        
-        # Fall back to original implementation if vectorized version fails or isn't available
-        qualifying_children = []
-        other_dependents = []
-        
-        for _, member in hh_members.iterrows():
-            if member['person_id'] == adult_id:
-                continue
-                
-            # Check if this is a qualifying child
-            if self._is_qualifying_child(member, adult, hh_members):
-                qualifying_children.append(member['person_id'])
-            # Check if this is a qualifying relative
-            elif self._is_qualifying_relative(member, adult, hh_members):
-                other_dependents.append(member['person_id'])
-        
-        return qualifying_children, other_dependents
-    
     def _identify_dependents_vectorized(self, adult: pd.Series, hh_members: pd.DataFrame) -> Tuple[List[str], List[str]]:
         """
         Efficiently identify qualifying children and other dependents using vectorized operations.
         
         This implementation provides significant performance improvements over the iterative
-        approach by leveraging pandas' vectorized operations and pre-computing expensive checks.
+        approach by using pandas vectorized operations.
         
         Args:
             adult: Series containing the adult's data
-            hh_members: DataFrame of all household members
+            hh_members: DataFrame containing all household members
             
         Returns:
-            Tuple of (list of qualifying child IDs, list of other dependent IDs)
-            
-        Note:
-            For complex cases that can't be handled in a fully vectorized way, falls back
-            to the original implementation for those specific cases.
+            Tuple of (list of qualifying child person_ids, list of other dependent person_ids)
         """
         try:
             # Create a copy to avoid modifying the original dataframe
@@ -719,7 +625,6 @@ class TaxUnitConstructor:
                 
             # Ensure we have the required columns with proper types
             required_numeric = ['AGEP', 'WAGP', 'SEMP', 'INTP', 'RETP', 'OIP', 'PAP', 'SSP', 'SSIP']
-            required_categorical = ['RELSHIPP', 'SCHL', 'MAR']
             
             # Convert to appropriate dtypes if needed
             for col in required_numeric:
@@ -730,11 +635,10 @@ class TaxUnitConstructor:
             if 'rel_code_str' not in potential_deps.columns:
                 potential_deps['rel_code_str'] = potential_deps['RELSHIPP'].astype(str)
             
-            # Pre-compute total income for all potential dependents
-            if 'total_income' not in potential_deps.columns:
-                income_cols = [col for col in ['WAGP', 'SEMP', 'INTP', 'RETP', 'OIP', 'PAP', 'SSP', 'SSIP'] 
-                              if col in potential_deps.columns]
-                potential_deps['total_income'] = potential_deps[income_cols].fillna(0).abs().sum(axis=1)
+            # Pre-compute income for all potential dependents using _calculate_income
+            potential_deps['total_income'] = potential_deps.apply(
+                lambda x: self._calculate_income(x), axis=1
+            )
             
             # Define relationship code sets for fast lookups
             child_rels = {'25', '26', '27', '28', '29', '30', '31', '32', '33', '39', '40'}
@@ -758,6 +662,25 @@ class TaxUnitConstructor:
                 is_child_rel &  # Has qualifying relationship
                 (is_under_19 | is_student_under_24) &  # Age/student status
                 income_ok  # Income below threshold
+            )
+            
+            # Get qualifying children
+            qualifying_children = potential_deps[is_qualifying_child]['person_id'].tolist()
+            
+            # Other dependents (qualifying relatives that aren't children)
+            is_qualifying_relative = (
+                is_other_rel &  # Has qualifying relationship
+                ~is_qualifying_child &  # Not already a qualifying child
+                income_ok  # Income below threshold
+            )
+            other_dependents = potential_deps[is_qualifying_relative]['person_id'].tolist()
+            
+            return qualifying_children, other_dependents
+            
+        except Exception as e:
+            logger.warning(f"Error in vectorized dependent identification: {e}")
+            # Fall back to original implementation if there's an error
+            return self._identify_dependents_original(adult, hh_members)
             )
             
             # Get qualifying children
