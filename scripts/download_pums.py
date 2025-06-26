@@ -68,28 +68,23 @@ class PUMSDownloader:
         # Base URL for the Census PUMS API
         self.base_url = f"https://api.census.gov/data/{self.year}/acs/acs5/pums"
         
-        # Define variables needed for CTC/EITC analysis
-        # Using 2023 5-year PUMS variable names
-        # Note: Using only the most essential variables to avoid API errors
+        # Person variables required for tax credit analysis
         self.person_vars = [
-            # Identification
-            'SERIALNO', 'SPORDER', 'PUMA', 'ST',
-            
-            # Basic demographics
-            'AGEP', 'SEX', 'HISP', 'RAC1P', 'SCHL',
+            # Identification and basic demographics
+            'SERIALNO', 'PUMA', 'AGEP', 'SEX', 'HISP',
+            'RAC1P', 'SCHL', 'DIS', 
             
             # Income sources
-            'WAGP', 'SEMP', 'INTP', 'RETP', 'SSP', 'SSIP',
+            'WAGP', 'SSIP', 'RETP', 'SSP', 'INTP', 'PAP', 'OIP',
             
             # Family/household
-            'MSP', 'NOC', 'PINCP', 'RELSHIPP',
-            
-            # Weights and basic adjustments
-            'PWGTP', 'ADJINC'
+            'PWGTP', 'NP', 'MAR', 'NOC', 'PINCP', 'RELSHIPP', 'SPORDER',
+            'SEMP', 'ADJINC'
         ]
         
+        # Household variables required for tax credit analysis
         self.household_vars = [
-            'SERIALNO', 'PUMA', 'ST', 'HINCP', 'ADJINC', 'WGTP', 'NP', 'TEN'
+            'SERIALNO', 'PUMA', 'HINCP', 'WGTP', 'NP'
         ]
     
     def _make_api_request(self, dataset_type: str, variables: List[str]) -> Optional[pd.DataFrame]:
@@ -145,9 +140,8 @@ class PUMSDownloader:
                 if result_df is None:
                     result_df = chunk_df
                 else:
-                    # Merge on SERIALNO and state
-                    merge_cols = list(set(result_df.columns) & set(chunk_df.columns))
-                    result_df = pd.merge(result_df, chunk_df, on=merge_cols, how='outer')
+                    # Merge on SERIALNO only
+                    result_df = pd.merge(result_df, chunk_df, on='SERIALNO', how='outer')
                 
                 logger.info(f"Retrieved {len(chunk_df)} records")
                 
