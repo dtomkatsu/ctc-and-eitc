@@ -96,6 +96,16 @@ class TaxUnitConstructor:
         # Note: We no longer pre-calculate total_income here to avoid inconsistencies
         # with _calculate_income() which handles ADJINC adjustments
         
+        # Add person_id first as it's needed for spouse mapping
+        if 'person_id' not in self.person_df.columns:
+            # Ensure both SERIALNO and SPORDER are strings before concatenation
+            self.person_df['SERIALNO'] = self.person_df['SERIALNO'].astype(str)
+            self.person_df['SPORDER'] = self.person_df['SPORDER'].astype(str)
+            self.person_df['person_id'] = (
+                self.person_df['SERIALNO'] + '_' + 
+                self.person_df['SPORDER']
+            )
+        
         # Pre-calculate other commonly used values
         if 'is_child' not in self.person_df.columns:
             self.person_df['is_child'] = (self.person_df['AGEP'] < 18).astype(int)
@@ -145,15 +155,9 @@ class TaxUnitConstructor:
             (self.person_df['is_child'] == 0)  # Not a child
         ).astype(int)
         
-        # Add person_id if missing
-        if 'person_id' not in self.person_df.columns:
-            # Ensure both SERIALNO and SPORDER are strings before concatenation
-            self.person_df['SERIALNO'] = self.person_df['SERIALNO'].astype(str)
-            self.person_df['SPORDER'] = self.person_df['SPORDER'].astype(str)
-            self.person_df['person_id'] = (
-                self.person_df['SERIALNO'] + '_' + 
-                self.person_df['SPORDER']
-            )
+        # Add total_income column for backward compatibility with tests
+        # Note: This is calculated on the fly in _calculate_income()
+        self.person_df['total_income'] = self.person_df.apply(self._calculate_income, axis=1)
         
         # Sort by household for better memory locality
         self.person_df = self.person_df.sort_values(['SERIALNO', 'RELSHIPP'])
@@ -174,43 +178,23 @@ class TaxUnitConstructor:
             
     def _calculate_income(self, person: pd.Series) -> float:
         """
-        Calculate total income for a person by summing all income sources.
+        Calculate total income for a person using PINCP (total person income) with ADJINC adjustment.
         
         Args:
             person: Series containing person's data with income fields
             
         Returns:
-            float: Total income from all sources, adjusted by ADJINC if present
+            float: Total income adjusted by ADJINC factor
         """
-        # List of all possible income columns (from PUMS data)
-        income_columns = [
-            'WAGP',    # Wage or salary income
-            'SEMP',    # Self-employment income
-            'INTP',    # Interest income
-            'RETP',    # Retirement income
-            'OIP',     # Other income (not from work or investments)
-            'PAP',     # Public assistance income
-            'SSP',     # Social Security income
-            'SSIP',    # Supplemental Security Income
-            'PINCP'    # Total person's income (as a fallback)
-        ]
-        
         # Get ADJINC factor (default to 1.0 if not present)
         adjinc = float(person.get('ADJINC', 1000000)) / 1000000.0
         
-        # Sum all income sources that exist in the person's data
-        total_income = 0.0
-        for col in income_columns:
-            if col in person:
-                try:
-                    # Convert to float, default to 0 if NaN or None
-                    income = float(person[col] or 0)
-                    # Apply ADJINC adjustment (typically around 1.0 for most years)
-                    income *= adjinc
-                    total_income += income
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Error processing income column {col}: {e}")
-                    continue
+        # Use PINCP (total person income) which already includes all income sources
+        # This avoids double-counting that would occur if we summed individual components
+        total_income = float(person.get('PINCP', 0) or 0)
+        
+        # Apply ADJINC adjustment
+        total_income *= adjinc
         
         return total_income
     
@@ -600,6 +584,58 @@ class TaxUnitConstructor:
         # Implementation of joint filer identification
         return []
         
+    def _identify_dependents(self, person_id: str, hh_members: pd.DataFrame) -> Tuple[List[str], List[str]]:
+        """
+        Identify qualifying children and other dependents for a given person.
+        
+        Args:
+            person_id: ID of the potential filer
+            hh_members: All members of the household
+            
+        Returns:
+            Tuple of (list of qualifying child person_ids, list of other dependent person_ids)
+        """
+        # Get the adult's data
+        adult = hh_members[hh_members['person_id'] == person_id].iloc[0]
+        
+        # Use vectorized implementation if available
+        if hasattr(self, '_identify_dependents_vectorized'):
+            try:
+                return self._identify_dependents_vectorized(adult, hh_members)
+            except Exception as e:
+                logger.warning(f"Vectorized dependent identification failed: {str(e)}")
+                # Fall back to original implementation
+        
+        # Fall back to original implementation
+        return self._identify_dependents_original(adult, hh_members)
+        
+    def _identify_dependents_original(self, adult: pd.Series, hh_members: pd.DataFrame) -> Tuple[List[str], List[str]]:
+        """
+        Original implementation of dependent identification using iterative approach.
+        
+        Args:
+            adult: The adult who is the potential filer
+            hh_members: All members of the household
+            
+        Returns:
+            Tuple of (list of qualifying child person_ids, list of other dependent person_ids)
+        """
+        qualifying_children = []
+        other_dependents = []
+        
+        for _, member in hh_members.iterrows():
+            if member['person_id'] == adult['person_id']:
+                continue  # Skip the adult themselves
+                
+            # Check if member is a qualifying child
+            if self._is_qualifying_child(member, adult, hh_members):
+                qualifying_children.append(member['person_id'])
+            # Check if member is a qualifying relative (and not already a qualifying child)
+            elif self._is_qualifying_relative_original(member, adult, hh_members):
+                other_dependents.append(member['person_id'])
+                
+        return qualifying_children, other_dependents
+        
     def _identify_dependents_vectorized(self, adult: pd.Series, hh_members: pd.DataFrame) -> Tuple[List[str], List[str]]:
         """
         Efficiently identify qualifying children and other dependents using vectorized operations.
@@ -678,39 +714,82 @@ class TaxUnitConstructor:
             return qualifying_children, other_dependents
             
         except Exception as e:
-            logger.warning(f"Error in vectorized dependent identification: {e}")
-            # Fall back to original implementation if there's an error
-            return self._identify_dependents_original(adult, hh_members)
-            )
-            
-            # Get qualifying children
-            qualifying_children = potential_deps[is_qualifying_child]['person_id'].tolist()
-            
-            # For other dependents, we need to check additional conditions
-            # that can't be easily vectorized, so we'll use the original method for these
-            other_deps = []
-            other_candidates = potential_deps[~is_qualifying_child & income_ok & is_other_rel]
-            
-            if not other_candidates.empty:
-                # For a small number of candidates, it's faster to use the original method
-                if len(other_candidates) <= 10:  # Threshold for fallback
-                    for _, candidate in other_candidates.iterrows():
-                        if self._is_qualifying_relative_original(candidate, adult, hh_members):
-                            other_deps.append(candidate['person_id'])
-                else:
-                    # For many candidates, try to filter further before falling back
-                    # This is a heuristic - we might miss some edge cases
-                    other_deps = other_candidates[
-                        (other_candidates['MAR'] != 1) &  # Not married filing separately
-                        (other_candidates['total_income'] <= HAWAII_INCOME_THRESHOLDS['dependent'])
-                    ]['person_id'].tolist()
-            
-            return qualifying_children, other_deps
-            
-        except Exception as e:
             logger.error(f"Error in vectorized dependent identification: {str(e)}")
             # Fall back to original implementation in case of errors
             return self._identify_dependents_original(adult, hh_members)
+        
+    def _is_relative(self, person1: pd.Series, person2: pd.Series) -> bool:
+        """
+        Check if two people are related based on their RELSHIPP values.
+        
+        Args:
+            person1: First person's data
+            person2: Second person's data
+            
+        Returns:
+            bool: True if the two people are related, False otherwise
+        """
+        # If they're the same person, they're not relatives for tax purposes
+        if person1['person_id'] == person2['person_id']:
+            return False
+            
+        # Get relationship codes
+        rel1 = person1.get('RELSHIPP', -1)
+        rel2 = person2.get('RELSHIPP', -1)
+        
+        # Check if they're in the same household
+        if person1.get('SERIALNO') != person2.get('SERIALNO'):
+            return False
+            
+        # Check if either is the reference person (20) and the other is a relative
+        if (rel1 == 20 and rel2 in [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]) or \
+           (rel2 == 20 and rel1 in [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]):
+            return True
+            
+        # Check if they're siblings
+        if rel1 in [24, 25, 26] and rel2 in [24, 25, 26]:
+            return True
+            
+        # Add other relationship checks as needed
+        
+        return False
+        
+    def _is_qualifying_relative_original(self, person: pd.Series, potential_filer: pd.Series, 
+                                      hh_members: pd.DataFrame) -> bool:
+        """
+        Determine if a person qualifies as a relative for tax purposes.
+        
+        Args:
+            person: The person who might be a qualifying relative
+            potential_filer: The potential filer (adult)
+            hh_members: All members of the household
+            
+        Returns:
+            bool: True if the person is a qualifying relative, False otherwise
+        """
+        # Relationship test - must be a relative
+        if not self._is_relative(person, potential_filer):
+            return False
+            
+        # Income test - must have gross income less than the exemption amount
+        income = self._calculate_income(person)
+        if income >= HAWAII_INCOME_THRESHOLDS['dependent']:
+            return False
+            
+        # Support test - must not provide more than half of their own support
+        # For now, we'll assume they don't provide more than half of their own support
+        
+        # Not a qualifying child of any other taxpayer
+        # This is a simplified check - in a full implementation, you'd need to check against all other adults
+        
+        # Not filing a joint return (unless it's only to claim a refund)
+        if person.get('MAR') == 1:  # Married filing jointly
+            return False
+            
+        # Must be a US citizen, national, or resident alien
+        # This is a simplified check - in a real implementation, you'd check CIT or CITWP
+        
+        return True
         
     def _is_qualifying_child(self, child: pd.Series, potential_parent: pd.Series, 
                            hh_members: pd.DataFrame) -> bool:
@@ -1147,8 +1226,19 @@ class TaxUnitConstructor:
                    f"{len(children)} qualifying children and {len(other_deps)} other dependents")
         logger.debug(f"Assigned filing status: {filing_status}")
         
-        # Calculate total income for the tax unit
+        # Calculate total income for the tax unit using _calculate_income
+        # This ensures we don't double-count income sources
         total_income = self._calculate_income(primary) + self._calculate_income(secondary)
+        
+        # For informational purposes, we can still break down the income components
+        # but we won't use them to calculate the total income
+        wages = primary.get('WAGP', 0) + secondary.get('WAGP', 0)
+        self_employment_income = primary.get('SEMP', 0) + secondary.get('SEMP', 0)
+        interest_income = primary.get('INTP', 0) + secondary.get('INTP', 0)
+        ss_income = (primary.get('SSP', 0) + primary.get('SSIP', 0) +
+                    secondary.get('SSP', 0) + secondary.get('SSIP', 0))
+        other_income = (primary.get('OIP', 0) + primary.get('PAP', 0) + primary.get('RETP', 0) +
+                       secondary.get('OIP', 0) + secondary.get('PAP', 0) + secondary.get('RETP', 0))
         
         # Create and return the tax unit dictionary
         return {
@@ -1161,14 +1251,12 @@ class TaxUnitConstructor:
             'num_children': len(children),
             'num_other_dependents': len(other_deps),
             'hh_income': hh_data.get('HINCP', 0),
-            'total_income': total_income,
-            'wages': primary.get('WAGP', 0) + secondary.get('WAGP', 0),
-            'self_employment_income': primary.get('SEMP', 0) + secondary.get('SEMP', 0),
-            'interest_income': primary.get('INTP', 0) + secondary.get('INTP', 0),
-            'ss_income': (primary.get('SSP', 0) + primary.get('SSIP', 0) +
-                         secondary.get('SSP', 0) + secondary.get('SSIP', 0)),
-            'other_income': (primary.get('OIP', 0) + primary.get('PAP', 0) + primary.get('RETP', 0) +
-                           secondary.get('OIP', 0) + secondary.get('PAP', 0) + secondary.get('RETP', 0)),
+            'total_income': total_income,  # This is the authoritative total income
+            'wages': wages,
+            'self_employment_income': self_employment_income,
+            'interest_income': interest_income,
+            'ss_income': ss_income,
+            'other_income': other_income,
             'file_separately': file_separately  # Track whether filing separately
         }
 
