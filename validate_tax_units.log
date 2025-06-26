@@ -93,3 +93,17 @@ KeyError: "None of ['person_id'] are in the columns"
 2025-06-25 17:57:22,603 - ERROR - Falling back to estimated values
 2025-06-25 17:57:22,603 - INFO - Applying PUMS weights to tax units...
 2025-06-25 17:57:22,674 - INFO - Saved validation report to analysis/tax_unit_validation.csv
+2025-06-25 18:08:54,972 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 18:08:55,062 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 18:08:55,073 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 18:08:55,161 - ERROR - Error loading SOI data: invalid literal for int() with base 10: '(1)'
+2025-06-25 18:08:55,161 - ERROR - Falling back to estimated values
+2025-06-25 18:08:55,161 - INFO - Applying PUMS weights to tax units...
+2025-06-25 18:08:55,212 - INFO - Saved validation report to analysis/tax_unit_validation.csv
+2025-06-25 18:10:59,616 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-25 18:10:59,700 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-25 18:10:59,712 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-25 18:10:59,799 - ERROR - Error loading SOI data: invalid literal for int() with base 10: '(1)'
+2025-06-25 18:10:59,799 - ERROR - Falling back to estimated values
+2025-06-25 18:10:59,799 - INFO - Applying PUMS weights to tax units...
+2025-06-25 18:10:59,851 - INFO - Saved validation report to analysis/tax_unit_validation.csv

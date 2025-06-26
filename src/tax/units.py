@@ -318,13 +318,24 @@ class TaxUnitConstructor:
             if spouse is not None:
                 # Create joint return
                 tax_unit = self._create_joint_filer(adult1, spouse, hh_members, hh_data)
-                tax_units.append(tax_unit)
-                processed.add(idx1)
+                if tax_unit is not None:  # Only add if creation was successful
+                    tax_units.append(tax_unit)
+                    processed.add(idx1)
+                else:
+                    # Joint filer creation failed, create single returns instead
+                    tax_unit1 = self._create_single_filer(adult1, hh_members, hh_data)
+                    tax_unit2 = self._create_single_filer(spouse, hh_members, hh_data)
+                    if tax_unit1 is not None:
+                        tax_units.append(tax_unit1)
+                    if tax_unit2 is not None:
+                        tax_units.append(tax_unit2)
+                    processed.add(idx1)
             else:
                 # No spouse found, create single return
                 tax_unit = self._create_single_filer(adult1, hh_members, hh_data)
-                tax_units.append(tax_unit)
-                processed.add(idx1)
+                if tax_unit is not None:  # Only add if creation was successful
+                    tax_units.append(tax_unit)
+                    processed.add(idx1)
         
         return tax_units
     
@@ -353,58 +364,24 @@ class TaxUnitConstructor:
             '39', '40'  # More restrictive Hawaii extended family
         ]
         
-        # For siblings who may be dependents (e.g., younger siblings of householder)
-        if str(child.get('RELSHIPP')) == '28':  # Brother or sister
-            # Check if significantly younger and could be claimed
-            age_diff = potential_parent.get('AGEP', 0) - child.get('AGEP', 0)
-            if age_diff < 15:  # More reasonable threshold for sibling dependents
+        # Member of household test
+        if str(child.get('RELSHIPP')) not in valid_relationships:
+            # Could still qualify if lived with taxpayer all year
+            # Exclude roommates/housemates
+            if str(child.get('RELSHIPP')) in ['35', '36', '37']:
                 return False
         
-        if str(child.get('RELSHIPP')) not in valid_relationships:
-            return False
-        
-        # Age test
-        age = child.get('AGEP', 0)
-        
-        # Student status - more rigorous check
-        schl = child.get('SCHL', 0)
-        # Only consider full-time students (codes 16-18: college, 19-20: graduate school)
-        is_full_time_student = 16 <= schl <= 20
-        
-        # Disability status - require documentation
-        is_disabled = child.get('DIS', 0) == 1
-        
-        # Age requirements - follow IRS rules strictly
-        if age < 19:
-            age_qualified = True
-        elif age < 24 and is_full_time_student and age - potential_parent.get('AGEP', 0) >= 18:
-            # Must be younger than 24, full-time student, and parent must be at least 18 years older
-            age_qualified = True
-        elif is_disabled and age < 24:  # Disabled children under 24
-            age_qualified = True
-        else:
-            age_qualified = False
-        
-        if not age_qualified:
-            return False
-        
-        # Joint return test - check if child is married
-        if child.get('MAR') == 1:
-            return False
-        
-        # Support test - more stringent income test
-        child_income = 0
-        for inc_type in ['WAGP', 'SEMP', 'INTP', 'RETP', 'SSP', 'SSIP', 'OIP', 'PAP']:
+        # Gross income test - use Hawaii threshold
+        person_income = 0
+        for inc_type in ['WAGP', 'SEMP', 'INTP', 'RETP', 'OIP', 'PAP']:
             if inc_type in child:
-                child_income += abs(float(child.get(inc_type, 0) or 0))
+                person_income += abs(float(child.get(inc_type, 0) or 0))
         
-        # Lower threshold for support test to be more restrictive
-        if child_income > (HAWAII_INCOME_THRESHOLDS['support'] * 0.7):  # 70% of previous threshold
+        if person_income > HAWAII_INCOME_THRESHOLDS['relative_income']:
             return False
-            
-        # Additional check: Child must not provide more than half their own support
-        # This is a simplification - in reality would need more detailed data
-        if child_income > (potential_parent.get('PINCP', 0) or 0) * 0.1:  # More than 10% of parent's income
+        
+        # Support test - use income as proxy
+        if person_income > HAWAII_INCOME_THRESHOLDS['dependent']:
             return False
         
         return True

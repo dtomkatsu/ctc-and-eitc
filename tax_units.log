@@ -8665,3 +8665,34 @@ TypeError: TaxUnitConstructor._get_filing_status() missing 2 required positional
 2025-06-25 18:05:34,136 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
 2025-06-25 18:05:34,136 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
 2025-06-25 18:05:34,217 - INFO - Creating tax units using rule-based approach...
+2025-06-25 18:06:42,140 - ERROR - Error creating tax units: 'NoneType' object has no attribute 'keys'
+Traceback (most recent call last):
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 570, in main
+    tax_units = constructor.create_rule_based_units()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 154, in create_rule_based_units
+    self.tax_units = pd.DataFrame(tax_units)
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/core/frame.py", line 851, in __init__
+    arrays, columns, index = nested_data_to_arrays(
+                             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/core/internals/construction.py", line 520, in nested_data_to_arrays
+    arrays, columns = to_arrays(data, columns, dtype=dtype)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/core/internals/construction.py", line 837, in to_arrays
+    arr, columns = _list_of_dict_to_arrays(data, columns)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/core/internals/construction.py", line 917, in _list_of_dict_to_arrays
+    pre_cols = lib.fast_unique_multiple_list_gen(gen, sort=sort)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "lib.pyx", line 367, in pandas._libs.lib.fast_unique_multiple_list_gen
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pandas/core/internals/construction.py", line 915, in <genexpr>
+    gen = (list(x.keys()) for x in data)
+                ^^^^^^
+AttributeError: 'NoneType' object has no attribute 'keys'
+2025-06-25 18:07:25,526 - INFO - Loading processed PUMS data...
+2025-06-25 18:07:25,526 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 18:07:25,527 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 18:07:25,608 - INFO - Creating tax units using rule-based approach...
+2025-06-25 18:08:33,733 - INFO - Created 45424 tax units
+2025-06-25 18:08:33,783 - INFO - Saved 45424 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet

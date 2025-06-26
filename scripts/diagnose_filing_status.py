@@ -97,8 +97,13 @@ def analyze_marital_status(tax_units, person_df):
     """Analyze marital status patterns."""
     logger.info("Analyzing marital status patterns...")
     
-    # Create a person_id column for merging (using row index)
+    # Check what the actual adult1_id values look like
+    logger.info(f"Sample adult1_id values: {tax_units['adult1_id'].head()}")
+    logger.info(f"Sample person_id values: {person_df.index[:5].tolist()}")
+    
+    # Create a person_id column for merging (using row index as string to match adult1_id format)
     person_df_with_id = person_df.reset_index().rename(columns={'index': 'person_id'})
+    person_df_with_id['person_id'] = person_df_with_id['person_id'].astype(str)
     
     # Get adult1 marital status
     adult1_data = tax_units.merge(
