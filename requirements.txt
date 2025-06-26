@@ -1,0 +1,27 @@
+# Core data analysis
+pandas>=1.3.0
+numpy>=1.20.0
+
+# Data visualization
+matplotlib>=3.4.0
+seaborn>=0.11.0
+plotly>=5.0.0
+
+# Geospatial analysis
+geopandas>=0.9.0
+pysal>=2.3.0
+
+# Census data access
+census>=0.8.17
+censusdata>=0.9.0
+
+# Jupyter for interactive analysis
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# Utilities
+tqdm>=4.60.0
+python-dotenv>=0.19.0
+
+# Testing
+pytest>=6.2.0

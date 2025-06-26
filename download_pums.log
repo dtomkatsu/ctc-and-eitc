@@ -1,0 +1,32 @@
+2025-06-25 13:43:58,962 - INFO - Downloading person data for 15 (2022)...
+2025-06-25 13:43:58,962 - INFO - Fetching person data chunk 1/1 with 29 variables...
+2025-06-25 13:43:59,655 - ERROR - Error fetching data: 400 Client Error:  for url: https://api.census.gov/data/2022/acs/acs5/pums?get=SERIALNO%2CSPORDER%2CPUMA%2CST%2CAGEP%2CSEX%2CHISP%2CRAC1P%2CDIS%2CMIL%2CSCHL%2CWAGP%2CSEMP%2CINTP%2CDIV%2CRETP%2CSSP%2CSSIP%2CPAP%2COIP%2CMAR%2CNOC%2CPINCP%2CRELSHIPP%2CMSP%2CPWGTP%2CADJINC%2CMIG%2CHICOV&for=state%3A15&key=2104852dd7bfd83fbc9e320d650eb57decc11817
+2025-06-25 13:43:59,655 - ERROR - Status code: 400
+2025-06-25 13:43:59,655 - ERROR - Response: error: unknown variable 'PUMA'
+2025-06-25 13:43:59,656 - ERROR - Failed to download person data
+2025-06-25 13:43:59,656 - INFO - Downloading household data for 15 (2022)...
+2025-06-25 13:43:59,656 - INFO - Fetching household data chunk 1/1 with 30 variables...
+2025-06-25 13:44:00,206 - ERROR - Error fetching data: 400 Client Error:  for url: https://api.census.gov/data/2022/acs/acs5/pums?get=SERIALNO%2CPUMA%2CST%2CHINCP%2CADJINC%2CWGTP%2CNP%2CTEN%2CHHT%2CNOC%2CNRC%2CBLD%2CACCESS%2CBROADBND%2CHFL%2CLNGI%2CMULTG%2CPARTNER%2CPLM%2CPSF%2CR18%2CR65%2CRESMODE%2CSMX%2CSRNT%2CTAXP%2CWIF%2CWKEXREL%2CWORKSTAT%2CYBL&for=state%3A15&key=2104852dd7bfd83fbc9e320d650eb57decc11817
+2025-06-25 13:44:00,206 - ERROR - Status code: 400
+2025-06-25 13:44:00,206 - ERROR - Response: error: unknown variable 'PUMA'
+2025-06-25 13:44:00,206 - ERROR - Failed to download household data
+2025-06-25 13:44:00,206 - ERROR - 
+Download completed with errors. Check the log for details.
+2025-06-25 14:12:09,903 - INFO - Downloading person data for 15 (2023)...
+2025-06-25 14:12:09,903 - INFO - Fetching person data chunk 1/2 with 45 variables...
+2025-06-25 14:12:10,897 - ERROR - Error fetching data: 400 Client Error:  for url: https://api.census.gov/data/2023/acs/acs5/pums?get=SERIALNO%2CSPORDER%2CPUMA%2CST%2CAGEP%2CSEX%2CHISP%2CRAC1P%2CDIS%2CMIL%2CSCHL%2CWAGP%2CSEMP%2CINTP%2CDIV%2CRETP%2CSSP%2CSSIP%2CPAP%2COIP%2CMAR%2CNOC%2CPINCP%2CRELSHIPP%2CMSP%2CPWGTP%2CADJINC%2CMIG%2CHICOV%2CMILITARY%2CFOD1P%2CFOD2P%2CNAICSP%2COCCP%2COCCP12%2COCCP18%2COCCSOC%2COCCSECTOR%2CSCIENGRLP%2CSOCP%2CSOCP12%2CSOCP18%2CSOCPCAP%2CSOCPSEC%2CSOCPSIEGP&for=state%3A15&key=2104852dd7bfd83fbc9e320d650eb57decc11817
+2025-06-25 14:12:10,897 - ERROR - Status code: 400
+2025-06-25 14:12:10,898 - ERROR - Response: error: unknown variable 'ST'
+2025-06-25 14:12:10,898 - INFO - Fetching person data chunk 2/2 with 4 variables...
+2025-06-25 14:12:11,465 - ERROR - Error fetching data: 400 Client Error:  for url: https://api.census.gov/data/2023/acs/acs5/pums?get=SOCPSOCP%2CSOCPSOCP12%2CSOCPSOCP18%2CSOCPSOCP21&for=state%3A15&key=2104852dd7bfd83fbc9e320d650eb57decc11817
+2025-06-25 14:12:11,465 - ERROR - Status code: 400
+2025-06-25 14:12:11,465 - ERROR - Response: error: unknown variable 'SOCPSOCP'
+2025-06-25 14:12:11,465 - ERROR - Failed to download person data
+2025-06-25 14:12:11,465 - INFO - Downloading household data for 15 (2023)...
+2025-06-25 14:12:11,465 - INFO - Fetching household data chunk 1/1 with 33 variables...
+2025-06-25 14:12:12,029 - ERROR - Error fetching data: 400 Client Error:  for url: https://api.census.gov/data/2023/acs/acs5/pums?get=SERIALNO%2CPUMA%2CST%2CHINCP%2CADJINC%2CWGTP%2CNP%2CTEN%2CHHT%2CNOC%2CNRC%2CBLD%2CACCESS%2CBROADBND%2CHFL%2CLNGI%2CMULTG%2CPARTNER%2CPLM%2CPSF%2CR18%2CR65%2CRESMODE%2CSMX%2CSRNT%2CTAXP%2CWIF%2CWKEXREL%2CWORKSTAT%2CYBL%2CACCESSINET%2CACR%2CADJHSG&for=state%3A15&key=2104852dd7bfd83fbc9e320d650eb57decc11817
+2025-06-25 14:12:12,029 - ERROR - Status code: 400
+2025-06-25 14:12:12,029 - ERROR - Response: error: unknown variable 'ST'
+2025-06-25 14:12:12,029 - ERROR - Failed to download household data
+2025-06-25 14:12:12,029 - ERROR - 
+Download completed with errors. Check the log for details.
