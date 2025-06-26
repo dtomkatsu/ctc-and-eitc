@@ -9316,3 +9316,7 @@ Quick Validation:
 2025-06-25 23:34:41,076 - INFO - Actual joint filers: 32.5%
 2025-06-25 23:34:41,076 - INFO - Difference: -3.5 percentage points
 2025-06-25 23:34:41,076 - INFO - ✅ Joint filer fix appears successful!
+2025-06-26 11:42:14,789 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-26 11:42:14,789 - INFO - Processing households 1 to 1 of 1
+2025-06-26 11:42:14,794 - INFO - Completed batch 1/1
+2025-06-26 11:42:14,794 - INFO - Created 2 tax units from 1 households

@@ -305,25 +305,74 @@ class TaxUnitConstructor:
             # Track processed adult indices to avoid duplicates
             processed = set()
             
-            # First pass: Identify married couples and create joint returns
+            # FIRST: Identify married individuals who should file separately
+            for i, (_, adult) in enumerate(adults.iterrows()):
+                if i in processed:
+                    continue
+                
+                mar_status = adult.get('MAR', 6)
+                
+                # Check for MFS scenarios based on marital status
+                if mar_status in [2, 3]:  # Married spouse absent or separated
+                    tax_unit = self._create_single_filer(adult, hh_members, household)
+                    if tax_unit:
+                        tax_unit['filing_status'] = FILING_STATUS['SEPARATE']
+                        tax_units.append(tax_unit)
+                        processed.add(i)
+                        logger.debug(f"Created MFS for separated/absent spouse: {adult['person_id']}")
+            
+            # SECOND: Process remaining married couples
             for i, (_, adult1) in enumerate(adults.iterrows()):
                 if i in processed:
                     continue
+                
+                # Only look at married individuals
+                if adult1.get('MAR', 6) != 1:  # Not married with spouse present
+                    continue
                     
-                # Look for a spouse
+                # Look for their spouse
+                spouse_found = False
                 for j, (_, adult2) in enumerate(adults.iterrows()):
                     if j <= i or j in processed:
                         continue
                         
                     if self._is_potential_spouse(adult1, adult2):
-                        # Create joint return
-                        joint_return = self._create_joint_filer(adult1, adult2, hh_members, household)
-                        if joint_return:
-                            tax_units.append(joint_return)
-                            processed.update([i, j])
-                            break
+                        # Decide if they should file jointly or separately
+                        if hasattr(self, '_should_file_separately') and self._should_file_separately(adult1, adult2, hh_members):
+                            # Create two MFS returns
+                            tax_unit1 = self._create_single_filer(adult1, hh_members, household)
+                            tax_unit2 = self._create_single_filer(adult2, hh_members, household)
+                            
+                            if tax_unit1:
+                                tax_unit1['filing_status'] = FILING_STATUS['SEPARATE']
+                                tax_units.append(tax_unit1)
+                            if tax_unit2:
+                                tax_unit2['filing_status'] = FILING_STATUS['SEPARATE']
+                                tax_units.append(tax_unit2)
+                            
+                            processed.add(i)
+                            processed.add(j)
+                            logger.debug(f"Created MFS for couple: {adult1['person_id']} and {adult2['person_id']}")
+                        else:
+                            # Create joint return
+                            joint_return = self._create_joint_filer(adult1, adult2, hh_members, household)
+                            if joint_return:
+                                tax_units.append(joint_return)
+                                processed.add(i)
+                                processed.add(j)
+                        spouse_found = True
+                        break
+                
+                # If married but spouse not found in household, file as MFS
+                if not spouse_found and adult1.get('MAR', 6) == 1:
+                    tax_unit = self._create_single_filer(adult1, hh_members, household)
+                    if tax_unit:
+                        tax_unit['filing_status'] = FILING_STATUS['SEPARATE']
+                        tax_units.append(tax_unit)
+                        processed.add(i)
+                        logger.debug(f"Created MFS for married without spouse in HH: {adult1['person_id']}")
             
-            # Second pass: Create single returns for remaining adults
+            # THIRD: Create single returns for remaining adults
             for i, (_, adult) in enumerate(adults.iterrows()):
                 if i not in processed:
                     single_return = self._create_single_filer(adult, hh_members, household)
@@ -780,7 +829,7 @@ class TaxUnitConstructor:
         # For now, we'll assume they don't provide more than half of their own support
         
         # Not a qualifying child of any other taxpayer
-        # This is a simplified check - in a full implementation, you'd need to check against all other adults
+        # This is handled at the tax unit construction level
         
         # Not filing a joint return (unless it's only to claim a refund)
         if person.get('MAR') == 1:  # Married filing jointly
@@ -1085,7 +1134,7 @@ class TaxUnitConstructor:
                 # If no children, be more conservative
                 # Check if they are the only two adults in the household
                 # This is a common pattern for cohabiting couples
-                if 'hh_adults' in person1 and person1['hh_adults'] == 2:
+                if 'num_adults' in person1 and person1['num_adults'] == 2:
                     return True
                     
         return False
@@ -1129,7 +1178,7 @@ class TaxUnitConstructor:
                     return False
                 
                 # Check if they are the only two adults in the household
-                if 'hh_adults' in person1 and person1['hh_adults'] == 2:
+                if 'num_adults' in person1 and person1['num_adults'] == 2:
                     return True
                     
                 # Even if not the only adults, they might be a couple if they have children together
@@ -1144,7 +1193,7 @@ class TaxUnitConstructor:
             # If both are married (status 1 = married, spouse present)
             if mar1 == 1 and mar2 == 1:
                 # If they're the only two adults, they're likely married to each other
-                if 'hh_adults' in person1 and person1['hh_adults'] == 2:
+                if 'num_adults' in person1 and person1['num_adults'] == 2:
                     return True
                     
                 # If they have similar last names, more likely to be married
@@ -1164,6 +1213,92 @@ class TaxUnitConstructor:
             logger.warning(f"Error in vectorized spouse check: {str(e)}")
             # Fall back to original implementation
             return self._is_potential_spouse_original(person1, person2)
+            
+    def _should_file_separately(self, adult1: pd.Series, adult2: pd.Series, 
+                           hh_members: pd.DataFrame) -> bool:
+        """
+        Determine if a married couple should file separately.
+        Target: ~8.6% of married couples should file separately to achieve 3.1% overall MFS rate.
+        
+        Args:
+            adult1: First spouse
+            adult2: Second spouse
+            hh_members: All household members
+            
+        Returns:
+            bool: True if should file separately
+        """
+        # Strategy: Use observable characteristics that correlate with MFS filing
+        
+        # 1. Income characteristics
+        income1 = float(adult1.get('PINCP', 0) or 0)
+        income2 = float(adult2.get('PINCP', 0) or 0)
+        
+        # Large income disparity (one spouse has very high income)
+        if income1 > 0 and income2 > 0:
+            ratio = max(income1, income2) / min(income1, income2)
+            if ratio > 10:  # One earns 10x more than the other
+                return True
+        
+        # One spouse has negative income (business losses)
+        if (income1 < -5000 and income2 > 50000) or (income2 < -5000 and income1 > 50000):
+            return True
+        
+        # 2. Age difference (proxy for second marriages where MFS is more common)
+        age_diff = abs(adult1.get('AGEP', 0) - adult2.get('AGEP', 0))
+        if age_diff > 15:  # Large age gap
+            # More likely to file separately in second marriages
+            if adult1.get('MARHT', 1) > 1 or adult2.get('MARHT', 1) > 1:  # Times married > 1
+                return True
+        
+        # 3. Different disability status (medical expense deduction reasons)
+        dis1 = adult1.get('DIS', 2)  # 1 = With disability, 2 = Without
+        dis2 = adult2.get('DIS', 2)
+        if dis1 != dis2 and (dis1 == 1 or dis2 == 1):
+            # One spouse has disability, might benefit from MFS
+            return True
+        
+        # 4. Different citizenship/immigration status
+        cit1 = adult1.get('CIT', 0)
+        cit2 = adult2.get('CIT', 0)
+        if cit1 != cit2:
+            # Mixed citizenship couples more likely to file separately
+            if cit1 >= 4 or cit2 >= 4:  # One is non-citizen
+                return True
+        
+        # 5. Public assistance income (can affect eligibility)
+        pap1 = float(adult1.get('PAP', 0) or 0)
+        pap2 = float(adult2.get('PAP', 0) or 0)
+        if (pap1 > 0 and pap2 == 0) or (pap2 > 0 and pap1 == 0):
+            # One spouse receives public assistance
+            return True
+        
+        # 6. Student loan considerations (if one has high interest income)
+        intp1 = float(adult1.get('INTP', 0) or 0)
+        intp2 = float(adult2.get('INTP', 0) or 0)
+        if (intp1 > 10000 and income2 < 30000) or (intp2 > 10000 and income1 < 30000):
+            # One has high interest income, other has low income (student loan strategy)
+            return True
+        
+        # 7. Self-employment income differences
+        semp1 = float(adult1.get('SEMP', 0) or 0)
+        semp2 = float(adult2.get('SEMP', 0) or 0)
+        if (abs(semp1) > 50000 and semp2 == 0) or (abs(semp2) > 50000 and semp1 == 0):
+            # One is self-employed with significant income
+            return True
+        
+        # 8. Random assignment to reach target percentage
+        # After all deterministic rules, randomly assign remaining to reach target
+        import random
+        random.seed(int(adult1.get('SERIALNO', '0')[-4:]) + int(adult1.get('SPORDER', 0)))
+        
+        # Probability calculation: We need about 3.1% MFS overall
+        # Assume ~36% of filers are married, so we need ~8.6% of married couples to file separately
+        # Adjust this probability based on how many MFS we're getting from rules above
+        if random.random() < 0.02:  # 2% random assignment (adjust as needed)
+            return True
+        
+        return False
     
     def _create_joint_filer(self, adult1: pd.Series, adult2: pd.Series, 
                           hh_members: pd.DataFrame, hh_data: pd.Series) -> Dict[str, Any]:
