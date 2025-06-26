@@ -53,17 +53,32 @@ def analyze_tax_units(tax_units):
         # Convert to string to handle both numeric and string statuses
         tax_units['filing_status'] = tax_units['filing_status'].astype(str)
         
-        # Map numeric status codes to string values for backward compatibility
+        # Import the same status constants used in the tax unit construction
+        from src.tax.units import FILING_STATUS
+        
+        # Map status values to ensure consistency with the tax unit construction
         status_map = {
-            '1': 'single',
-            '2': 'joint',
-            '3': 'separate',
-            '4': 'head_of_household',
-            '5': 'widow'
+            '1': FILING_STATUS['SINGLE'],
+            '2': FILING_STATUS['JOINT'],
+            '3': FILING_STATUS['SEPARATE'],
+            '4': FILING_STATUS['HEAD_HOUSEHOLD'],
+            '5': FILING_STATUS['WIDOW']
         }
         
         # Replace numeric status codes with string values
         tax_units['filing_status'] = tax_units['filing_status'].replace(status_map)
+        
+        # Also ensure any direct string values match our constants
+        status_mapping = {
+            'single': FILING_STATUS['SINGLE'],
+            'joint': FILING_STATUS['JOINT'],
+            'separate': FILING_STATUS['SEPARATE'],
+            'head_of_household': FILING_STATUS['HEAD_HOUSEHOLD'],
+            'head of household': FILING_STATUS['HEAD_HOUSEHOLD'],  # Handle variations
+            'widow': FILING_STATUS['WIDOW'],
+            'widower': FILING_STATUS['WIDOW']  # Handle variations
+        }
+        tax_units['filing_status'] = tax_units['filing_status'].replace(status_mapping)
         
         # Get status counts
         status_counts = tax_units['filing_status'].value_counts().to_dict()

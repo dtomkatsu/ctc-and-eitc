@@ -8696,3 +8696,279 @@ AttributeError: 'NoneType' object has no attribute 'keys'
 2025-06-25 18:07:25,608 - INFO - Creating tax units using rule-based approach...
 2025-06-25 18:08:33,733 - INFO - Created 45424 tax units
 2025-06-25 18:08:33,783 - INFO - Saved 45424 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
+2025-06-25 18:15:25,534 - INFO - Loading processed PUMS data...
+2025-06-25 18:15:25,534 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 18:15:25,534 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 18:15:25,634 - INFO - Creating tax units using rule-based approach...
+2025-06-25 18:16:43,431 - INFO - Created 56710 tax units
+2025-06-25 18:16:43,487 - INFO - Saved 56710 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
+2025-06-25 18:28:42,626 - INFO - Loading processed PUMS data...
+2025-06-25 18:28:42,626 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 18:28:42,626 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 18:28:42,728 - INFO - Creating tax units using rule-based approach...
+2025-06-25 18:30:01,829 - INFO - Created 59307 tax units
+2025-06-25 18:30:01,887 - INFO - Saved 59307 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
+2025-06-25 22:00:23,583 - INFO - Loading processed PUMS data...
+2025-06-25 22:00:23,584 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 22:00:23,584 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 22:00:23,666 - INFO - Creating tax units using rule-based approach...
+2025-06-25 22:33:56,304 - INFO - Loading processed PUMS data...
+2025-06-25 22:33:56,304 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 22:33:56,304 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 22:33:56,429 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-25 22:33:56,430 - INFO - Processing households 1 to 1000 of 32104
+2025-06-25 22:33:56,434 - ERROR - Error creating tax units: 'TaxUnitConstructor' object has no attribute '_calculate_income'
+Traceback (most recent call last):
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 1102, in main
+    tax_units = constructor.create_rule_based_units()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 184, in create_rule_based_units
+    self._process_household(household, self.person_df)
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 241, in _process_household
+    tax_unit = self._create_single_filer(adults.iloc[0], hh_members, household)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 340, in _create_single_filer
+    return self._create_single_filer_original(adult, hh_members, hh_data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 355, in _create_single_filer_original
+    income = self._calculate_income(adult)
+             ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'TaxUnitConstructor' object has no attribute '_calculate_income'
+2025-06-25 22:34:24,909 - INFO - Loading processed PUMS data...
+2025-06-25 22:34:24,909 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 22:34:24,909 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 22:34:25,043 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-25 22:34:25,044 - INFO - Processing households 1 to 1000 of 32104
+2025-06-25 22:34:25,049 - ERROR - Error creating tax units: name 'HAWAII_STANDARD_DEDUCTIONS' is not defined
+Traceback (most recent call last):
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 1138, in main
+    tax_units = constructor.create_rule_based_units()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 220, in create_rule_based_units
+    self._process_household(household, self.person_df)
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 277, in _process_household
+    tax_unit = self._create_single_filer(adults.iloc[0], hh_members, household)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 376, in _create_single_filer
+    return self._create_single_filer_original(adult, hh_members, hh_data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/tax/units.py", line 404, in _create_single_filer_original
+    'taxable_income': max(0, income - HAWAII_STANDARD_DEDUCTIONS['single']),  # Simplified
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'HAWAII_STANDARD_DEDUCTIONS' is not defined
+2025-06-25 22:35:02,472 - INFO - Loading processed PUMS data...
+2025-06-25 22:35:02,472 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 22:35:02,472 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 22:35:02,590 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-25 22:35:02,590 - INFO - Processing households 1 to 1000 of 32104
+2025-06-25 22:35:04,670 - INFO - Completed batch 1/33
+2025-06-25 22:35:04,670 - INFO - Processing households 1001 to 2000 of 32104
+2025-06-25 22:35:07,672 - INFO - Completed batch 2/33
+2025-06-25 22:35:07,672 - INFO - Processing households 2001 to 3000 of 32104
+2025-06-25 22:35:10,624 - INFO - Completed batch 3/33
+2025-06-25 22:35:10,625 - INFO - Processing households 3001 to 4000 of 32104
+2025-06-25 22:35:13,716 - INFO - Completed batch 4/33
+2025-06-25 22:35:13,717 - INFO - Processing households 4001 to 5000 of 32104
+2025-06-25 22:35:16,623 - INFO - Completed batch 5/33
+2025-06-25 22:35:16,623 - INFO - Processing households 5001 to 6000 of 32104
+2025-06-25 22:35:19,516 - INFO - Completed batch 6/33
+2025-06-25 22:35:19,516 - INFO - Processing households 6001 to 7000 of 32104
+2025-06-25 22:35:21,866 - INFO - Completed batch 7/33
+2025-06-25 22:35:21,866 - INFO - Processing households 7001 to 8000 of 32104
+2025-06-25 22:35:24,553 - INFO - Completed batch 8/33
+2025-06-25 22:35:24,553 - INFO - Processing households 8001 to 9000 of 32104
+2025-06-25 22:35:27,666 - INFO - Completed batch 9/33
+2025-06-25 22:35:27,666 - INFO - Processing households 9001 to 10000 of 32104
+2025-06-25 22:35:30,834 - INFO - Completed batch 10/33
+2025-06-25 22:35:30,834 - INFO - Processing households 10001 to 11000 of 32104
+2025-06-25 22:35:34,001 - INFO - Completed batch 11/33
+2025-06-25 22:35:34,001 - INFO - Processing households 11001 to 12000 of 32104
+2025-06-25 22:35:37,197 - INFO - Completed batch 12/33
+2025-06-25 22:35:37,197 - INFO - Processing households 12001 to 13000 of 32104
+2025-06-25 22:35:39,977 - INFO - Completed batch 13/33
+2025-06-25 22:35:39,977 - INFO - Processing households 13001 to 14000 of 32104
+2025-06-25 22:35:42,606 - INFO - Completed batch 14/33
+2025-06-25 22:35:42,606 - INFO - Processing households 14001 to 15000 of 32104
+2025-06-25 22:35:45,727 - INFO - Completed batch 15/33
+2025-06-25 22:35:45,727 - INFO - Processing households 15001 to 16000 of 32104
+2025-06-25 22:35:48,677 - INFO - Completed batch 16/33
+2025-06-25 22:35:48,677 - INFO - Processing households 16001 to 17000 of 32104
+2025-06-25 22:35:51,779 - INFO - Completed batch 17/33
+2025-06-25 22:35:51,779 - INFO - Processing households 17001 to 18000 of 32104
+2025-06-25 22:35:54,894 - INFO - Completed batch 18/33
+2025-06-25 22:35:54,894 - INFO - Processing households 18001 to 19000 of 32104
+2025-06-25 22:35:57,936 - INFO - Completed batch 19/33
+2025-06-25 22:35:57,936 - INFO - Processing households 19001 to 20000 of 32104
+2025-06-25 22:36:00,009 - INFO - Completed batch 20/33
+2025-06-25 22:36:00,009 - INFO - Processing households 20001 to 21000 of 32104
+2025-06-25 22:36:03,008 - INFO - Completed batch 21/33
+2025-06-25 22:36:03,008 - INFO - Processing households 21001 to 22000 of 32104
+2025-06-25 22:36:06,030 - INFO - Completed batch 22/33
+2025-06-25 22:36:06,030 - INFO - Processing households 22001 to 23000 of 32104
+2025-06-25 22:36:09,044 - INFO - Completed batch 23/33
+2025-06-25 22:36:09,044 - INFO - Processing households 23001 to 24000 of 32104
+2025-06-25 22:36:12,102 - INFO - Completed batch 24/33
+2025-06-25 22:36:12,102 - INFO - Processing households 24001 to 25000 of 32104
+2025-06-25 22:36:15,157 - INFO - Completed batch 25/33
+2025-06-25 22:36:15,158 - INFO - Processing households 25001 to 26000 of 32104
+2025-06-25 22:36:17,687 - INFO - Completed batch 26/33
+2025-06-25 22:36:17,687 - INFO - Processing households 26001 to 27000 of 32104
+2025-06-25 22:36:20,276 - INFO - Completed batch 27/33
+2025-06-25 22:36:20,276 - INFO - Processing households 27001 to 28000 of 32104
+2025-06-25 22:36:23,160 - INFO - Completed batch 28/33
+2025-06-25 22:36:23,160 - INFO - Processing households 28001 to 29000 of 32104
+2025-06-25 22:36:26,275 - INFO - Completed batch 29/33
+2025-06-25 22:36:26,275 - INFO - Processing households 29001 to 30000 of 32104
+2025-06-25 22:36:29,348 - INFO - Completed batch 30/33
+2025-06-25 22:36:29,348 - INFO - Processing households 30001 to 31000 of 32104
+2025-06-25 22:36:32,330 - INFO - Completed batch 31/33
+2025-06-25 22:36:32,330 - INFO - Processing households 31001 to 32000 of 32104
+2025-06-25 22:36:35,425 - INFO - Completed batch 32/33
+2025-06-25 22:36:35,425 - INFO - Processing households 32001 to 32104 of 32104
+2025-06-25 22:36:35,732 - INFO - Completed batch 33/33
+2025-06-25 22:36:35,748 - INFO - Created 13540 tax units from 32104 households
+2025-06-25 22:36:35,764 - INFO - Saved 13540 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
+2025-06-25 22:37:16,541 - INFO - Loading processed PUMS data...
+2025-06-25 22:37:16,541 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 22:37:16,541 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 22:37:16,671 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-25 22:37:16,671 - INFO - Processing households 1 to 1000 of 32104
+2025-06-25 22:37:18,753 - INFO - Completed batch 1/33
+2025-06-25 22:37:18,753 - INFO - Processing households 1001 to 2000 of 32104
+2025-06-25 22:37:21,764 - INFO - Completed batch 2/33
+2025-06-25 22:37:21,764 - INFO - Processing households 2001 to 3000 of 32104
+2025-06-25 22:37:24,731 - INFO - Completed batch 3/33
+2025-06-25 22:37:24,731 - INFO - Processing households 3001 to 4000 of 32104
+2025-06-25 22:37:27,729 - INFO - Completed batch 4/33
+2025-06-25 22:37:27,729 - INFO - Processing households 4001 to 5000 of 32104
+2025-06-25 22:37:30,682 - INFO - Completed batch 5/33
+2025-06-25 22:37:30,682 - INFO - Processing households 5001 to 6000 of 32104
+2025-06-25 22:37:33,729 - INFO - Completed batch 6/33
+2025-06-25 22:37:33,729 - INFO - Processing households 6001 to 7000 of 32104
+2025-06-25 22:37:36,079 - INFO - Completed batch 7/33
+2025-06-25 22:37:36,079 - INFO - Processing households 7001 to 8000 of 32104
+2025-06-25 22:37:38,957 - INFO - Completed batch 8/33
+2025-06-25 22:37:38,957 - INFO - Processing households 8001 to 9000 of 32104
+2025-06-25 22:37:42,159 - INFO - Completed batch 9/33
+2025-06-25 22:37:42,159 - INFO - Processing households 9001 to 10000 of 32104
+2025-06-25 22:37:45,249 - INFO - Completed batch 10/33
+2025-06-25 22:37:45,249 - INFO - Processing households 10001 to 11000 of 32104
+2025-06-25 22:37:48,317 - INFO - Completed batch 11/33
+2025-06-25 22:37:48,317 - INFO - Processing households 11001 to 12000 of 32104
+2025-06-25 22:37:51,429 - INFO - Completed batch 12/33
+2025-06-25 22:37:51,429 - INFO - Processing households 12001 to 13000 of 32104
+2025-06-25 22:37:54,117 - INFO - Completed batch 13/33
+2025-06-25 22:37:54,117 - INFO - Processing households 13001 to 14000 of 32104
+2025-06-25 22:37:56,603 - INFO - Completed batch 14/33
+2025-06-25 22:37:56,603 - INFO - Processing households 14001 to 15000 of 32104
+2025-06-25 22:37:59,661 - INFO - Completed batch 15/33
+2025-06-25 22:37:59,661 - INFO - Processing households 15001 to 16000 of 32104
+2025-06-25 22:38:02,692 - INFO - Completed batch 16/33
+2025-06-25 22:38:02,692 - INFO - Processing households 16001 to 17000 of 32104
+2025-06-25 22:38:05,828 - INFO - Completed batch 17/33
+2025-06-25 22:38:05,828 - INFO - Processing households 17001 to 18000 of 32104
+2025-06-25 22:38:08,904 - INFO - Completed batch 18/33
+2025-06-25 22:38:08,904 - INFO - Processing households 18001 to 19000 of 32104
+2025-06-25 22:38:11,930 - INFO - Completed batch 19/33
+2025-06-25 22:38:11,931 - INFO - Processing households 19001 to 20000 of 32104
+2025-06-25 22:38:14,020 - INFO - Completed batch 20/33
+2025-06-25 22:38:14,020 - INFO - Processing households 20001 to 21000 of 32104
+2025-06-25 22:38:17,016 - INFO - Completed batch 21/33
+2025-06-25 22:38:17,016 - INFO - Processing households 21001 to 22000 of 32104
+2025-06-25 22:38:20,055 - INFO - Completed batch 22/33
+2025-06-25 22:38:20,055 - INFO - Processing households 22001 to 23000 of 32104
+2025-06-25 22:38:23,068 - INFO - Completed batch 23/33
+2025-06-25 22:38:23,069 - INFO - Processing households 23001 to 24000 of 32104
+2025-06-25 22:38:26,121 - INFO - Completed batch 24/33
+2025-06-25 22:38:26,122 - INFO - Processing households 24001 to 25000 of 32104
+2025-06-25 22:38:29,188 - INFO - Completed batch 25/33
+2025-06-25 22:38:29,188 - INFO - Processing households 25001 to 26000 of 32104
+2025-06-25 22:38:31,739 - INFO - Completed batch 26/33
+2025-06-25 22:38:31,739 - INFO - Processing households 26001 to 27000 of 32104
+2025-06-25 22:38:34,327 - INFO - Completed batch 27/33
+2025-06-25 22:38:34,327 - INFO - Processing households 27001 to 28000 of 32104
+2025-06-25 22:38:37,205 - INFO - Completed batch 28/33
+2025-06-25 22:38:37,205 - INFO - Processing households 28001 to 29000 of 32104
+2025-06-25 22:38:40,264 - INFO - Completed batch 29/33
+2025-06-25 22:38:40,264 - INFO - Processing households 29001 to 30000 of 32104
+2025-06-25 22:38:43,420 - INFO - Completed batch 30/33
+2025-06-25 22:38:43,420 - INFO - Processing households 30001 to 31000 of 32104
+2025-06-25 22:38:46,570 - INFO - Completed batch 31/33
+2025-06-25 22:38:46,571 - INFO - Processing households 31001 to 32000 of 32104
+2025-06-25 22:38:49,677 - INFO - Completed batch 32/33
+2025-06-25 22:38:49,677 - INFO - Processing households 32001 to 32104 of 32104
+2025-06-25 22:38:49,987 - INFO - Completed batch 33/33
+2025-06-25 22:38:50,010 - INFO - Created 13540 tax units from 32104 households
+2025-06-25 22:38:50,027 - INFO - Saved 13540 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
+2025-06-25 22:53:49,338 - INFO - Loading processed PUMS data...
+2025-06-25 22:53:49,338 - INFO - Looking for person data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
+2025-06-25 22:53:49,338 - INFO - Looking for household data at: /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
+2025-06-25 22:53:49,469 - INFO - Creating tax units using rule-based approach (batch_size=1000, n_jobs=1)...
+2025-06-25 22:53:49,470 - INFO - Processing households 1 to 1000 of 32104
+2025-06-25 22:53:51,735 - INFO - Completed batch 1/33
+2025-06-25 22:53:51,735 - INFO - Processing households 1001 to 2000 of 32104
+2025-06-25 22:53:54,913 - INFO - Completed batch 2/33
+2025-06-25 22:53:54,913 - INFO - Processing households 2001 to 3000 of 32104
+2025-06-25 22:53:58,284 - INFO - Completed batch 3/33
+2025-06-25 22:53:58,285 - INFO - Processing households 3001 to 4000 of 32104
+2025-06-25 22:54:01,551 - INFO - Completed batch 4/33
+2025-06-25 22:54:01,551 - INFO - Processing households 4001 to 5000 of 32104
+2025-06-25 22:54:04,857 - INFO - Completed batch 5/33
+2025-06-25 22:54:04,857 - INFO - Processing households 5001 to 6000 of 32104
+2025-06-25 22:54:08,140 - INFO - Completed batch 6/33
+2025-06-25 22:54:08,140 - INFO - Processing households 6001 to 7000 of 32104
+2025-06-25 22:54:10,862 - INFO - Completed batch 7/33
+2025-06-25 22:54:10,862 - INFO - Processing households 7001 to 8000 of 32104
+2025-06-25 22:54:13,995 - INFO - Completed batch 8/33
+2025-06-25 22:54:13,996 - INFO - Processing households 8001 to 9000 of 32104
+2025-06-25 22:54:17,383 - INFO - Completed batch 9/33
+2025-06-25 22:54:17,383 - INFO - Processing households 9001 to 10000 of 32104
+2025-06-25 22:54:20,681 - INFO - Completed batch 10/33
+2025-06-25 22:54:20,681 - INFO - Processing households 10001 to 11000 of 32104
+2025-06-25 22:54:24,301 - INFO - Completed batch 11/33
+2025-06-25 22:54:24,302 - INFO - Processing households 11001 to 12000 of 32104
+2025-06-25 22:54:27,982 - INFO - Completed batch 12/33
+2025-06-25 22:54:27,982 - INFO - Processing households 12001 to 13000 of 32104
+2025-06-25 22:54:31,046 - INFO - Completed batch 13/33
+2025-06-25 22:54:31,047 - INFO - Processing households 13001 to 14000 of 32104
+2025-06-25 22:54:33,907 - INFO - Completed batch 14/33
+2025-06-25 22:54:33,908 - INFO - Processing households 14001 to 15000 of 32104
+2025-06-25 22:54:37,370 - INFO - Completed batch 15/33
+2025-06-25 22:54:37,370 - INFO - Processing households 15001 to 16000 of 32104
+2025-06-25 22:54:40,699 - INFO - Completed batch 16/33
+2025-06-25 22:54:40,699 - INFO - Processing households 16001 to 17000 of 32104
+2025-06-25 22:54:44,276 - INFO - Completed batch 17/33
+2025-06-25 22:54:44,277 - INFO - Processing households 17001 to 18000 of 32104
+2025-06-25 22:54:47,657 - INFO - Completed batch 18/33
+2025-06-25 22:54:47,657 - INFO - Processing households 18001 to 19000 of 32104
+2025-06-25 22:54:50,880 - INFO - Completed batch 19/33
+2025-06-25 22:54:50,880 - INFO - Processing households 19001 to 20000 of 32104
+2025-06-25 22:54:53,226 - INFO - Completed batch 20/33
+2025-06-25 22:54:53,226 - INFO - Processing households 20001 to 21000 of 32104
+2025-06-25 22:54:56,788 - INFO - Completed batch 21/33
+2025-06-25 22:54:56,788 - INFO - Processing households 21001 to 22000 of 32104
+2025-06-25 22:55:00,208 - INFO - Completed batch 22/33
+2025-06-25 22:55:00,209 - INFO - Processing households 22001 to 23000 of 32104
+2025-06-25 22:55:03,479 - INFO - Completed batch 23/33
+2025-06-25 22:55:03,479 - INFO - Processing households 23001 to 24000 of 32104
+2025-06-25 22:55:06,776 - INFO - Completed batch 24/33
+2025-06-25 22:55:06,776 - INFO - Processing households 24001 to 25000 of 32104
+2025-06-25 22:55:10,086 - INFO - Completed batch 25/33
+2025-06-25 22:55:10,087 - INFO - Processing households 25001 to 26000 of 32104
+2025-06-25 22:55:12,863 - INFO - Completed batch 26/33
+2025-06-25 22:55:12,863 - INFO - Processing households 26001 to 27000 of 32104
+2025-06-25 22:55:15,800 - INFO - Completed batch 27/33
+2025-06-25 22:55:15,800 - INFO - Processing households 27001 to 28000 of 32104
+2025-06-25 22:55:19,012 - INFO - Completed batch 28/33
+2025-06-25 22:55:19,012 - INFO - Processing households 28001 to 29000 of 32104
+2025-06-25 22:55:22,461 - INFO - Completed batch 29/33
+2025-06-25 22:55:22,461 - INFO - Processing households 29001 to 30000 of 32104
+2025-06-25 22:55:25,750 - INFO - Completed batch 30/33
+2025-06-25 22:55:25,750 - INFO - Processing households 30001 to 31000 of 32104
+2025-06-25 22:55:29,245 - INFO - Completed batch 31/33
+2025-06-25 22:55:29,245 - INFO - Processing households 31001 to 32000 of 32104
+2025-06-25 22:55:32,643 - INFO - Completed batch 32/33
+2025-06-25 22:55:32,643 - INFO - Processing households 32001 to 32104 of 32104
+2025-06-25 22:55:32,996 - INFO - Completed batch 33/33
+2025-06-25 22:55:33,040 - INFO - Created 46913 tax units from 32104 households
+2025-06-25 22:55:33,085 - INFO - Saved 46913 tax units to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/processed/tax_units_rule_based.parquet
