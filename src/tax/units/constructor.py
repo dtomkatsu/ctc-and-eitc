@@ -12,8 +12,7 @@ import numpy as np
 
 # Import modular components
 from .status import is_married_filing_jointly, is_married_filing_separately, is_head_of_household
-from .income import calculate_person_income, calculate_tax_unit_income, calculate_household_income
-from .relationships import identify_relationships
+from .income import calculate_tax_unit_income
 from .dependencies import identify_dependents
 from .utils import setup_logging, validate_input_data, create_person_id
 
