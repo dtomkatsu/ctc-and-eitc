@@ -80,7 +80,7 @@ class PUMSDataLoader:
         hh_df = pd.read_csv(hh_file, dtype=self.household_columns)
         
         # Load person data
-        person_file = self.data_dir / f'psam_h{state}.csv'
+        person_file = self.data_dir / f'psam_p{state}.csv'
         if not person_file.exists():
             raise FileNotFoundError(f"Person PUMS file not found: {person_file}")
         
@@ -105,24 +105,27 @@ class PUMSDataLoader:
         return person_df, hh_df
     
     def _adjust_income(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply income adjustment factors to monetary columns."""
+        """Prepare income columns by filling NA values with 0.
+        
+        Note: We don't apply the ADJINC factor here because it will be applied
+        in the _calculate_income method of the TaxUnitConstructor.
+        """
         df = df.copy()
         
-        # Define monetary columns that need adjustment
+        # Define monetary columns that need NA filling
         monetary_cols = [
             'WAGP', 'SEMP', 'INTP', 'DIV', 'RETP', 'SSP', 'SSIP', 
-            'OIP', 'PAP', 'PINCP', 'HINCP', 'PERNP', 'INTP', 'RETP',
-            'SSP', 'SSIP', 'PAP', 'OIP', 'POVPIP'
+            'OIP', 'PAP', 'PINCP', 'HINCP', 'PERNP', 'POVPIP'
         ]
         
-        # Apply ADJINC factor if available
+        # Fill NA with 0 for all monetary columns
+        for col in monetary_cols:
+            if col in df.columns:
+                df[col] = df[col].fillna(0)
+                
+        # Ensure ADJINC is a float and fill NA with 1.0 (no adjustment)
         if 'ADJINC' in df.columns:
-            df['ADJINC'] = df['ADJINC'].fillna(1_000_000)
-            adj_factor = df['ADJINC'] / 1_000_000
-            
-            for col in monetary_cols:
-                if col in df.columns:
-                    df[col] = df[col].fillna(0) * adj_factor
+            df['ADJINC'] = df['ADJINC'].fillna(1.0).astype(float)
         
         return df
     

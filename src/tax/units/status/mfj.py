@@ -55,11 +55,11 @@ def _are_married(person1: pd.Series, person2: pd.Series) -> bool:
         return False
         
     # Check relationship codes
-    rel1 = str(person1.get('RELSHIPP', ''))
-    rel2 = str(person2.get('RELSHIPP', ''))
+    rel1 = person1.get('RELSHIPP', 0)
+    rel2 = person2.get('RELSHIPP', 0)
     
-    # Should be reference person (20) and spouse (21) or vice versa
-    return (rel1 == '20' and rel2 == '21') or (rel1 == '21' and rel2 == '20')
+    # Should be reference person (1) and spouse (2) or vice versa
+    return (rel1 == 1 and rel2 == 2) or (rel1 == 2 and rel2 == 1)
 
 def _are_citizens_or_residents(person1: pd.Series, person2: pd.Series) -> bool:
     """Check if both people are US citizens or resident aliens."""

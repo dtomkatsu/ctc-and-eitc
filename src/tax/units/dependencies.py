@@ -27,18 +27,20 @@ def identify_dependents(household: pd.DataFrame) -> Dict[str, List[str]]:
     
     # Get all adults in the household (potential filers)
     # For tax purposes, students under 24 can still be dependents
+    # In PUMS, SCHL is the education level, where 1-24 indicates various levels of education
+    # We'll consider someone a student if they are enrolled in school (SCHL >= 15 for college)
     adults = household[
         (household['AGEP'] >= 18) &  # 18 or older
         ~(  # But not students under 24
             (household['AGEP'] < 24) & 
-            (household['SCH'] == 1)  # Enrolled in school
+            (household['SCHL'] >= 15)  # Enrolled in college or higher
         )
     ].copy()
     
     # Get all children and students in the household
     children = household[
         (household['AGEP'] < 18) |  # Under 18
-        ((household['AGEP'] < 24) & (household['SCH'] == 1))  # Students under 24
+        ((household['AGEP'] < 24) & (household['SCHL'] >= 15))  # Students under 24 in college
     ].copy()
     
     # First, assign children and students to potential filers
@@ -111,17 +113,17 @@ def _find_potential_guardians(
             potential.append(guardian_id)
             continue
             
-        # For students, also consider the primary filer (RELSHIPP='20') as a potential guardian
+        # For students, also consider the primary filer (RELSHIPP=1) as a potential guardian
         # if the student is related to them or lives with them
         if (_is_student(child) and 
-            guardian.get('RELSHIPP') == '20' and  # Primary filer
+            guardian.get('RELSHIPP') == 1 and  # Primary filer (householder)
             _lived_with_all_year(child, guardian, household)):  # Lives with the primary filer
             potential.append(guardian_id)
             continue
     
     # If no guardians found and this is a student, default to the primary filer if they live together
     if not potential and _is_student(child):
-        primary_filer = household[household['RELSHIPP'] == '20']
+        primary_filer = household[household['RELSHIPP'] == 1]
         if not primary_filer.empty and _lived_with_all_year(child, primary_filer.iloc[0], household):
             potential.append(primary_filer.index[0])
     
@@ -130,10 +132,11 @@ def _find_potential_guardians(
 def _is_parent(guardian: pd.Series, child: pd.Series, household: pd.DataFrame) -> bool:
     """Check if guardian is a parent of the child."""
     # Check relationship codes
-    rel = str(child.get('RELSHIPP', ''))
+    child_rel = child.get('RELSHIPP', 0)
+    guardian_rel = guardian.get('RELSHIPP', 0)
     
-    # Child is biological, step, or adopted child of reference person
-    if rel in ['00', '02', '03'] and guardian.get('RELSHIPP') == '20':
+    # Child (RELSHIPP=3) and guardian is householder (RELSHIPP=1) or spouse (RELSHIPP=2)
+    if child_rel == 3 and guardian_rel in [1, 2]:
         return True
         
     return False
@@ -155,7 +158,7 @@ def _is_stepparent(guardian: pd.Series, child: pd.Series, household: pd.DataFram
 def _is_foster_parent(guardian: pd.Series, child: pd.Series, household: pd.DataFrame) -> bool:
     """Check if guardian is a foster parent of the child."""
     # Check if child is a foster child (RELSHIPP = 05)
-    if child.get('RELSHIPP') == '05' and guardian.get('RELSHIPP') == '20':
+    if child.get('RELSHIPP') == 5 and guardian.get('RELSHIPP') == 1:
         return True
         
     return False

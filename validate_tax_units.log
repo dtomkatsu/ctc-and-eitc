@@ -166,3 +166,10 @@ KeyError: 'adult1_id'
 2025-06-26 13:13:15,965 - ERROR - Falling back to estimated values
 2025-06-26 13:13:15,965 - INFO - Applying PUMS weights to tax units...
 2025-06-26 13:13:16,027 - INFO - Saved validation report to analysis/tax_unit_validation.csv
+2025-06-26 14:14:29,345 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-06-26 14:14:29,431 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-06-26 14:14:29,444 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-06-26 14:14:29,535 - ERROR - Error loading SOI data: invalid literal for int() with base 10: '(1)'
+2025-06-26 14:14:29,535 - ERROR - Falling back to estimated values
+2025-06-26 14:14:29,535 - INFO - Applying PUMS weights to tax units...
+2025-06-26 14:14:29,581 - INFO - Saved validation report to analysis/tax_unit_validation.csv

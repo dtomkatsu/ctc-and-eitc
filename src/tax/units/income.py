@@ -27,14 +27,10 @@ def calculate_person_income(person: pd.Series) -> float:
     total_income = 0.0
     
     # Add up all income components
-    # Wages, salaries, tips
-    total_income += float(person.get('WAGP', 0) or 0)
-    
-    # Self-employment income (can be negative)
-    total_income += float(person.get('SEMP', 0) or 0)
-    
-    # Interest income
-    total_income += float(person.get('INTP', 0) or 0)
+    total_income += float(person.get('WAGP', 0) or 0)  # Wage/salary income
+    total_income += float(person.get('SEMP', 0) or 0)  # Self-employment income
+    total_income += float(person.get('INTP', 0) or 0)  # Interest income
+    total_income += float(person.get('DIV', 0) or 0)   # Dividend income
     
     # Retirement income
     total_income += float(person.get('RETP', 0) or 0)
@@ -46,7 +42,8 @@ def calculate_person_income(person: pd.Series) -> float:
     total_income += float(person.get('OIP', 0) or 0)
     
     # Apply ADJINC (adjustment factor for income)
-    adjinc = float(person.get('ADJINC', 1000000) or 1000000) / 1000000.0
+    # ADJINC values in PUMS data are already the adjustment factors (around 1.0-1.2)
+    adjinc = float(person.get('ADJINC', 1.0) or 1.0)
     total_income *= adjinc
     
     return total_income

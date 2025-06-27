@@ -142,8 +142,6 @@ class TaxUnitConstructor:
         
         # Track which dependents have been claimed
         claimed_dependents = set()
-        # Track which adults have been processed in joint filers
-        processed_adults = set()
         tax_units = []
         
         # Process joint filers first (prioritize married couples)
@@ -174,12 +172,10 @@ class TaxUnitConstructor:
                 logger.info(f"  Created joint tax unit with {len(tax_unit['dependents'])} dependents")
                 tax_units.append(tax_unit)
                 claimed_dependents.update(tax_unit['dependents'])
-                # Mark both adults as processed
-                processed_adults.update([adult1_id, adult2_id])
                 logger.debug(f"  Updated claimed dependents: {claimed_dependents}")
         
         # Process remaining adults as single filers
-        remaining_adults = adults[~adults.index.isin(processed_adults)]
+        remaining_adults = adults[~adults.index.isin(claimed_dependents)]
         logger.debug(f"Processing {len(remaining_adults)} remaining adults as single filers")
         
         for _, adult in remaining_adults.iterrows():
@@ -270,32 +266,6 @@ class TaxUnitConstructor:
         income1 = self._calculate_income(adult1)
         income2 = self._calculate_income(adult2)
         
-        if income1 > 0 and income2 > 0:
-            ratio = max(income1, income2) / min(income1, income2)
-            if ratio > 10:
-                logger.debug(f"Significant income difference (ratio: {ratio:.1f}), considering separate filing")
-                return True
-                
-        # 3. Check for significant self-employment income differences
-        semp1 = float(adult1.get('SEMP', 0) or 0)
-        semp2 = float(adult2.get('SEMP', 0) or 0)
-        
-        if (abs(semp1) > 50000 and semp2 == 0) or (abs(semp2) > 50000 and semp1 == 0):
-            logger.debug("Significant self-employment income difference, considering separate filing")
-            return True
-            
-        # 4. Randomly assign some couples to file separately to match real-world distribution
-        import random
-        random.seed(int(adult1.get('SERIALNO', '0')[-4:]) + int(adult1.get('SPORDER', 0)))
-        if random.random() < 0.02:  # Approximately 2% of couples file separately
-            logger.debug("Randomly assigned to file separately")
-            return True
-            
-        return False
-        
-    def _calculate_income(self, person: pd.Series) -> float:
-        """
-        Calculate total income for a person, adjusted by ADJINC factor.
         
         Args:
             person: Series containing person's data with income fields
@@ -343,12 +313,9 @@ class TaxUnitConstructor:
         # Combine all members for income calculation
         members_to_include = [adult1, adult2]
         if valid_dependents:
-            for dep_id in valid_dependents:
-                members_to_include.append(hh_members.loc[dep_id])
-        
-        # Create DataFrame from Series objects
-        income_df = pd.DataFrame(members_to_include)
-        income = calculate_tax_unit_income(income_df)
+            members_to_include.extend(hh_members.loc[valid_dependents].to_dict('records'))
+            
+        income = calculate_tax_unit_income(pd.DataFrame(members_to_include))
         
         # Create tax unit
         tax_unit = {
@@ -394,12 +361,9 @@ class TaxUnitConstructor:
         # Calculate income (include dependents in the calculation)
         members_to_include = [adult]
         if valid_dependents:
-            for dep_id in valid_dependents:
-                members_to_include.append(hh_members.loc[dep_id])
-        
-        # Create DataFrame from Series objects
-        income_df = pd.DataFrame(members_to_include)
-        income = calculate_tax_unit_income(income_df)
+            members_to_include.extend(hh_members.loc[valid_dependents].to_dict('records'))
+            
+        income = calculate_tax_unit_income(pd.DataFrame(members_to_include))
         
         # Create tax unit
         tax_unit = {
@@ -413,3 +377,102 @@ class TaxUnitConstructor:
         
         logger.debug(f"Created tax unit: {tax_unit}")
         return tax_unit
+        person: Series containing person's data with income fields
+        
+    Returns:
+        float: Total income adjusted by ADJINC factor
+    """
+    # Get ADJINC factor (default to 1.0 if not present)
+    # ADJINC values in PUMS data are already the adjustment factors (around 1.0-1.2)
+    adjinc = float(person.get('ADJINC', 1.0))
+    
+    # Use PINCP (total person income) which already includes all income sources
+    # This avoids double-counting that would occur if we summed individual components
+    total_income = float(person.get('PINCP', 0) or 0)
+    
+    # Apply ADJINC adjustment
+    total_income *= adjinc
+    
+    return total_income
+
+def _create_joint_filer(self, adult1: pd.Series, adult2: pd.Series, 
+                       hh_members: pd.DataFrame, hh_data: pd.Series, 
+                       available_deps: List[str] = None) -> Optional[dict]:
+    """
+    Create a tax unit for a joint filer.
+    
+    Args:
+        adult1: First adult in the joint filing couple
+        adult2: Second adult in the joint filing couple
+        hh_members: All members of the household
+        hh_data: Household-level data
+        available_deps: List of available dependent person_ids that can be claimed
+        
+    Returns:
+        Dictionary containing tax unit information or None if not valid
+    """
+    if available_deps is None:
+        available_deps = []
+        
+    logger.debug(f"Creating joint filer tax unit for {adult1.name} and {adult2.name} with {len(available_deps)} available dependents")
+    
+    # Filter available dependents to only include those actually in the household
+    valid_dependents = [d for d in available_deps if d in hh_members.index]
+    
+    # Combine all members for income calculation
+    members_to_include = [adult1, adult2]
+    if valid_dependents:
+        members_to_include.extend(hh_members.loc[valid_dependents].to_dict('records'))
+        
+    income = calculate_tax_unit_income(pd.DataFrame(members_to_include))
+    
+    # Create tax unit
+    tax_unit = {
+        'filer_id': f"{adult1.name}_{adult2.name}",
+        'filing_status': 'joint',
+        'primary_filer_id': adult1.name,
+        'secondary_filer_id': adult2.name,
+        'income': income,
+        'num_dependents': len(valid_dependents),
+        'dependents': valid_dependents,
+        'hh_id': adult1['SERIALNO']
+    }
+    
+    logger.debug(f"Created joint tax unit: {tax_unit}")
+    return tax_unit
+
+def _create_single_filer(self, adult: pd.Series, hh_members: pd.DataFrame, 
+                       hh_data: pd.Series) -> Optional[dict]:
+    """
+    Create a tax unit for a single filer.
+    
+    Args:
+        adult: The adult who is the primary filer
+        hh_members: All members of the household
+        hh_data: Household-level data
+        
+    Returns:
+        Dictionary containing tax unit information or None if not valid
+    """
+    # Identify dependents
+    dependents = identify_dependents(hh_members)
+    adult_dependents = dependents.get(adult.name, [])
+    
+    # Check for Head of Household status
+    is_hoh = is_head_of_household(adult, hh_members)
+    
+    # Calculate income
+    income = calculate_tax_unit_income(pd.concat([pd.DataFrame([adult]), 
+                                                hh_members.loc[adult_dependents]]))
+    
+    # Create tax unit
+    tax_unit = {
+        'filer_id': adult.name,
+        'filing_status': 'head_of_household' if is_hoh else 'single',
+        'income': income,
+        'num_dependents': len(adult_dependents),
+        'dependents': adult_dependents,
+        'hh_id': adult['SERIALNO']
+    }
+    
+    return tax_unit
