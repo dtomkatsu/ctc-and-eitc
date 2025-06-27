@@ -160,12 +160,12 @@ def _is_parent(adult: pd.Series, child: pd.Series, household: pd.DataFrame) -> b
     # 36 = Institutionalized group quarters population
     # 37 = Noninstitutionalized group quarters population
     
-    # If adult is householder (20) and child is biological/adopted/step child (22-24) or grandchild (25)
-    if adult_rel == 20 and child_rel in [22, 23, 24, 25]:
+    # If adult is householder (20) and child is biological/adopted/step child (3, 22-24) or grandchild (25)
+    if adult_rel == 20 and child_rel in [3, 22, 23, 24, 25]:
         return True
     
-    # If adult is spouse (21) and child is biological/adopted/step child (22-24) or grandchild (25)  
-    if adult_rel == 21 and child_rel in [22, 23, 24, 25]:
+    # If adult is spouse (21) and child is biological/adopted/step child (3, 22-24) or grandchild (25)  
+    if adult_rel == 21 and child_rel in [3, 22, 23, 24, 25]:
         return True
         
     # Foster child relationship

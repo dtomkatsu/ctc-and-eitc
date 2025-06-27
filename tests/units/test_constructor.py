@@ -12,24 +12,35 @@ def create_test_data():
     """Create test data for tax unit construction."""
     # Create person data
     person_data = [
-        # Household 1 - Married couple with children
-        {'SERIALNO': '1', 'SPORDER': '1', 'AGEP': 35, 'SEX': 1, 'MAR': 1, 'RELSHIPP': '20', 'WAGP': 60000, 'HINCP': 100000, 'CIT': 1},
-        {'SERIALNO': '1', 'SPORDER': '2', 'AGEP': 33, 'SEX': 2, 'MAR': 1, 'RELSHIPP': '21', 'WAGP': 40000, 'HINCP': 100000, 'CIT': 1},
-        {'SERIALNO': '1', 'SPORDER': '3', 'AGEP': 10, 'SEX': 1, 'MAR': 0, 'RELSHIPP': '00', 'WAGP': 0, 'HINCP': 100000, 'CIT': 1},
+        # Household 1 - Married couple with child (joint filers)
+        {'SERIALNO': '1', 'SPORDER': '1', 'AGEP': 35, 'SEX': 1, 'MAR': 1, 'RELSHIPP': 20, 'WAGP': 60000, 'HINCP': 100000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 16},
+        {'SERIALNO': '1', 'SPORDER': '2', 'AGEP': 33, 'SEX': 2, 'MAR': 1, 'RELSHIPP': 21, 'WAGP': 40000, 'HINCP': 100000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 16},
+        {'SERIALNO': '1', 'SPORDER': '3', 'AGEP': 5, 'SEX': 1, 'MAR': 0, 'RELSHIPP': 22, 'WAGP': 0, 'HINCP': 100000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 1},
         
         # Household 2 - Single parent with child
-        {'SERIALNO': '2', 'SPORDER': '1', 'AGEP': 30, 'SEX': 2, 'MAR': 5, 'RELSHIPP': '20', 'WAGP': 45000, 'HINCP': 50000, 'CIT': 1},
-        {'SERIALNO': '2', 'SPORDER': '2', 'AGEP': 8, 'SEX': 1, 'MAR': 0, 'RELSHIPP': '00', 'WAGP': 0, 'HINCP': 50000, 'CIT': 1},
+        {'SERIALNO': '2', 'SPORDER': '1', 'AGEP': 30, 'SEX': 2, 'MAR': 5, 'RELSHIPP': 20, 'WAGP': 45000, 'HINCP': 50000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 16},
+        {'SERIALNO': '2', 'SPORDER': '2', 'AGEP': 8, 'SEX': 1, 'MAR': 0, 'RELSHIPP': 22, 'WAGP': 0, 'HINCP': 50000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 5},
         
         # Household 3 - Single person
-        {'SERIALNO': '3', 'SPORDER': '1', 'AGEP': 28, 'SEX': 1, 'MAR': 5, 'RELSHIPP': '20', 'WAGP': 50000, 'HINCP': 50000, 'CIT': 1}
+        {'SERIALNO': '3', 'SPORDER': '1', 'AGEP': 28, 'SEX': 1, 'MAR': 5, 'RELSHIPP': 20, 'WAGP': 50000, 'HINCP': 50000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 16},
+        
+        # Household 4 - Married couple filing separately (different incomes)
+        {'SERIALNO': '4', 'SPORDER': '1', 'AGEP': 40, 'SEX': 1, 'MAR': 1, 'RELSHIPP': 20, 'WAGP': 100000, 'HINCP': 100000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 16},
+        {'SERIALNO': '4', 'SPORDER': '2', 'AGEP': 38, 'SEX': 2, 'MAR': 1, 'RELSHIPP': 21, 'WAGP': 5000, 'HINCP': 100000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 16},
+        {'SERIALNO': '4', 'SPORDER': '3', 'AGEP': 12, 'SEX': 1, 'MAR': 0, 'RELSHIPP': 22, 'WAGP': 0, 'HINCP': 100000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 6},
+        
+        # Household 5 - Married couple filing separately (non-resident alien)
+        {'SERIALNO': '5', 'SPORDER': '1', 'AGEP': 45, 'SEX': 1, 'MAR': 1, 'RELSHIPP': 20, 'WAGP': 80000, 'HINCP': 100000, 'CIT': 5, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 16},
+        {'SERIALNO': '5', 'SPORDER': '2', 'AGEP': 43, 'SEX': 2, 'MAR': 1, 'RELSHIPP': 21, 'WAGP': 20000, 'HINCP': 100000, 'CIT': 1, 'SEMP': 0, 'ADJINC': 1.0, 'SCHL': 16}
     ]
     
     # Create household data
     hh_data = [
-        {'SERIALNO': '1', 'HINCP': 100000, 'ADJINC': 1.0},
-        {'SERIALNO': '2', 'HINCP': 50000, 'ADJINC': 1.0},
-        {'SERIALNO': '3', 'HINCP': 50000, 'ADJINC': 1.0}
+        {'SERIALNO': '1', 'HINCP': 100000, 'ADJINC': 1.0},  # Joint filers
+        {'SERIALNO': '2', 'HINCP': 50000, 'ADJINC': 1.0},   # Single parent
+        {'SERIALNO': '3', 'HINCP': 50000, 'ADJINC': 1.0},   # Single person
+        {'SERIALNO': '4', 'HINCP': 100000, 'ADJINC': 1.0},  # MFS - income difference
+        {'SERIALNO': '5', 'HINCP': 100000, 'ADJINC': 1.0}   # MFS - non-resident alien
     ]
     
     # Create DataFrames
@@ -91,13 +102,36 @@ class TestTaxUnitConstructor:
         # Create tax units
         tax_units = constructor.create_rule_based_units()
         
-        # Should create 3 tax units (one per household in test data)
-        assert len(tax_units) == 3
+        # Should create 7 tax units (1 joint, 1 single parent, 1 single person, 2 MFS couples)
+        assert len(tax_units) == 7
         
         # Check that all expected households are represented
         hh_ids = set(tax_units['hh_id'])
-        assert '1' in hh_ids
-        assert '2' in hh_ids
+        assert '1' in hh_ids  # Joint filers
+        assert '2' in hh_ids  # Single parent
+        assert '3' in hh_ids  # Single person
+        assert '4' in hh_ids  # MFS - income difference
+        assert '5' in hh_ids  # MFS - non-resident alien
+        
+        # Check MFS tax units
+        mfs_units = tax_units[tax_units['filing_status'] == 'married_filing_separate']
+        assert len(mfs_units) == 4  # Should have 4 MFS tax units (one for each spouse in household 4 and 5)
+        
+        # Check that MFS units have the correct structure
+        for _, unit in mfs_units.iterrows():
+            assert 'primary_filer_id' in unit
+            assert 'dependents' in unit
+            assert isinstance(unit['dependents'], list)
+            
+        # Verify household 4 has 2 MFS filers with correct incomes
+        hh4_units = tax_units[tax_units['hh_id'] == '4']
+        assert len(hh4_units) == 2
+        assert all(status in ['married_filing_separate'] for status in hh4_units['filing_status'])
+        
+        # Verify household 5 has 2 MFS filers (non-resident alien case)
+        hh5_units = tax_units[tax_units['hh_id'] == '5']
+        assert len(hh5_units) == 2
+        assert all(status in ['married_filing_separate'] for status in hh5_units['filing_status'])
         assert '3' in hh_ids
         
         # Check that household 1 has a joint filer
@@ -135,27 +169,28 @@ class TestTaxUnitConstructor:
         assert '1_3' in joint_filer['dependents']  # Child should be a dependent
     
     def test_identify_joint_filers(self):
-        """Test identification of joint filers."""
+        """Test identification of joint filers and MFS filers."""
         person_df, hh_df = create_test_data()
-        
+
         # Create a copy to avoid modifying the original
         person_df = person_df.copy()
-        
+
         # Set the index
         person_id = person_df['SERIALNO'].astype(str) + '_' + person_df['SPORDER'].astype(str)
         person_df = person_df.set_index(person_id)
         person_df.index.name = 'person_id'
-        
+
         constructor = TaxUnitConstructor(person_df, hh_df)
-        
+
         # Get household 1 data
         hh1 = person_df[person_df.index.str.startswith('1_')]
-        
+
         # Identify joint filers - pass both household and all members
-        joint_filers = constructor._identify_joint_filers(hh1, hh1)
+        joint_filers, mfs_filers = constructor._identify_joint_filers(hh1, hh1)
         
-        # Should find one pair of joint filers
+        # Should find one pair of joint filers and no MFS filers in household 1
         assert len(joint_filers) == 1
+        assert len(mfs_filers) == 0
         assert joint_filers[0] in [('1_1', '1_2'), ('1_2', '1_1')]
     
     def test_create_single_filer(self):
@@ -183,4 +218,4 @@ class TestTaxUnitConstructor:
         # Verify the tax unit was created correctly
         assert tax_unit is not None
         assert tax_unit['filing_status'] in ['single', 'head_of_household']  # Could be either
-        assert tax_unit['filer_id'] == '3_1'
+        assert tax_unit['filer_id'] == '3_single_3_1'  # New format includes filing status

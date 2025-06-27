@@ -146,11 +146,56 @@ class TaxUnitConstructor:
         processed_adults = set()
         tax_units = []
         
-        # Process joint filers first (prioritize married couples)
-        logger.debug("Identifying potential joint filers")
-        joint_filers = self._identify_joint_filers(adults, hh_group)
-        logger.debug(f"Found {len(joint_filers)} potential joint filer pairs")
+        # Identify potential joint filers and MFS filers
+        print("Identifying potential joint filers and MFS filers")
+        joint_filers, mfs_filers = self._identify_joint_filers(adults, hh_group)
+        print(f"CONSTRUCTOR: Found {len(joint_filers)} joint filer pairs and {len(mfs_filers)} MFS filer pairs")
         
+        # Debug: Print details of identified filers
+        for i, (id1, id2) in enumerate(joint_filers):
+            print(f"  Joint filer pair {i+1}: {id1} and {id2}")
+        for i, (id1, id2) in enumerate(mfs_filers):
+            print(f"  MFS filer pair {i+1}: {id1} and {id2}")
+            person1 = adults.loc[id1]
+            person2 = adults.loc[id2]
+            print(f"    {id1}: MAR={person1.get('MAR')}, RELSHIPP={person1.get('RELSHIPP')}, CIT={person1.get('CIT')}, WAGP={person1.get('WAGP')}")
+            print(f"    {id2}: MAR={person2.get('MAR')}, RELSHIPP={person2.get('RELSHIPP')}, CIT={person2.get('CIT')}, WAGP={person2.get('WAGP')}")
+        
+        # Process MFS filers first (they file as single)
+        for adult1_id, adult2_id in mfs_filers:
+            adult1 = adults.loc[adult1_id]
+            adult2 = adults.loc[adult2_id]
+            
+            logger.info(f"Processing MFS filers: {adult1_id} and {adult2_id}")
+            
+            # Get dependents for each adult
+            deps1 = set(dependents.get(adult1_id, []))
+            deps2 = set(dependents.get(adult2_id, []))
+            
+            # Remove already claimed dependents
+            available_deps1 = [d for d in deps1 if d not in claimed_dependents]
+            available_deps2 = [d for d in deps2 if d not in claimed_dependents]
+            
+            logger.debug(f"  {adult1_id} has {len(deps1)} potential dependents, {len(available_deps1)} available")
+            logger.debug(f"  {adult2_id} has {len(deps2)} potential dependents, {len(available_deps2)} available")
+            
+            # Create separate tax units for each MFS filer
+            tax_unit1 = self._create_single_filer(adult1, hh_group, hh_data, available_deps1, filing_status='married_separate')
+            if tax_unit1:
+                logger.info(f"  Created MFS tax unit for {adult1_id} with {len(tax_unit1['dependents'])} dependents")
+                tax_units.append(tax_unit1)
+                claimed_dependents.update(tax_unit1['dependents'])
+                
+            tax_unit2 = self._create_single_filer(adult2, hh_group, hh_data, available_deps2, filing_status='married_separate')
+            if tax_unit2:
+                logger.info(f"  Created MFS tax unit for {adult2_id} with {len(tax_unit2['dependents'])} dependents")
+                tax_units.append(tax_unit2)
+                claimed_dependents.update(tax_unit2['dependents'])
+                
+            # Mark both adults as processed
+            processed_adults.update([adult1_id, adult2_id])
+        
+        # Process joint filers
         for adult1_id, adult2_id in joint_filers:
             adult1 = adults.loc[adult1_id]
             adult2 = adults.loc[adult2_id]
@@ -213,40 +258,58 @@ class TaxUnitConstructor:
         logger.info(f"Completed processing household {hh_id}. Created {len(tax_units)} tax units")
         return tax_units
     
-    def _identify_joint_filers(self, adults: pd.DataFrame, hh_members: pd.DataFrame) -> List[Tuple[str, str]]:
+    def _identify_joint_filers(self, adults: pd.DataFrame, hh_members: pd.DataFrame) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
         """
-        Identify potential joint filers within a household.
+        Identify potential joint filers and married filing separately couples within a household.
         
         Args:
             adults: DataFrame of adult household members
             hh_members: All members of the household
             
         Returns:
-            List of (person_id1, person_id2) tuples for potential joint filers
+            Tuple of (joint_filers, mfs_filers) where each is a list of (person_id1, person_id2) tuples
         """
         joint_filers = []
+        mfs_filers = []
         processed = set()
         
         # Convert to list of (id, series) for easier iteration
         adult_list = [(idx, row) for idx, row in adults.iterrows()]
         
+        logger.debug(f"Checking {len(adult_list)} adults for potential joint/MFS filers")
+        
         for i, (id1, person1) in enumerate(adult_list):
             if id1 in processed:
+                logger.debug(f"Skipping already processed adult {id1}")
                 continue
                 
             for j in range(i + 1, len(adult_list)):
                 id2, person2 = adult_list[j]
                 
                 if id2 in processed:
+                    logger.debug(f"Skipping already processed adult {id2}")
                     continue
                 
-                # Use the status module to check for joint filing status
-                if is_married_filing_jointly(person1, person2, hh_members):
+                logger.debug(f"Checking if {id1} (MAR={person1.get('MAR')}, RELSHIPP={person1.get('RELSHIPP')}) and {id2} (MAR={person2.get('MAR')}, RELSHIPP={person2.get('RELSHIPP')}) are married")
+                
+                # First check if they should file as MFS (this covers all married couples)
+                mfs = is_married_filing_separately(person1, person2, hh_members)
+                if mfs:
+                    mfs_filers.append((id1, id2))
+                    logger.debug(f"  Married couple {id1} and {id2} will file separately")
+                    # Mark both as processed
+                    processed.update([id1, id2])
+                    break
+                
+                # If not MFS, check if they can file jointly
+                elif is_married_filing_jointly(person1, person2, hh_members):
                     joint_filers.append((id1, id2))
+                    logger.debug(f"  Identified joint filers: {id1} and {id2}")
+                    # Mark both as processed
                     processed.update([id1, id2])
                     break
         
-        return joint_filers
+        return joint_filers, mfs_filers
     
     def _should_file_separately(self, adult1: pd.Series, adult2: pd.Series, 
                               hh_members: pd.DataFrame) -> bool:
@@ -367,7 +430,8 @@ class TaxUnitConstructor:
         return tax_unit
 
     def _create_single_filer(self, adult: pd.Series, hh_members: pd.DataFrame, 
-                           hh_data: pd.Series, available_deps: List[str] = None) -> Optional[dict]:
+                           hh_data: pd.Series, available_deps: List[str] = None,
+                           filing_status: str = None) -> Optional[dict]:
         """
         Create a tax unit for a single filer.
         
@@ -388,8 +452,26 @@ class TaxUnitConstructor:
         # Filter available dependents to only include those actually in the household
         valid_dependents = [d for d in available_deps if d in hh_members.index]
         
-        # Check for Head of Household status based on available dependents
-        is_hoh = is_head_of_household(adult, hh_members.loc[valid_dependents] if valid_dependents else pd.DataFrame())
+        # Determine filing status if not provided
+        if filing_status is None:
+            filing_status = 'single'
+            
+            # Check if this person is married but filing separately
+            is_married_separate = False
+            for _, other_adult in hh_members.iterrows():
+                if other_adult.name != adult.name and other_adult.get('AGEP', 0) >= 18:
+                    if is_married_filing_separately(adult, other_adult, hh_members):
+                        filing_status = 'married_filing_separate'
+                        break
+            
+            # Check for Head of Household status if not married filing separately
+            if filing_status != 'married_filing_separate' and valid_dependents:
+                person_data = hh_members.copy()
+                person_data['SERIALNO'] = hh_data.get('SERIALNO', '')
+                
+                if is_head_of_household(adult, person_data):
+                    filing_status = 'head_of_household'
+                    logger.debug(f"Person {adult.name} qualifies as Head of Household")
         
         # Calculate income (include dependents in the calculation)
         members_to_include = [adult]
@@ -403,8 +485,8 @@ class TaxUnitConstructor:
         
         # Create tax unit
         tax_unit = {
-            'filer_id': adult.name,
-            'filing_status': 'head_of_household' if is_hoh else 'single',
+            'filer_id': f"{hh_data.get('SERIALNO', '')}_{filing_status}_{adult.name}",
+            'filing_status': filing_status,
             'income': income,
             'num_dependents': len(valid_dependents),
             'dependents': valid_dependents,
