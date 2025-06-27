@@ -13,7 +13,13 @@ import numpy as np
 import logging
 from pathlib import Path
 import sys
+import os
 from typing import Dict, Tuple, Optional
+
+# Add the project root directory to the Python path
+project_root = str(Path(__file__).parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # Set up logging
 logging.basicConfig(
@@ -29,22 +35,104 @@ logger = logging.getLogger(__name__)
 class TaxUnitValidator:
     """Class for validating tax units against known patterns and SOI data."""
     
-    def __init__(self, data_dir: str = 'data/processed', tax_units_dir: str = 'src/data/processed'):
-        """Initialize with paths to data files."""
+    def __init__(self, data_dir: str = 'data/processed', tax_units_dir: str = 'src/data/processed', n_jobs: int = -1):
+        """Initialize with paths to data files and processing options.
+        
+        Args:
+            data_dir: Directory containing processed data files
+            tax_units_dir: Directory containing tax unit files
+            n_jobs: Number of parallel jobs to use (-1 for all available CPUs)
+        """
         self.data_dir = Path(data_dir)
         self.tax_units_dir = Path(tax_units_dir)
+        self.n_jobs = n_jobs
         self.tax_units = None
         self.person_df = None
         self.hh_df = None
         self.soi_data = None
+        self.construction_time = None
         
     def load_data(self) -> bool:
         """Load the required data files."""
         try:
             # Load tax units from the tax_units_dir
             tax_units_path = self.tax_units_dir / 'tax_units_rule_based.parquet'
-            logger.info(f"Loading tax units from {tax_units_path}")
-            self.tax_units = pd.read_parquet(tax_units_path)
+            
+            # If tax units file doesn't exist, generate it
+            if not tax_units_path.exists():
+                logger.info(f"Tax units file not found at {tax_units_path}. Constructing tax units...")
+                if not self.construct_tax_units():
+                    return False
+            else:
+                logger.info(f"Loading tax units from {tax_units_path}")
+                self.tax_units = pd.read_parquet(tax_units_path)
+            
+            if self.tax_units is None or self.tax_units.empty:
+                logger.error("Failed to load or construct tax units")
+                return False
+                
+            logger.info(f"Loaded {len(self.tax_units)} tax units")
+            
+            # Load PUMS person data to get weights
+            person_path = self.data_dir / 'pums_person_processed.parquet'
+            logger.info(f"Loading person data from {person_path}")
+            self.person_df = pd.read_parquet(person_path)
+            
+            # Load household data
+            hh_path = self.data_dir / 'pums_household_processed.parquet'
+            logger.info(f"Loading household data from {hh_path}")
+            self.hh_df = pd.read_parquet(hh_path)
+            
+            # Load SOI data
+            self._load_soi_data()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error loading data: {e}", exc_info=True)
+            return False
+    
+    def construct_tax_units(self) -> bool:
+        """Construct tax units from PUMS data using multiprocessing."""
+        from src.data.pums_loader import PUMSDataLoader
+        from src.tax.units.constructor import TaxUnitConstructor
+        import time
+        
+        logger.info("Starting tax unit construction...")
+        start_time = time.time()
+        
+        try:
+            # Initialize data loader
+            data_loader = PUMSDataLoader()
+            
+            # Load person and household data
+            logger.info("Loading PUMS data...")
+            person_df, hh_df = data_loader.load_data()
+            
+            if person_df is None or person_df.empty or hh_df is None or hh_df.empty:
+                logger.error("Failed to load PUMS data")
+                return False
+            
+            # Create tax units with multiprocessing
+            logger.info(f"Constructing tax units using {self.n_jobs} processes...")
+            constructor = TaxUnitConstructor(person_df=person_df, hh_df=hh_df)
+            self.tax_units = constructor.create_rule_based_units(n_jobs=self.n_jobs)
+            
+            # Save the constructed tax units
+            output_path = self.tax_units_dir / 'tax_units_rule_based.parquet'
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            self.tax_units.to_parquet(output_path, index=False)
+            logger.info(f"Saved {len(self.tax_units)} tax units to {output_path}")
+            
+            # Record construction time
+            self.construction_time = time.time() - start_time
+            logger.info(f"Tax unit construction completed in {self.construction_time:.2f} seconds")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error during tax unit construction: {e}", exc_info=True)
+            return False
             
             # Load PUMS person data to get weights
             person_path = self.data_dir / 'pums_person_processed.parquet'
@@ -123,22 +211,20 @@ class TaxUnitValidator:
         
         logger.info("Applying PUMS weights to tax units...")
         
-        # Create a unique person ID in the person_df (SERIALNO + _ + SPORDER)
-        self.person_df['person_id'] = self.person_df['SERIALNO'].astype(str) + '_' + self.person_df['SPORDER'].astype(str)
+        # Create a mapping from (SERIALNO, SPORDER) to weight
+        weight_map = self.person_df.set_index(['SERIALNO', 'SPORDER'])['PWGTP'].to_dict()
         
-        # Create a mapping from person_id to weight
-        weight_map = self.person_df.set_index('person_id')['PWGTP'].to_dict()
+        # Get the person data for filers
+        filer_data = self.person_df[self.person_df.index.isin(self.tax_units['filer_id'])]
         
-        # Add weights to tax units
-        self.tax_units['weight'] = self.tax_units['primary_filer_id'].map(weight_map)
+        # Create a mapping from filer_id to weight
+        filer_weight_map = dict(zip(filer_data.index, filer_data['PWGTP']))
         
-        # For joint filers, average the weights of both adults
-        joint_mask = self.tax_units['filing_status'] == 'joint'
-        if joint_mask.any():
-            joint_weights = self.tax_units.loc[joint_mask, 'secondary_filer_id'].map(weight_map)
-            self.tax_units.loc[joint_mask, 'weight'] = (
-                self.tax_units.loc[joint_mask, 'weight'] + joint_weights
-            ) / 2
+        # Add weights to tax units using filer_id
+        self.tax_units['weight'] = self.tax_units['filer_id'].map(filer_weight_map)
+        
+        # For joint filers, the weight is already set from the primary filer
+        # No need to average since we're using the primary filer's weight
         
         # Handle any missing weights (shouldn't happen with proper data)
         missing_weights = self.tax_units['weight'].isna().sum()
@@ -320,7 +406,25 @@ class TaxUnitValidator:
 
 def main():
     """Main function to run the validation."""
-    validator = TaxUnitValidator()
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Validate tax units with optional multiprocessing')
+    parser.add_argument('--n-jobs', type=int, default=-1,
+                       help='Number of parallel jobs to use (-1 for all available CPUs)')
+    parser.add_argument('--data-dir', type=str, default='data/processed',
+                       help='Directory containing processed data files')
+    parser.add_argument('--tax-units-dir', type=str, default='src/data/processed',
+                       help='Directory containing tax unit files')
+    
+    args = parser.parse_args()
+    
+    logger.info(f"Starting validation with {args.n_jobs} parallel jobs")
+    validator = TaxUnitValidator(
+        data_dir=args.data_dir,
+        tax_units_dir=args.tax_units_dir,
+        n_jobs=args.n_jobs
+    )
     
     # Load the data
     if not validator.load_data():
@@ -330,6 +434,12 @@ def main():
     try:
         validator.apply_weights()
         validator.generate_validation_report()
+        
+        # Log performance information
+        if validator.construction_time is not None:
+            logger.info(f"Tax unit construction time: {validator.construction_time:.2f} seconds")
+            logger.info(f"Tax units per second: {len(validator.tax_units) / validator.construction_time:.2f}")
+            
         return 0
     except Exception as e:
         logger.error(f"Error during validation: {e}", exc_info=True)

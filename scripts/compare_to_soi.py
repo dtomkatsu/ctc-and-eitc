@@ -4,8 +4,13 @@ Compare PUMS-based tax unit counts with SOI (IRS) return counts.
 """
 import pandas as pd
 import sys
+import os
 from pathlib import Path
 import logging
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
 
 # Set up logging
 logging.basicConfig(
@@ -56,13 +61,13 @@ def analyze_tax_units(tax_units):
         # Import the same status constants used in the tax unit construction
         from src.tax.units import FILING_STATUS
         
-        # Map status values to ensure consistency with the tax unit construction
+        # Map filing status to SOI categories
         status_map = {
             '1': FILING_STATUS['SINGLE'],
             '2': FILING_STATUS['JOINT'],
             '3': FILING_STATUS['SEPARATE'],
-            '4': FILING_STATUS['HEAD_HOUSEHOLD'],
-            '5': FILING_STATUS['WIDOW']
+            '4': FILING_STATUS['HEAD_OF_HOUSEHOLD'],
+            '5': FILING_STATUS['QUALIFYING_WIDOW']
         }
         
         # Replace numeric status codes with string values
@@ -73,10 +78,11 @@ def analyze_tax_units(tax_units):
             'single': FILING_STATUS['SINGLE'],
             'joint': FILING_STATUS['JOINT'],
             'separate': FILING_STATUS['SEPARATE'],
-            'head_of_household': FILING_STATUS['HEAD_HOUSEHOLD'],
-            'head of household': FILING_STATUS['HEAD_HOUSEHOLD'],  # Handle variations
-            'widow': FILING_STATUS['WIDOW'],
-            'widower': FILING_STATUS['WIDOW']  # Handle variations
+            'head_of_household': FILING_STATUS['HEAD_OF_HOUSEHOLD'],
+            'head of household': FILING_STATUS['HEAD_OF_HOUSEHOLD'],  # Handle variations
+            'widow': FILING_STATUS['QUALIFYING_WIDOW'],
+            'widower': FILING_STATUS['QUALIFYING_WIDOW'],  # Handle variations
+            'qualifying_widow': FILING_STATUS['QUALIFYING_WIDOW']
         }
         tax_units['filing_status'] = tax_units['filing_status'].replace(status_mapping)
         

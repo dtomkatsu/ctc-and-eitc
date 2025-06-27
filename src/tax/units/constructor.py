@@ -63,6 +63,33 @@ class TaxUnitConstructor:
         self.person_df['is_adult'] = self.person_df['AGEP'] >= 18
         self.person_df['is_child'] = ~self.person_df['is_adult']
         
+        # Add is_dependent flag - initially set to False for all
+        self.person_df['is_dependent'] = False
+        
+        # Identify dependents based on age and relationship
+        # Children under 19 (or under 24 if student) are typically dependents
+        is_child = self.person_df['AGEP'] < 19
+        is_student = (self.person_df['SCHL'].between(1, 24))  # Enrolled in school
+        is_student_dependent = (self.person_df['AGEP'].between(19, 24)) & is_student
+        
+        # Also consider other dependent relationships
+        is_other_dependent = self.person_df['RELSHIPP'].isin([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+        
+        # Set is_dependent flag
+        self.person_df.loc[is_child | is_student_dependent | is_other_dependent, 'is_dependent'] = True
+        
+        # Ensure MAR (marital status) is integer
+        if 'MAR' in self.person_df.columns:
+            self.person_df['MAR'] = self.person_df['MAR'].fillna(0).astype(int)
+        
+        # Ensure RELSHIPP (relationship to householder) is integer
+        if 'RELSHIPP' in self.person_df.columns:
+            self.person_df['RELSHIPP'] = self.person_df['RELSHIPP'].fillna(0).astype(int)
+        
+        # Ensure CIT (citizenship) is integer
+        if 'CIT' in self.person_df.columns:
+            self.person_df['CIT'] = self.person_df['CIT'].fillna(1).astype(int)  # Default to citizen if missing
+        
         # Merge household data
         self.person_df = self.person_df.merge(
             self.hh_df[['SERIALNO', 'HINCP']], 
@@ -70,33 +97,102 @@ class TaxUnitConstructor:
             how='left'
         )
     
-    def create_rule_based_units(self) -> pd.DataFrame:
+    def create_rule_based_units(self, n_jobs: int = -1) -> pd.DataFrame:
         """
-        Create tax units using rule-based approach.
+        Create tax units using rule-based approach with parallel processing.
+        
+        Args:
+            n_jobs: Number of parallel jobs to run. If -1, use all available CPUs.
         
         Returns:
             DataFrame containing the constructed tax units
         """
-        logger.info("Creating tax units using rule-based approach...")
+        from multiprocessing import Pool, cpu_count
+        import pandas as pd
+        import logging
         
-        # Placeholder for tax units
-        tax_units = []
+        logger = logging.getLogger(__name__)
+        logger.info("Creating tax units using rule-based approach with multiprocessing...")
         
-        # Process each household
+        # Determine number of jobs
+        if n_jobs == -1:
+            n_jobs = max(1, cpu_count() - 1)  # Leave one CPU free
+        
+        # Group by household and filter out households with no adults
+        household_groups = []
         for hh_id, hh_group in self.person_df.groupby('SERIALNO'):
-            # Skip households with no adults
-            if not hh_group['is_adult'].any():
-                continue
-                
-            # Process household members into tax units
-            household_units = self._process_household(hh_group)
-            tax_units.extend(household_units)
+            if hh_group['is_adult'].any():
+                household_groups.append(hh_group)
+        
+        logger.info(f"Processing {len(household_groups)} households using {n_jobs} processes")
+        
+        # Process households in parallel or sequentially based on n_jobs
+        if n_jobs > 1 and len(household_groups) > 1:
+            # Prepare data for multiprocessing
+            process_args = [(hh_group, self.hh_df) for hh_group in household_groups]
+            
+            # Initialize pool and process households in parallel
+            with Pool(processes=n_jobs) as pool:
+                # Use imap_unordered for better memory efficiency with large datasets
+                results = list(pool.imap_unordered(
+                    self._process_household_parallel, 
+                    process_args,
+                    chunksize=max(1, len(household_groups) // (n_jobs * 4))  # Tune chunksize
+                ))
+        else:
+            # Fallback to sequential processing
+            logger.warning("Running in single-process mode")
+            results = [self._process_household(hh_group) for hh_group in household_groups]
+        
+        # Flatten results and filter out None values
+        tax_units = [unit for sublist in results if sublist for unit in sublist]
         
         # Convert to DataFrame
         if tax_units:
             self.tax_units = pd.DataFrame(tax_units)
+            logger.info(f"Created {len(self.tax_units)} tax units from {len(household_groups)} households")
             return self.tax_units
+        
+        logger.warning("No tax units were created")
         return pd.DataFrame()
+    
+    @staticmethod
+    def _process_household_parallel(args):
+        """
+        Process a single household in a multiprocessing worker.
+        This is a static method to avoid pickling issues with instance methods.
+        
+        Args:
+            args: Tuple of (hh_group, hh_df)
+            
+        Returns:
+            List of tax unit dictionaries for the household
+        """
+        from tax.units.constructor import TaxUnitConstructor
+        import logging
+        
+        hh_group, hh_df = args
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Create a minimal constructor with just the needed data
+            # We can't pickle the full constructor due to potential issues with
+            # unpicklable attributes like database connections or file handles
+            constructor = TaxUnitConstructor.__new__(TaxUnitConstructor)
+            constructor.hh_df = hh_df
+            
+            # Copy necessary methods that might be called during processing
+            constructor._calculate_income = lambda x: TaxUnitConstructor._calculate_income(constructor, x)
+            constructor._process_household = lambda x: TaxUnitConstructor._process_household(constructor, x)
+            
+            # Process the household
+            return constructor._process_household(hh_group)
+            
+        except Exception as e:
+            hh_id = hh_group['SERIALNO'].iloc[0] if not hh_group.empty else 'unknown'
+            logger.error(f"Error processing household {hh_id}: {str(e)}", 
+                        exc_info=True, extra={"household_id": hh_id})
+            return []
     
     def _process_household(self, hh_group: pd.DataFrame) -> List[dict]:
         """
@@ -215,39 +311,161 @@ class TaxUnitConstructor:
     
     def _identify_joint_filers(self, adults: pd.DataFrame, hh_members: pd.DataFrame) -> List[Tuple[str, str]]:
         """
-        Identify potential joint filers within a household.
+        Identify potential joint filers (married couples) in the household.
         
         Args:
-            adults: DataFrame of adult household members
-            hh_members: All members of the household
+            adults: DataFrame of adults in the household
+            hh_members: DataFrame of all household members
             
         Returns:
-            List of (person_id1, person_id2) tuples for potential joint filers
+            List of tuples containing person IDs of joint filers
         """
         joint_filers = []
         processed = set()
         
-        # Convert to list of (id, series) for easier iteration
-        adult_list = [(idx, row) for idx, row in adults.iterrows()]
-        
-        for i, (id1, person1) in enumerate(adult_list):
+        for i, (id1, person1) in enumerate(adults.iterrows()):
             if id1 in processed:
                 continue
                 
-            for j in range(i + 1, len(adult_list)):
-                id2, person2 = adult_list[j]
-                
-                if id2 in processed:
+            for j, (id2, person2) in enumerate(adults.iterrows()):
+                if i >= j or id2 in processed:
                     continue
-                
-                # Use the status module to check for joint filing status
+                    
+                # Check if they should file jointly
                 if is_married_filing_jointly(person1, person2, hh_members):
-                    joint_filers.append((id1, id2))
-                    processed.update([id1, id2])
-                    break
-        
+                    # Check if they should file separately instead
+                    if not is_married_filing_separately(person1, person2, hh_members):
+                        joint_filers.append((id1, id2))
+                        processed.update([id1, id2])
+                        logger.debug(f"Identified joint filers: {id1} and {id2}")
+                    else:
+                        logger.debug(f"Married couple {id1} and {id2} will file separately")
+                        processed.update([id1, id2])  # Mark as processed but don't add to joint_filers
+                        
         return joint_filers
     
+    def _create_single_filer(self, adult: pd.Series, hh_members: pd.DataFrame, 
+                           hh_data: pd.Series, available_deps: List[str] = None) -> Optional[dict]:
+        """
+        Create a tax unit for a single filer.
+        
+        Args:
+            adult: The adult who is the primary filer
+            hh_members: All members of the household
+            hh_data: Household-level data
+            available_deps: List of available dependent person_ids that can be claimed
+            
+        Returns:
+            Dictionary containing tax unit information or None if not valid
+        """
+        if available_deps is None:
+            available_deps = []
+            
+        logger.debug(f"Creating single filer tax unit for {adult.name} with {len(available_deps)} available dependents")
+        
+        # Filter available dependents to only include those actually in the household
+        valid_dependents = [d for d in available_deps if d in hh_members.index]
+        
+        # Determine filing status
+        filing_status = 'single'
+        
+        # Check if this person is married but filing separately
+        is_married_separate = False
+        for _, other_adult in hh_members.iterrows():
+            if other_adult.name != adult.name and other_adult.get('AGEP', 0) >= 18:
+                if is_married_filing_separately(adult, other_adult, hh_members):
+                    is_married_separate = True
+                    filing_status = 'married_filing_separately'
+                    break
+        
+        # Check for Head of Household status if not married filing separately
+        if not is_married_separate and valid_dependents:
+            # Create a proper person_data DataFrame for HOH determination
+            person_data = hh_members.copy()
+            person_data['SERIALNO'] = hh_data['SERIALNO']
+            
+            if is_head_of_household(adult, person_data):
+                filing_status = 'head_of_household'
+                logger.debug(f"Person {adult.name} qualifies as Head of Household")
+        
+        # Calculate income (include dependents in the calculation)
+        members_to_include = [adult]
+        if valid_dependents:
+            for dep_id in valid_dependents:
+                members_to_include.append(hh_members.loc[dep_id])
+        
+        # Create DataFrame from Series objects
+        income_df = pd.DataFrame(members_to_include)
+        income = calculate_tax_unit_income(income_df)
+        
+        # Create tax unit
+        tax_unit = {
+            'filer_id': adult.name,
+            'SERIALNO': hh_data['SERIALNO'],
+            'filing_status': filing_status,
+            'primary_filer_id': int(adult.name),
+            'income': income,
+            'num_dependents': len(valid_dependents),
+            'dependents': [int(d) for d in valid_dependents],
+            'hh_id': adult['SERIALNO']
+        }
+        
+        logger.debug(f"Created {filing_status} tax unit: {tax_unit}")
+        return tax_unit
+
+    def _create_joint_filer(self, adult1: pd.Series, adult2: pd.Series, 
+                           hh_members: pd.DataFrame, hh_data: pd.Series, 
+                           available_deps: List[str] = None) -> Optional[dict]:
+        """
+        Create a tax unit for a joint filer.
+        
+        Args:
+            adult1: First adult in the joint filing couple
+            adult2: Second adult in the joint filing couple
+            hh_members: All members of the household
+            hh_data: Household-level data
+            available_deps: List of available dependent person_ids that can be claimed
+            
+        Returns:
+            Dictionary containing tax unit information or None if not valid
+        """
+        if available_deps is None:
+            available_deps = []
+        
+        logger.debug(f"Creating joint filer tax unit for {adult1.name} and {adult2.name} with {len(available_deps)} available dependents")
+        
+        # Filter available dependents to only include those actually in the household
+        valid_dependents = [d for d in available_deps if d in hh_members.index]
+        
+        # Combine all members for income calculation
+        members_to_include = [adult1, adult2]
+        if valid_dependents:
+            for dep_id in valid_dependents:
+                members_to_include.append(hh_members.loc[dep_id])
+        
+        # Create DataFrame from Series objects
+        income_df = pd.DataFrame(members_to_include)
+        income = calculate_tax_unit_income(income_df)
+        
+        # Create a unique integer ID for the joint filer tax unit
+        filer_id = int(adult1.name)  # Ensure filer_id is an integer
+        
+        # Create tax unit
+        tax_unit = {
+            'filer_id': filer_id,
+            'SERIALNO': hh_data['SERIALNO'],
+            'filing_status': 'joint',
+            'primary_filer_id': int(adult1.name),  # Ensure primary_filer_id is an integer
+            'secondary_filer_id': int(adult2.name),  # Ensure secondary_filer_id is an integer
+            'income': income,
+            'num_dependents': len(valid_dependents),
+            'dependents': [int(d) for d in valid_dependents],  # Ensure dependents are integers
+            'hh_id': adult1['SERIALNO']
+        }
+        
+        logger.debug(f"Created joint tax unit: {tax_unit}")
+        return tax_unit
+
     def _should_file_separately(self, adult1: pd.Series, adult2: pd.Series, 
                               hh_members: pd.DataFrame) -> bool:
         """
@@ -315,101 +533,3 @@ class TaxUnitConstructor:
         total_income *= adjinc
         
         return total_income
-
-    def _create_joint_filer(self, adult1: pd.Series, adult2: pd.Series, 
-                           hh_members: pd.DataFrame, hh_data: pd.Series, 
-                           available_deps: List[str] = None) -> Optional[dict]:
-        """
-        Create a tax unit for a joint filer.
-        
-        Args:
-            adult1: First adult in the joint filing couple
-            adult2: Second adult in the joint filing couple
-            hh_members: All members of the household
-            hh_data: Household-level data
-            available_deps: List of available dependent person_ids that can be claimed
-            
-        Returns:
-            Dictionary containing tax unit information or None if not valid
-        """
-        if available_deps is None:
-            available_deps = []
-        
-        logger.debug(f"Creating joint filer tax unit for {adult1.name} and {adult2.name} with {len(available_deps)} available dependents")
-        
-        # Filter available dependents to only include those actually in the household
-        valid_dependents = [d for d in available_deps if d in hh_members.index]
-        
-        # Combine all members for income calculation
-        members_to_include = [adult1, adult2]
-        if valid_dependents:
-            for dep_id in valid_dependents:
-                members_to_include.append(hh_members.loc[dep_id])
-        
-        # Create DataFrame from Series objects
-        income_df = pd.DataFrame(members_to_include)
-        income = calculate_tax_unit_income(income_df)
-        
-        # Create tax unit
-        tax_unit = {
-            'filer_id': f"{hh_data['SERIALNO']}_joint_{adult1.name}_{adult2.name}",
-            'SERIALNO': hh_data['SERIALNO'],
-            'filing_status': 'joint',
-            'primary_filer_id': adult1.name,
-            'secondary_filer_id': adult2.name,
-            'income': income,
-            'num_dependents': len(valid_dependents),
-            'dependents': valid_dependents,
-            'hh_id': adult1['SERIALNO']
-        }
-        
-        logger.debug(f"Created joint tax unit: {tax_unit}")
-        return tax_unit
-
-    def _create_single_filer(self, adult: pd.Series, hh_members: pd.DataFrame, 
-                           hh_data: pd.Series, available_deps: List[str] = None) -> Optional[dict]:
-        """
-        Create a tax unit for a single filer.
-        
-        Args:
-            adult: The adult who is the primary filer
-            hh_members: All members of the household
-            hh_data: Household-level data
-            available_deps: List of available dependent person_ids that can be claimed
-            
-        Returns:
-            Dictionary containing tax unit information or None if not valid
-        """
-        if available_deps is None:
-            available_deps = []
-            
-        logger.debug(f"Creating single filer tax unit for {adult.name} with {len(available_deps)} available dependents")
-        
-        # Filter available dependents to only include those actually in the household
-        valid_dependents = [d for d in available_deps if d in hh_members.index]
-        
-        # Check for Head of Household status based on available dependents
-        is_hoh = is_head_of_household(adult, hh_members.loc[valid_dependents] if valid_dependents else pd.DataFrame())
-        
-        # Calculate income (include dependents in the calculation)
-        members_to_include = [adult]
-        if valid_dependents:
-            for dep_id in valid_dependents:
-                members_to_include.append(hh_members.loc[dep_id])
-        
-        # Create DataFrame from Series objects
-        income_df = pd.DataFrame(members_to_include)
-        income = calculate_tax_unit_income(income_df)
-        
-        # Create tax unit
-        tax_unit = {
-            'filer_id': adult.name,
-            'filing_status': 'head_of_household' if is_hoh else 'single',
-            'income': income,
-            'num_dependents': len(valid_dependents),
-            'dependents': valid_dependents,
-            'hh_id': adult['SERIALNO']
-        }
-        
-        logger.debug(f"Created tax unit: {tax_unit}")
-        return tax_unit

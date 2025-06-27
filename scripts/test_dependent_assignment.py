@@ -21,7 +21,7 @@ def create_test_data():
         'SPORDER': [1, 2, 3, 4, 1, 2, 3, 1, 2, 3, 4, 5],
         'AGEP': [40, 38, 12, 8, 35, 10, 5, 45, 43, 20, 18, 16],  # Ages
         'SEX': [1, 2, 1, 2, 1, 2, 1, 1, 2, 1, 2, 1],  # 1=Male, 2=Female
-        'RELSHIPP': [1, 2, 3, 3, 1, 3, 3, 1, 2, 3, 3, 3],  # 1=Householder, 2=Spouse, 3=Child
+        'RELSHIPP': [20, 21, 22, 22, 20, 22, 22, 20, 21, 22, 22, 22],  # 20=Householder, 21=Spouse, 22=Child
         'MAR': [1, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0],  # 1=Married, 0=Not married
         'CIT': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # 1=Born in US
         'SCHL': [21, 20, 12, 10, 22, 8, 6, 21, 19, 15, 16, 14],  # Educational attainment

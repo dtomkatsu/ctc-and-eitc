@@ -8,7 +8,7 @@ with specific attention to variables needed for CTC and EITC calculations.
 import logging
 import pandas as pd
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 import numpy as np
 
 # Configure logger
@@ -56,9 +56,119 @@ class PUMSDataLoader:
             'YBL': int
         }
     
-    def load_data(self, year: int = DEFAULT_PUMS_YEAR,
-                 state: str = DEFAULT_STATE,
-                 sample_size: Optional[int] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def get_total_households(self, state: str = DEFAULT_STATE) -> int:
+        """Get the total number of households in the dataset.
+        
+        Args:
+            state: State FIPS code (default: '15' for Hawaii)
+            
+        Returns:
+            Total number of households
+        """
+        hh_file = self.data_dir / f'psam_h{state}.csv'
+        if not hh_file.exists():
+            raise FileNotFoundError(f"Household PUMS file not found: {hh_file}")
+            
+        # Use wc -l to quickly count lines (subtract 1 for header)
+        import subprocess
+        result = subprocess.run(['wc', '-l', str(hh_file)], capture_output=True, text=True)
+        num_lines = int(result.stdout.strip().split()[0])
+        return max(0, num_lines - 1)  # Subtract header row
+    
+    def load_households_batch(
+        self, 
+        batch_size: int = 1000, 
+        offset: int = 0,
+        state: str = DEFAULT_STATE
+    ) -> pd.DataFrame:
+        """Load a batch of household records.
+        
+        Args:
+            batch_size: Number of records to load
+            offset: Starting record number
+            state: State FIPS code (default: '15' for Hawaii)
+            
+        Returns:
+            DataFrame with household data
+        """
+        hh_file = self.data_dir / f'psam_h{state}.csv'
+        if not hh_file.exists():
+            raise FileNotFoundError(f"Household PUMS file not found: {hh_file}")
+        
+        # Read batch of records
+        logger.debug(f"Loading household batch: offset={offset}, size={batch_size}")
+        hh_df = pd.read_csv(
+            hh_file,
+            skiprows=range(1, offset + 1),  # +1 to skip header
+            nrows=batch_size,
+            dtype=self.household_columns
+        )
+        
+        if hh_df.empty:
+            return pd.DataFrame()
+            
+        # Apply income adjustments and filters
+        hh_df = self._adjust_income(hh_df)
+        if 'ST' in hh_df.columns:
+            hh_df = hh_df[hh_df['ST'] == state].copy()
+            
+        return hh_df
+    
+    def load_persons_for_households(
+        self, 
+        serialnos: List[str],
+        state: str = DEFAULT_STATE
+    ) -> pd.DataFrame:
+        """Load person records for specific households.
+        
+        Args:
+            serialnos: List of SERIALNO values to load
+            state: State FIPS code (default: '15' for Hawaii)
+            
+        Returns:
+            DataFrame with person data for the specified households
+        """
+        # Check if serialnos is empty or None
+        if serialnos is None or (hasattr(serialnos, '__len__') and len(serialnos) == 0):
+            return pd.DataFrame()
+            
+        person_file = self.data_dir / f'psam_p{state}.csv'
+        if not person_file.exists():
+            raise FileNotFoundError(f"Person PUMS file not found: {person_file}")
+        
+        # Convert serialnos to a set for faster lookups
+        if hasattr(serialnos, 'tolist'):  # Handle numpy array or pandas Series
+            serialnos = serialnos.tolist()
+        serialno_set = set(str(sn) for sn in serialnos)
+        
+        # Use chunking to process large files
+        chunks = []
+        chunk_size = 10000
+        
+        for chunk in pd.read_csv(person_file, chunksize=chunk_size, dtype=self.person_columns):
+            # Filter for our households
+            chunk = chunk[chunk['SERIALNO'].astype(str).isin(serialno_set)]
+            if not chunk.empty:
+                chunks.append(chunk)
+        
+        if not chunks:
+            return pd.DataFrame()
+            
+        # Combine chunks and process
+        person_df = pd.concat(chunks, ignore_index=True)
+        person_df = self._adjust_income(person_df)
+        
+        if 'ST' in person_df.columns:
+            person_df = person_df[person_df['ST'] == state].copy()
+            
+        return person_df
+    
+    def load_data(
+        self, 
+        year: int = DEFAULT_PUMS_YEAR,
+        state: str = DEFAULT_STATE,
+        sample_size: Optional[int] = None
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Load and process PUMS data for the specified year and state.
         
         Args:
@@ -71,31 +181,31 @@ class PUMSDataLoader:
         """
         logger.info(f"Loading PUMS data for state {state} from {year}...")
         
-        # Load household data
-        hh_file = self.data_dir / f'psam_h{state}.csv'
-        if not hh_file.exists():
-            raise FileNotFoundError(f"Household PUMS file not found: {hh_file}")
+        # Load all households first by getting total count and loading in batches
+        total_households = self.get_total_households(state=state)
+        logger.info(f"Loading all {total_households} households...")
         
-        logger.info(f"Loading household data from {hh_file}")
-        hh_df = pd.read_csv(hh_file, dtype=self.household_columns)
+        # Load in batches to manage memory
+        batch_size = 10000
+        hh_batches = []
         
-        # Load person data
-        person_file = self.data_dir / f'psam_p{state}.csv'
-        if not person_file.exists():
-            raise FileNotFoundError(f"Person PUMS file not found: {person_file}")
+        for offset in range(0, total_households, batch_size):
+            current_batch_size = min(batch_size, total_households - offset)
+            logger.debug(f"Loading household batch: {offset} to {offset + current_batch_size}")
+            batch = self.load_households_batch(
+                batch_size=current_batch_size,
+                offset=offset,
+                state=state
+            )
+            hh_batches.append(batch)
+            
+        hh_df = pd.concat(hh_batches, ignore_index=True)
         
-        logger.info(f"Loading person data from {person_file}")
-        person_df = pd.read_csv(person_file, dtype=self.person_columns)
-        
-        # Apply income adjustments
-        person_df = self._adjust_income(person_df)
-        hh_df = self._adjust_income(hh_df)
-        
-        # Filter for the specified state if needed
-        if 'ST' in person_df.columns:
-            person_df = person_df[person_df['ST'] == state].copy()
-        if 'ST' in hh_df.columns:
-            hh_df = hh_df[hh_df['ST'] == state].copy()
+        # Load all persons for these households
+        person_df = self.load_persons_for_households(
+            serialnos=hh_df['SERIALNO'].tolist(),
+            state=state
+        )
         
         # Take sample if requested
         if sample_size and sample_size < len(person_df):

@@ -129,16 +129,49 @@ def _find_potential_guardians(
     
     return potential
 
-def _is_parent(guardian: pd.Series, child: pd.Series, household: pd.DataFrame) -> bool:
-    """Check if guardian is a parent of the child."""
-    # Check relationship codes
-    child_rel = child.get('RELSHIPP', 0)
-    guardian_rel = guardian.get('RELSHIPP', 0)
+def _is_parent(adult: pd.Series, child: pd.Series, household: pd.DataFrame) -> bool:
+    """Check if adult is likely the parent of the child."""
     
-    # Child (RELSHIPP=3) and guardian is householder (RELSHIPP=1) or spouse (RELSHIPP=2)
-    if child_rel == 3 and guardian_rel in [1, 2]:
+    # Age difference should be reasonable (at least 15 years)
+    age_diff = adult.get('AGEP', 0) - child.get('AGEP', 0)
+    if age_diff < 15:
+        return False
+    
+    # Check relationship codes
+    adult_rel = adult.get('RELSHIPP', 0)
+    child_rel = child.get('RELSHIPP', 0)
+    
+    # Parent-child relationships in PUMS:
+    # 20 = Reference person (householder)
+    # 22 = Biological son or daughter
+    # 23 = Adopted son or daughter  
+    # 24 = Stepson or stepdaughter
+    # 25 = Grandchild
+    # 26 = Brother or sister
+    # 27 = Father or mother
+    # 28 = Grandparent
+    # 29 = Son-in-law or daughter-in-law
+    # 30 = Other relative
+    # 31 = Roomer or boarder
+    # 32 = Housemate or roommate
+    # 33 = Unmarried partner
+    # 34 = Foster child
+    # 35 = Other nonrelative
+    # 36 = Institutionalized group quarters population
+    # 37 = Noninstitutionalized group quarters population
+    
+    # If adult is householder (20) and child is biological/adopted/step child (22-24) or grandchild (25)
+    if adult_rel == 20 and child_rel in [22, 23, 24, 25]:
+        return True
+    
+    # If adult is spouse (21) and child is biological/adopted/step child (22-24) or grandchild (25)  
+    if adult_rel == 21 and child_rel in [22, 23, 24, 25]:
         return True
         
+    # Foster child relationship
+    if child_rel == 34:
+        return True
+    
     return False
 
 def _is_stepparent(guardian: pd.Series, child: pd.Series, household: pd.DataFrame) -> bool:

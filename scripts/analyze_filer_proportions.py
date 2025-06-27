@@ -25,7 +25,7 @@ from test_smoke import create_test_person, create_test_household
 
 def load_sample_data():
     """Load sample PUMS data for analysis."""
-    # Create sample data
+    # Create sample data with numeric SERIALNO
     hh_df = pd.DataFrame([
         create_test_household(NP=2, HINCP=50000, SERIALNO=1),
         create_test_household(NP=4, HINCP=80000, SERIALNO=2),
@@ -33,50 +33,76 @@ def load_sample_data():
         create_test_household(NP=3, HINCP=60000, SERIALNO=4),
     ])
     
-    person_df = pd.concat([
+    # Ensure SERIALNO is numeric and set as string for consistency
+    hh_df['SERIALNO'] = hh_df['SERIALNO'].astype(str)
+    
+    person_data = [
         # Single filer
-        pd.Series(create_test_person(
-            SPORDER=1, SERIALNO=1,
-            RELSHIPP=20, MAR=5,  # Single
-            PINCP=40000, WAGP=40000
-        )).to_frame().T,
+        create_test_person(
+            SPORDER=1, SERIALNO='1',
+            RELSHIPP=1, MAR=5,  # Single
+            PINCP=40000, WAGP=40000,
+            AGEP=30, SEX=1, ESR=1,
+            PWGTP=1, RAC1P=1, SCHL=21, INTP=0, RETP=0, OIP=0, PAP=0, SSP=0, SSIP=0
+        ),
         
         # Married couple
-        pd.Series(create_test_person(
-            SPORDER=1, SERIALNO=2,
-            RELSHIPP=20, MAR=1,  # Married
-            PINCP=60000, WAGP=60000
-        )).to_frame().T,
-        pd.Series(create_test_person(
-            SPORDER=2, SERIALNO=2,
-            RELSHIPP=21, MAR=1,  # Spouse
-            PINCP=20000, WAGP=20000
-        )).to_frame().T,
+        create_test_person(
+            SPORDER=1, SERIALNO='2',
+            RELSHIPP=1, MAR=1,  # Married
+            PINCP=60000, WAGP=60000,
+            AGEP=35, SEX=1, ESR=1,
+            PWGTP=1, RAC1P=1, SCHL=21, INTP=0, RETP=0, OIP=0, PAP=0, SSP=0, SSIP=0
+        ),
+        create_test_person(
+            SPORDER=2, SERIALNO='2',
+            RELSHIPP=2, MAR=1,  # Spouse
+            PINCP=20000, WAGP=20000,
+            AGEP=32, SEX=2, ESR=1,
+            PWGTP=1, RAC1P=1, SCHL=21, INTP=0, RETP=0, OIP=0, PAP=0, SSP=0, SSIP=0
+        ),
         
-        # Head of household
-        pd.Series(create_test_person(
-            SPORDER=1, SERIALNO=3,
-            RELSHIPP=20, MAR=5,  # Single
-            PINCP=30000, WAGP=30000
-        )).to_frame().T,
+        # Single person
+        create_test_person(
+            SPORDER=1, SERIALNO='3',
+            RELSHIPP=1, MAR=5,  # Single
+            PINCP=30000, WAGP=30000,
+            AGEP=25, SEX=1, ESR=1,
+            PWGTP=1, RAC1P=1, SCHL=21, INTP=0, RETP=0, OIP=0, PAP=0, SSP=0, SSIP=0
+        ),
         
-        # Married filing separately
-        pd.Series(create_test_person(
-            SPORDER=1, SERIALNO=4,
-            RELSHIPP=20, MAR=1,  # Married
+        # Head of household with child
+        create_test_person(
+            SPORDER=1, SERIALNO='4',
+            RELSHIPP=1, MAR=5,  # Single
             PINCP=100000, WAGP=100000,
-            DIS=1  # Has disability
-        )).to_frame().T,
-        pd.Series(create_test_person(
-            SPORDER=2, SERIALNO=4,
-            RELSHIPP=21, MAR=1,  # Spouse
-            PINCP=-20000, SEMP=-20000,  # Business loss
-            DIS=2  # No disability
-        )).to_frame().T,
-    ])
+            AGEP=40, SEX=1, ESR=1,
+            PWGTP=1, RAC1P=1, SCHL=21, INTP=0, RETP=0, OIP=0, PAP=0, SSP=0, SSIP=0
+        ),
+        create_test_person(
+            SPORDER=2, SERIALNO='4',
+            RELSHIPP=3, MAR=5,  # Child
+            PINCP=0, WAGP=0,
+            AGEP=10, SEX=1, ESR=0,
+            PWGTP=1, RAC1P=1, SCHL=21, INTP=0, RETP=0, OIP=0, PAP=0, SSP=0, SSIP=0
+        ),
+        create_test_person(
+            SPORDER=3, SERIALNO='4',
+            RELSHIPP=3, MAR=5,  # Child
+            PINCP=0, WAGP=0,
+            AGEP=15, SEX=2, ESR=0,
+            PWGTP=1, RAC1P=1, SCHL=21, INTP=0, RETP=0, OIP=0, PAP=0, SSP=0, SSIP=0
+        )
+    ]
     
-    # Reset index to ensure proper indexing
-    person_df = person_df.reset_index(drop=True)
+    person_df = pd.DataFrame(person_data)
+    person_df['SERIALNO'] = person_df['SERIALNO'].astype(str)
+    person_df['SPORDER'] = person_df['SPORDER'].astype(int)
+    
+    # Set index to person_id for easier reference
+    person_df['person_id'] = person_df['SERIALNO'] + '_' + person_df['SPORDER'].astype(str)
+    person_df.set_index('person_id', inplace=True)
+    
     return person_df, hh_df
 
 def analyze_filer_proportions(person_df, hh_df):
