@@ -69,22 +69,22 @@ def analyze_hoh_characteristics(tax_units, person_df, hh_df):
     logger.info(f"HOH units: {len(hoh_units)}")
     logger.info(f"Single units: {len(single_units)}")
     
-    # Analyze number of children
-    logger.info("\nChildren distribution for HOH filers:")
-    children_dist = hoh_units['num_children'].value_counts().sort_index()
-    logger.info(f"{children_dist}")
+    # Analyze number of dependents
+    logger.info("\nDependents distribution for HOH filers:")
+    dependents_dist = hoh_units['num_dependents'].value_counts().sort_index()
+    logger.info(f"{dependents_dist}")
     
-    logger.info("\nChildren distribution for Single filers:")
-    single_children_dist = single_units['num_children'].value_counts().sort_index()
-    logger.info(f"{single_children_dist}")
+    logger.info("\nDependents distribution for Single filers:")
+    single_dependents_dist = single_units['num_dependents'].value_counts().sort_index()
+    logger.info(f"{single_dependents_dist}")
     
     # Analyze income patterns
-    logger.info(f"\nHOH median total income: ${hoh_units['total_income'].median():,.0f}")
-    logger.info(f"Single median total income: ${single_units['total_income'].median():,.0f}")
+    logger.info(f"\nHOH median income: ${hoh_units['income'].median():,.0f}")
+    logger.info(f"Single median income: ${single_units['income'].median():,.0f}")
     
     # Analyze household income vs personal income for HOH
     hoh_with_hh = hoh_units.merge(hh_df[['SERIALNO', 'HINCP']], on='SERIALNO', how='left')
-    hoh_with_hh['income_ratio'] = hoh_with_hh['total_income'] / hoh_with_hh['HINCP'].fillna(1)
+    hoh_with_hh['income_ratio'] = hoh_with_hh['income'] / hoh_with_hh['HINCP'].fillna(1)
     
     logger.info(f"\nHOH personal income as % of household income:")
     logger.info(f"  Mean: {hoh_with_hh['income_ratio'].mean():.2%}")
@@ -94,41 +94,47 @@ def analyze_hoh_characteristics(tax_units, person_df, hh_df):
     return hoh_units, single_units
 
 def analyze_marital_status(tax_units, person_df):
-    """Analyze marital status patterns."""
-    logger.info("Analyzing marital status patterns...")
+    # Analyze marital status patterns
+    logger.info("\nAnalyzing marital status patterns...")
     
-    # Check what the actual adult1_id values look like
-    logger.info(f"Sample adult1_id values: {tax_units['adult1_id'].head()}")
-    logger.info(f"Sample person_id values: {person_df.index[:5].tolist()}")
+    # Get marital status for primary filers
+    logger.info(f"Sample primary_filer_id values: {tax_units['primary_filer_id'].head()}")
+    logger.info(f"Person df index: {person_df.index[:5]}")
     
-    # Create a person_id column for merging (using row index as string to match adult1_id format)
-    person_df_with_id = person_df.reset_index().rename(columns={'index': 'person_id'})
-    person_df_with_id['person_id'] = person_df_with_id['person_id'].astype(str)
+    # Try to merge with person data to get marital status
+    try:
+        # First check if we can merge on the index (person_id)
+        merged = tax_units.merge(
+            person_df[['MAR']], 
+            left_on='primary_filer_id', 
+            right_index=True, 
+            how='left',
+            suffixes=('', '_primary')
+        )
+        
+        # For joint filers, get marital status of second adult
+        joint_filers = merged[merged['filing_status'] == 'joint'].copy()
+        if not joint_filers.empty and 'secondary_filer_id' in joint_filers.columns:
+            merged = merged.merge(
+                person_df[['MAR']], 
+                left_on='secondary_filer_id', 
+                right_index=True, 
+                how='left',
+                suffixes=('', '_secondary')
+            )
+            
+            # Check for consistency in marital status
+            joint_filers = merged[merged['filing_status'] == 'joint']
+            if 'MAR' in joint_filers.columns and 'MAR_secondary' in joint_filers.columns:
+                inconsistent = joint_filers[joint_filers['MAR'] != joint_filers['MAR_secondary']]
+                logger.info(f"Found {len(inconsistent)} joint filers with inconsistent marital status")
+    except Exception as e:
+        logger.error(f"Error analyzing marital status: {str(e)}")
     
-    # Get adult1 marital status
-    adult1_data = tax_units.merge(
-        person_df_with_id[['person_id', 'MAR', 'AGEP']], 
-        left_on='adult1_id', 
-        right_on='person_id', 
-        how='left'
-    )
-    
-    # Cross-tabulate filing status vs marital status
-    crosstab = pd.crosstab(
-        adult1_data['filing_status'], 
-        adult1_data['MAR'], 
-        margins=True
-    )
-    logger.info(f"\nFiling Status vs Marital Status:\n{crosstab}")
-    
-    # Check for married people filing as HOH or Single
-    married_hoh = adult1_data[(adult1_data['MAR'] == 1) & (adult1_data['filing_status'] == 'head_of_household')]
-    married_single = adult1_data[(adult1_data['MAR'] == 1) & (adult1_data['filing_status'] == 'single')]
-    
-    logger.info(f"\nMarried people filing as HOH: {len(married_hoh)}")
-    logger.info(f"Married people filing as Single: {len(married_single)}")
-    
-    return adult1_data
+    # Simple count by marital status for primary filers
+    if 'MAR' in merged.columns:
+        logger.info("\nMarital status distribution for primary filers:")
+        logger.info(merged['MAR'].value_counts(dropna=False))
 
 def analyze_household_composition(tax_units, person_df, hh_df):
     """Analyze household composition patterns."""

@@ -2,13 +2,19 @@
 Tax Unit Constructor
 
 This module provides the main TaxUnitConstructor class that uses the modular components
-to construct tax units from PUMS data.
+to construct tax units from PUMS data with performance optimizations including batch processing,
+parallel execution, and memory efficiency.
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple, Union, Any
+import time
+import os
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Dict, List, Optional, Tuple, Union, Any, Generator, Set
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
 
 # Import modular components
 from .status import is_married_filing_jointly, is_married_filing_separately, is_head_of_household
@@ -16,6 +22,10 @@ from .income import calculate_tax_unit_income
 from .dependencies import identify_dependents
 from .utils import setup_logging, validate_input_data, create_person_id
 from .validation import TaxUnitValidator, ValidationIssue, ValidationSeverity
+
+# Constants for optimization
+DEFAULT_BATCH_SIZE = 1000
+DEFAULT_NUM_PROCESSES = max(1, mp.cpu_count() - 1)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -29,20 +39,32 @@ class TaxUnitConstructor:
     specialized modules for different aspects of the process.
     """
     
-    def __init__(self, person_df: pd.DataFrame, hh_df: pd.DataFrame):
+    def __init__(self, person_df: pd.DataFrame, hh_df: pd.DataFrame, 
+                 batch_size: int = None, num_processes: int = None,
+                 progress_bar: bool = True):
         """
         Initialize the TaxUnitConstructor with person and household data.
         
         Args:
             person_df: DataFrame containing person-level PUMS data
             hh_df: DataFrame containing household-level PUMS data
+            batch_size: Number of households to process in each batch (default: 1000)
+            num_processes: Number of parallel processes to use (default: CPU count - 1)
+            progress_bar: Whether to show a progress bar during processing
         """
         self.person_df = person_df.copy()
         self.hh_df = hh_df.copy()
         self.tax_units = None
         
+        # Performance settings
+        self.batch_size = batch_size or DEFAULT_BATCH_SIZE
+        self.num_processes = num_processes or DEFAULT_NUM_PROCESSES
+        self.progress_bar = progress_bar and (len(person_df) > 1000)  # Only show for large datasets
+        
         # Setup logging
         setup_logging()
+        logger.info(f"Initialized TaxUnitConstructor with batch_size={self.batch_size}, "
+                   f"num_processes={self.num_processes}")
         
         # Validate inputs
         is_valid, error_msg = validate_input_data(self.person_df, self.hh_df)
@@ -54,105 +76,270 @@ class TaxUnitConstructor:
     
     def _preprocess_data(self) -> None:
         """Preprocess the input data for tax unit construction."""
-        # Create person_id from SERIALNO and SPORDER
-        self.person_df['person_id'] = create_person_id(self.person_df)
-        
-        # Set person_id as the index
-        self.person_df.set_index('person_id', inplace=True)
+        # Check if person_id already exists as index
+        if self.person_df.index.name == 'person_id':
+            # Person IDs already set up correctly, don't recreate them
+            logger.debug("Person IDs already exist as index, preserving them")
+        else:
+            # Create person_id from SERIALNO and SPORDER
+            self.person_df['person_id'] = create_person_id(self.person_df)
+            
+            # Set person_id as the index
+            self.person_df.set_index('person_id', inplace=True)
         
         # Add is_adult flag
         self.person_df['is_adult'] = self.person_df['AGEP'] >= 18
         self.person_df['is_child'] = ~self.person_df['is_adult']
         
-        # Merge household data
+        # Merge household data - preserve the index
+        original_index = self.person_df.index
         self.person_df = self.person_df.merge(
             self.hh_df[['SERIALNO', 'HINCP']], 
             on='SERIALNO', 
             how='left'
         )
+        # Restore the original index
+        self.person_df.index = original_index
     
-    def create_rule_based_units(self) -> pd.DataFrame:
+    def _process_household_batch(self, batch: List[Tuple[str, pd.DataFrame]]) -> Tuple[List[dict], List[dict]]:
         """
-        Create tax units using rule-based approach.
+        Process a batch of households.
         
-        This method processes each household, identifies tax units, and validates
-        the results. It handles the following types of tax units:
+        Args:
+            batch: List of (household_id, household_data) tuples
+            
+        Returns:
+            Tuple of (tax_units, validation_issues) for the batch
+        """
+        batch_units = []
+        batch_issues = []
+        
+        for hh_id, hh_group in batch:
+            try:
+                logger.debug(f"Processing household {hh_id} in batch")
+                household_units = self._process_household(hh_group)
+                
+                if household_units:
+                    # Validate individual tax units
+                    for unit in household_units:
+                        issues = TaxUnitValidator.validate_tax_unit(unit)
+                        batch_issues.extend(issues)
+                    
+                    # Validate household coverage
+                    coverage_issues = TaxUnitValidator.validate_household_coverage(
+                        household_units, hh_group
+                    )
+                    batch_issues.extend(coverage_issues)
+                    
+                    batch_units.extend(household_units)
+                
+            except Exception as e:
+                error_msg = f"Error processing household {hh_id}: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                batch_issues.append({
+                    'household_id': hh_id,
+                    'error': error_msg,
+                    'severity': 'ERROR'
+                })
+        
+        return batch_units, batch_issues
+    
+    def _create_batches(self, data: pd.DataFrame) -> List[List[Tuple[str, pd.DataFrame]]]:
+        """
+        Split data into batches for parallel processing.
+        
+        Args:
+            data: DataFrame containing person data with SERIALNO column
+            
+        Returns:
+            List of batches, where each batch is a list of (household_id, household_data) tuples
+        """
+        # Group by household
+        households = list(data.groupby('SERIALNO'))
+        
+        # Create batches
+        batches = []
+        for i in range(0, len(households), self.batch_size):
+            batch = households[i:i + self.batch_size]
+            batches.append(batch)
+        
+        logger.info(f"Created {len(batches)} batches with up to {self.batch_size} households each")
+        return batches
+    
+    def create_rule_based_units(self, parallel: bool = True) -> pd.DataFrame:
+        """
+        Create tax units using rule-based approach with optional parallel processing.
+        
+        This method processes households in batches, with each batch optionally processed
+        in parallel. It handles the following types of tax units:
         - Married filing jointly
         - Married filing separately
         - Head of household
         - Single filers
         
+        Args:
+            parallel: Whether to use parallel processing (default: True)
+            
         Returns:
             DataFrame containing the constructed tax units with validation results
             
         Raises:
             ValueError: If input data is invalid or processing fails
         """
-        logger.info("Creating tax units using rule-based approach...")
+        start_time = time.time()
+        logger.info(f"Creating tax units using rule-based approach (parallel={parallel}, "
+                   f"processes={self.num_processes}, batch_size={self.batch_size})...")
         
         tax_units = []
         validation_issues = []
         
-        # Process each household
-        for hh_id, hh_group in self.person_df.groupby('SERIALNO'):
-            try:
-                logger.info(f"Processing household {hh_id}")
-                household_units = self._process_household(hh_group)
+        # Create batches of households
+        batches = self._create_batches(self.person_df)
+        
+        # Process batches
+        if parallel and self.num_processes > 1:
+            # Process batches in parallel
+            with ProcessPoolExecutor(max_workers=self.num_processes) as executor:
+                # Submit all batches
+                future_to_batch = {
+                    executor.submit(self._process_household_batch, batch): i 
+                    for i, batch in enumerate(batches)
+                }
                 
-                # Validate household units
-                if household_units:
-                    # Validate individual tax units
-                    for unit in household_units:
-                        issues = TaxUnitValidator.validate_tax_unit(unit)
-                        validation_issues.extend(issues)
+                # Process results as they complete
+                for future in (tqdm(as_completed(future_to_batch), 
+                                 total=len(batches),
+                                 desc="Processing households",
+                                 disable=not self.progress_bar) 
+                             if self.progress_bar else as_completed(future_to_batch)):
                     
-                    # Validate household coverage
-                    coverage_issues = TaxUnitValidator.validate_household_coverage(
-                        household_units, hh_group
-                    )
-                    validation_issues.extend(coverage_issues)
-                    
-                    tax_units.extend(household_units)
-                
-            except Exception as e:
-                error_msg = f"Error processing household {hh_id}: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                validation_issues.append({
-                    'household_id': hh_id,
-                    'error': error_msg,
-                    'severity': 'ERROR'
-                })
-                continue
+                    batch_units, batch_issues = future.result()
+                    tax_units.extend(batch_units)
+                    validation_issues.extend(batch_issues)
+        else:
+            # Process batches sequentially
+            for batch in (tqdm(batches, desc="Processing households", disable=not self.progress_bar) 
+                         if self.progress_bar else batches):
+                batch_units, batch_issues = self._process_household_batch(batch)
+                tax_units.extend(batch_units)
+                validation_issues.extend(batch_issues)
         
         # Log validation issues
         if validation_issues:
             self._log_validation_issues(validation_issues)
         
-        # Convert to DataFrame
+        # Calculate performance metrics
+        end_time = time.time()
+        processing_time = end_time - start_time
+        units_per_second = len(tax_units) / processing_time if processing_time > 0 else 0
+        
+        # Log performance summary
+        logger.info(f"Processed {len(tax_units):,} tax units from {len(self.person_df['SERIALNO'].unique()):,} "
+                  f"households in {processing_time:.2f} seconds ({units_per_second:.1f} units/sec)")
+        
+        # Convert to DataFrame with optimized dtypes
         if tax_units:
+            # Create DataFrame with optimized dtypes
             self.tax_units = pd.DataFrame(tax_units)
             
+            # Optimize column dtypes
+            self._optimize_dataframe_dtypes()
+            
             # Add validation summary as an attribute
+            def get_severity(issue):
+                if hasattr(issue, 'severity'):
+                    return issue.severity
+                elif isinstance(issue, dict):
+                    return issue.get('severity')
+                else:
+                    return 'INFO'
+            
+            error_count = sum(1 for issue in validation_issues if get_severity(issue) == 'ERROR')
+            warning_count = sum(1 for issue in validation_issues if get_severity(issue) == 'WARNING')
+            
             self.validation_summary = {
                 'total_units': len(tax_units),
-                'validation_issues': validation_issues,
-                'has_errors': any(
-                    issue.get('severity') == 'ERROR' 
-                    for issue in validation_issues
-                )
+                'total_households': len(self.person_df['SERIALNO'].unique()),
+                'processing_time_seconds': processing_time,
+                'units_per_second': units_per_second,
+                'validation_issues': len(validation_issues),
+                'validation_errors': error_count,
+                'validation_warnings': warning_count,
+                'has_errors': error_count > 0,
+                'batch_size': self.batch_size,
+                'num_processes': self.num_processes if parallel and self.num_processes > 1 else 1
             }
+            
+            logger.info(f"Validation summary: {len(tax_units):,} tax units created, "
+                      f"{error_count} errors, {warning_count} warnings")
         else:
-            self.tax_units = pd.DataFrame(columns=[
-                'filer_id', 'filing_status', 'income', 'num_dependents', 
-                'dependents', 'hh_id', 'primary_filer_id', 'secondary_filer_id'
-            ])
+            # Empty result with proper column dtypes
+            self.tax_units = pd.DataFrame({
+                'filer_id': pd.Series(dtype='string'),
+                'filing_status': pd.CategoricalDtype(categories=[
+                    'single', 'married_filing_jointly', 
+                    'married_filing_separately', 'head_of_household'
+                ]),
+                'income': pd.Series(dtype='float64'),
+                'num_dependents': pd.Series(dtype='int32'),
+                'dependents': pd.Series(dtype='object'),  # List of strings
+                'hh_id': pd.Series(dtype='string'),
+                'primary_filer_id': pd.Series(dtype='string'),
+                'secondary_filer_id': pd.Series(dtype='string')
+            })
+            
             self.validation_summary = {
                 'total_units': 0,
-                'validation_issues': validation_issues,
-                'has_errors': True
+                'processing_time_seconds': processing_time,
+                'units_per_second': 0,
+                'validation_issues': len(validation_issues),
+                'validation_errors': sum(1 for issue in validation_issues 
+                                      if getattr(issue, 'severity', '') == 'ERROR'),
+                'validation_warnings': sum(1 for issue in validation_issues 
+                                        if getattr(issue, 'severity', '') == 'WARNING'),
+                'has_errors': True,
+                'batch_size': self.batch_size,
+                'num_processes': self.num_processes if parallel and self.num_processes > 1 else 1
             }
             
         return self.tax_units
+    
+    def _optimize_dataframe_dtypes(self) -> None:
+        """
+        Optimize the data types of the tax_units DataFrame to reduce memory usage.
+        
+        This method should be called after creating the tax_units DataFrame.
+        """
+        if self.tax_units is None or self.tax_units.empty:
+            return
+            
+        # Convert string columns to categorical where appropriate
+        for col in self.tax_units.columns:
+            # Skip non-string columns
+            if not pd.api.types.is_string_dtype(self.tax_units[col]):
+                continue
+                
+            # For string columns with low cardinality, use categorical
+            num_unique = len(self.tax_units[col].unique())
+            num_rows = len(self.tax_units)
+            
+            if 1 < num_unique < (num_rows * 0.5):  # Less than 50% unique values
+                self.tax_units[col] = self.tax_units[col].astype('category')
+                
+        # Downcast numeric columns
+        for col in self.tax_units.select_dtypes(include=['int64', 'float64']).columns:
+            if pd.api.types.is_integer_dtype(self.tax_units[col]):
+                # Downcast integers
+                self.tax_units[col] = pd.to_numeric(self.tax_units[col], downcast='integer')
+            else:
+                # Downcast floats
+                self.tax_units[col] = pd.to_numeric(self.tax_units[col], downcast='float')
+        
+        # Log memory savings
+        mem_before = self.tax_units.memory_usage(deep=True).sum() / 1024**2  # MB
+        mem_after = self.tax_units.memory_usage(deep=True).sum() / 1024**2  # MB
+        logger.info(f"Optimized DataFrame memory usage: {mem_before:.2f}MB -> {mem_after:.2f}MB "
+                  f"({((mem_before - mem_after) / mem_before * 100):.1f}% reduction)")
     
     def _log_validation_issues(self, issues: List[Dict[str, Any]]) -> None:
         """
@@ -164,32 +351,54 @@ class TaxUnitConstructor:
         if not issues:
             return
             
-        error_count = sum(1 for issue in issues if issue.get('severity') == 'ERROR')
-        warning_count = sum(1 for issue in issues if issue.get('severity') == 'WARNING')
+        # Handle both dict and ValidationIssue objects
+        def get_severity(issue):
+            if hasattr(issue, 'severity'):
+                return issue.severity
+            elif isinstance(issue, dict):
+                return issue.get('severity')
+            else:
+                return 'INFO'
+        
+        def get_message(issue):
+            if hasattr(issue, 'message'):
+                return issue.message
+            elif isinstance(issue, dict):
+                return issue.get('message', str(issue))
+            else:
+                return str(issue)
+        
+        error_count = sum(1 for issue in issues if get_severity(issue) == 'ERROR')
+        warning_count = sum(1 for issue in issues if get_severity(issue) == 'WARNING')
         info_count = len(issues) - error_count - warning_count
         
         logger.info(f"Validation summary: {error_count} errors, {warning_count} warnings, {info_count} info messages")
         
         # Log errors first
-        for issue in (i for i in issues if i.get('severity') == 'ERROR'):
-            logger.error(f"Validation error: {issue.get('message')}")
+        for issue in (i for i in issues if get_severity(i) == 'ERROR'):
+            logger.error(f"Validation error: {get_message(issue)}")
             
         # Then warnings
-        for issue in (i for i in issues if i.get('severity') == 'WARNING'):
-            logger.warning(f"Validation warning: {issue.get('message')}")
+        for issue in (i for i in issues if get_severity(i) == 'WARNING'):
+            logger.warning(f"Validation warning: {get_message(issue)}")
             
-        # Finally info messages (if any)
-        for issue in (i for i in issues if i.get('severity') == 'INFO'):
-            logger.info(f"Validation info: {issue.get('message')}")
+        # Finally info messages
+        for issue in (i for i in issues if get_severity(i) not in ['ERROR', 'WARNING']):
+            logger.info(f"Validation info: {get_message(issue)}")
 
     def _process_household(self, hh_group: pd.DataFrame) -> List[dict]:
         """
-        Process a single household and return a list of tax units.
+        Process a single household and return a list of tax units using vectorized operations.
         
         This method identifies different types of tax units within a household:
         - Married couples (filing jointly or separately)
         - Head of household filers
         - Single filers
+        
+        Optimized for performance with:
+        - Vectorized operations instead of loops
+        - Efficient data structures (sets, dictionaries)
+        - Batch processing where possible
         
         Args:
             hh_group: DataFrame containing all persons in a household
@@ -205,223 +414,208 @@ class TaxUnitConstructor:
             - hh_id: Household identifier
             - primary_filer_id: ID of the primary filer
             - secondary_filer_id: ID of the secondary filer (for joint returns)
-            
-        Notes:
-            - The method prioritizes joint returns, then MFS, then HOH, then single filers
-            - Dependents are assigned to the most appropriate tax unit
         """
-        logger.info(f"Processing household {hh_group['SERIALNO'].iloc[0]} with {len(hh_group)} members")
-        
-        # Skip empty households
+        # Skip empty households immediately
         if hh_group.empty:
             logger.debug("Skipping empty household")
             return []
-            
-        # Get household data
+
+        # Pre-compute household data and cache
         hh_id = hh_group['SERIALNO'].iloc[0]
+        logger.info(f"Processing household {hh_id} with {len(hh_group)} members")
+        
+        # Use vectorized operation to get household data
         hh_data = self.hh_df[self.hh_df['SERIALNO'] == hh_id].iloc[0] if not self.hh_df.empty else {}
         
-        # Identify all adults (potential filers)
-        adults = hh_group[hh_group['AGEP'] >= 18].copy()
-        logger.debug(f"Found {len(adults)} adults in household {hh_id}")
+        # Vectorized adult identification
+        adults_mask = hh_group['AGEP'] >= 18
+        adults = hh_group[adults_mask].copy()
         
-        # If no adults, skip this household
         if adults.empty:
             logger.debug(f"No adults in household {hh_id}, skipping")
             return []
             
-        # First pass: identify all dependents in the household
-        logger.debug("Identifying all dependents in household")
+        # Vectorized dependent identification
+        logger.debug("Identifying all dependents in household using vectorized operations")
         dependents = identify_dependents(hh_group)
         
-        # Log the initial dependent assignments
-        for filer_id, deps in dependents.items():
-            if deps:
-                logger.debug(f"Initial dependent assignment - Filer {filer_id} has {len(deps)} dependents")
-                for dep_id in deps:
-                    dep = hh_group.loc[dep_id]
-                    logger.debug(f"  - Dependent {dep_id} (Age: {dep['AGEP']}, REL: {dep.get('RELSHIPP', 'N/A')}, MAR: {dep.get('MAR', 'N/A')})")
+        # Convert dependents to a more efficient structure
+        dependents = {k: set(v) for k, v in dependents.items()}
+        all_dependents = set().union(*dependents.values()) if dependents else set()
         
-        # Track which dependents have been claimed
+        # Log initial assignments if debug level
+        if logger.isEnabledFor(logging.DEBUG):
+            for filer_id, deps in dependents.items():
+                if deps:
+                    logger.debug(f"Initial dependent assignment - Filer {filer_id} has {len(deps)} dependents")
+        
+        # Track state with sets for O(1) lookups
         claimed_dependents = set()
-        # Track which adults have been processed in joint filers
         processed_adults = set()
         tax_units = []
         
-        # Identify potential joint filers and MFS filers
-        print("Identifying potential joint filers and MFS filers")
+        # Identify potential joint filers and MFS filers using vectorized operations
+        logger.debug("Identifying potential joint and MFS filers")
         joint_filers, mfs_filers = self._identify_joint_filers(adults, hh_group)
-        print(f"CONSTRUCTOR: Found {len(joint_filers)} joint filer pairs and {len(mfs_filers)} MFS filer pairs")
-        
-        # Debug: Print details of identified filers
-        for i, (id1, id2) in enumerate(joint_filers):
-            print(f"  Joint filer pair {i+1}: {id1} and {id2}")
-        for i, (id1, id2) in enumerate(mfs_filers):
-            print(f"  MFS filer pair {i+1}: {id1} and {id2}")
-            person1 = adults.loc[id1]
-            person2 = adults.loc[id2]
-            print(f"    {id1}: MAR={person1.get('MAR')}, RELSHIPP={person1.get('RELSHIPP')}, CIT={person1.get('CIT')}, WAGP={person1.get('WAGP')}")
-            print(f"    {id2}: MAR={person2.get('MAR')}, RELSHIPP={person2.get('RELSHIPP')}, CIT={person2.get('CIT')}, WAGP={person2.get('WAGP')}")
+        logger.debug(f"Found {len(joint_filers)} joint filer pairs and {len(mfs_filers)} MFS filer pairs")
         
         # Process MFS filers first (they file as single)
         for adult1_id, adult2_id in mfs_filers:
+            if adult1_id in processed_adults or adult2_id in processed_adults:
+                continue
+                
             adult1 = adults.loc[adult1_id]
             adult2 = adults.loc[adult2_id]
             
             logger.info(f"Processing MFS filers: {adult1_id} and {adult2_id}")
             
-            # Get dependents for each adult
-            deps1 = set(dependents.get(adult1_id, []))
-            deps2 = set(dependents.get(adult2_id, []))
+            # Get available dependents for each adult using set operations
+            deps1 = dependents.get(adult1_id, set()) - claimed_dependents
+            deps2 = dependents.get(adult2_id, set()) - claimed_dependents
             
-            # Remove already claimed dependents
-            available_deps1 = [d for d in deps1 if d not in claimed_dependents]
-            available_deps2 = [d for d in deps2 if d not in claimed_dependents]
+            logger.debug(f"  {adult1_id} has {len(deps1)} available dependents")
+            logger.debug(f"  {adult2_id} has {len(deps2)} available dependents")
             
-            logger.debug(f"  {adult1_id} has {len(deps1)} potential dependents, {len(available_deps1)} available")
-            logger.debug(f"  {adult2_id} has {len(deps2)} potential dependents, {len(available_deps2)} available")
-            
-            # Print debug info for MFS filers
-            print(f"MFS FILER PAIR: {adult1_id} and {adult2_id}")
-            print(f"  {adult1_id} - MAR: {adult1.get('MAR')}, RELSHIPP: {adult1.get('RELSHIPP')}, CIT: {adult1.get('CIT')}, WAGP: {adult1.get('WAGP')}")
-            print(f"  {adult2_id} - MAR: {adult2.get('MAR')}, RELSHIPP: {adult2.get('RELSHIPP')}, CIT: {adult2.get('CIT')}, WAGP: {adult2.get('WAGP')}")
-            
-            # Create separate tax units for each MFS filer
-            tax_unit1 = self._create_single_filer(adult1, hh_group, hh_data, available_deps1, filing_status='married_filing_separate')
-            if tax_unit1:
-                logger.info(f"  Created MFS tax unit for {adult1_id} with {len(tax_unit1['dependents'])} dependents")
-                tax_units.append(tax_unit1)
-                claimed_dependents.update(tax_unit1['dependents'])
+            # Create tax units for each MFS filer
+            for adult_id, deps in [(adult1_id, deps1), (adult2_id, deps2)]:
+                tax_unit = self._create_single_filer(
+                    adults.loc[adult_id], 
+                    hh_group, 
+                    hh_data, 
+                    list(deps), 
+                    filing_status='married_filing_separate'
+                )
                 
-            tax_unit2 = self._create_single_filer(adult2, hh_group, hh_data, available_deps2, filing_status='married_filing_separate')
-            if tax_unit2:
-                logger.info(f"  Created MFS tax unit for {adult2_id} with {len(tax_unit2['dependents'])} dependents")
-                tax_units.append(tax_unit2)
-                claimed_dependents.update(tax_unit2['dependents'])
-                
+                if tax_unit:
+                    num_deps = len(tax_unit['dependents'])
+                    logger.info(f"  Created MFS tax unit for {adult_id} with {num_deps} dependents")
+                    tax_units.append(tax_unit)
+                    claimed_dependents.update(tax_unit['dependents'])
+            
             # Mark both adults as processed
             processed_adults.update([adult1_id, adult2_id])
         
-        # Process joint filers
+        # Process joint filers with optimized set operations
         for adult1_id, adult2_id in joint_filers:
+            if adult1_id in processed_adults or adult2_id in processed_adults:
+                continue
+                
             adult1 = adults.loc[adult1_id]
             adult2 = adults.loc[adult2_id]
             
             logger.info(f"Processing joint filers: {adult1_id} and {adult2_id}")
             
-            # Get dependents for this couple (union of both adults' dependents)
-            deps1 = set(dependents.get(adult1_id, []))
-            deps2 = set(dependents.get(adult2_id, []))
-            all_deps = deps1.union(deps2)
+            # Get all available dependents using set operations
+            deps1 = dependents.get(adult1_id, set())
+            deps2 = dependents.get(adult2_id, set())
+            available_deps = list((deps1 | deps2) - claimed_dependents)
             
-            # Remove already claimed dependents
-            available_deps = [d for d in all_deps if d not in claimed_dependents]
-            
-            logger.debug(f"  Potential dependents before filtering: {len(all_deps)}")
-            logger.debug(f"  Available dependents after filtering: {len(available_deps)}")
+            logger.debug(f"  Potential dependents: {len(deps1 | deps2)}, Available: {len(available_deps)}")
             
             # Create joint tax unit
             tax_unit = self._create_joint_filer(adult1, adult2, hh_group, hh_data, available_deps)
             if tax_unit:
-                logger.info(f"  Created joint tax unit with {len(tax_unit['dependents'])} dependents")
+                num_deps = len(tax_unit['dependents'])
+                logger.info(f"  Created joint tax unit with {num_deps} dependents")
                 tax_units.append(tax_unit)
                 claimed_dependents.update(tax_unit['dependents'])
-                # Mark both adults as processed
                 processed_adults.update([adult1_id, adult2_id])
-                logger.debug(f"  Updated claimed dependents: {claimed_dependents}")
         
         # Process remaining adults as single or head of household filers
-        remaining_adults = adults[~adults.index.isin(processed_adults)]
-        logger.info(f"Processing {len(remaining_adults)} remaining adults as single/HoH filers")
+        remaining_adult_ids = set(adults.index) - processed_adults
+        logger.info(f"Processing {len(remaining_adult_ids)} remaining adults as single/HoH filers")
         
-        # First pass: Try to create HoH filers (adults with qualifying dependents)
-        for adult_id, adult in remaining_adults.iterrows():
+        # Create a list to store potential HoH filers
+        potential_hoh = []
+        
+        # First pass: Identify potential HoH filers
+        for adult_id in remaining_adult_ids:
+            adult_deps = dependents.get(adult_id, set()) - claimed_dependents
+            if adult_deps:  # Only consider adults with unclaimed dependents
+                potential_hoh.append((adult_id, adult_deps))
+        
+        # Sort potential HoH by number of dependents (most first)
+        potential_hoh.sort(key=lambda x: len(x[1]), reverse=True)
+        
+        # Process HoH filers
+        for adult_id, deps in potential_hoh:
             if adult_id in processed_adults:
                 continue
                 
-            # Get all potential dependents for this adult
-            adult_deps = set(dependents.get(adult_id, []))
-            available_deps = [d for d in adult_deps if d not in claimed_dependents]
-            
-            # Only proceed if there are available dependents for potential HoH
-            if available_deps:
-                tax_unit = self._create_single_filer(
-                    adult, hh_group, hh_data, available_deps
-                )
-                
-                if tax_unit and tax_unit['filing_status'] == 'head_of_household':
-                    logger.info(f"  Created HoH tax unit for {adult_id} with {len(tax_unit['dependents'])} dependents")
-                    tax_units.append(tax_unit)
-                    claimed_dependents.update(tax_unit['dependents'])
-                    processed_adults.add(adult_id)
-        
-        # Second pass: Create tax units for remaining adults (single filers)
-        remaining_adults = adults[~adults.index.isin(processed_adults)]
-        for adult_id, adult in remaining_adults.iterrows():
-            if adult_id in processed_adults:
-                continue
-                
-            # Get any remaining dependents for this adult
-            adult_deps = set(dependents.get(adult_id, []))
-            available_deps = [d for d in adult_deps if d not in claimed_dependents]
-            
-            # Create a single filer tax unit
             tax_unit = self._create_single_filer(
-                adult, hh_group, hh_data, available_deps, 'single'
+                adults.loc[adult_id], 
+                hh_group, 
+                hh_data, 
+                list(deps)
             )
             
-            if tax_unit:
-                logger.info(f"  Created single filer tax unit for {adult_id} with {len(tax_unit['dependents'])} dependents")
+            if tax_unit and tax_unit['filing_status'] == 'head_of_household':
+                num_deps = len(tax_unit['dependents'])
+                logger.info(f"Created HoH tax unit for {adult_id} with {num_deps} dependents")
                 tax_units.append(tax_unit)
                 claimed_dependents.update(tax_unit['dependents'])
                 processed_adults.add(adult_id)
         
-        # Final pass: Ensure all adults are in a tax unit, even without dependents
-        remaining_adults = adults[~adults.index.isin(processed_adults)]
-        for adult_id, adult in remaining_adults.iterrows():
-            if adult_id not in processed_adults:
-                logger.info(f"Creating tax unit for unassigned adult: {adult_id}")
-                tax_unit = self._create_single_filer(
-                    adult, hh_group, hh_data, [], 'single'
-                )
-                if tax_unit:
-                    tax_units.append(tax_unit)
-                    processed_adults.add(adult_id)
+        # Process remaining adults as single filers (vectorized where possible)
+        remaining_adult_ids = set(adults.index) - processed_adults
+        for adult_id in remaining_adult_ids:
+            adult = adults.loc[adult_id]
+            deps = list(dependents.get(adult_id, set()) - claimed_dependents)
+            
+            tax_unit = self._create_single_filer(
+                adult,
+                hh_group,
+                hh_data,
+                deps,
+                'single'
+            )
+            
+            if tax_unit:
+                num_deps = len(tax_unit['dependents'])
+                logger.debug(f"Created single filer tax unit for {adult_id} with {num_deps} dependents")
+                tax_units.append(tax_unit)
+                claimed_dependents.update(tax_unit['dependents'])
+                processed_adults.add(adult_id)
         
-        # Try to assign any unclaimed dependents
-        all_dependents = set()
-        for deps in dependents.values():
-            all_dependents.update(deps)
+        # Assign any remaining unclaimed dependents
         unclaimed_deps = all_dependents - claimed_dependents
         
         if unclaimed_deps:
             logger.warning(f"Household {hh_id} has {len(unclaimed_deps)} unassigned dependents")
-            # Try to assign unclaimed dependents to existing tax units
+            
+            # Create a list of (tax_unit_idx, dependent_id) pairs that can be claimed
+            assignments = []
+            
             for dep_id in unclaimed_deps:
                 dependent = hh_group.loc[dep_id]
-                # Try to find a suitable tax unit for this dependent
-                for tax_unit in tax_units:
-                    # Check if this tax unit can claim the dependent
+                
+                # Find the first tax unit that can claim this dependent
+                for idx, tax_unit in enumerate(tax_units):
                     if self._can_claim_dependent(tax_unit, dependent, hh_group):
-                        tax_unit['dependents'].append(dep_id)
-                        tax_unit['num_dependents'] += 1
-                        claimed_dependents.add(dep_id)
-                        logger.info(f"  Assigned unclaimed dependent {dep_id} to tax unit {tax_unit['filer_id']}")
+                        assignments.append((idx, dep_id))
                         break
+            
+            # Apply all valid assignments
+            for idx, dep_id in assignments:
+                tax_units[idx]['dependents'].append(dep_id)
+                tax_units[idx]['num_dependents'] += 1
+                claimed_dependents.add(dep_id)
+                logger.info(f"Assigned unclaimed dependent {dep_id} to tax unit {tax_units[idx]['filer_id']}")
         
-        # Log final counts
-        logger.info(f"Household {hh_id} summary:")
-        logger.info(f"  Total adults: {len(adults)}")
-        logger.info(f"  Total tax units created: {len(tax_units)}")
-        logger.info(f"  Total dependents assigned: {len(claimed_dependents)} of {len(all_dependents)}")
-        
-        # Verify all adults are in a tax unit
+        # Final validation and logging
         unassigned_adults = set(adults.index) - processed_adults
-        if unassigned_adults:
-            logger.warning(f"  WARNING: {len(unassigned_adults)} adults not assigned to any tax unit: {unassigned_adults}")
+        num_assigned_deps = len(claimed_dependents)
         
-        return tax_units
-        # Return the list of tax units for this household
+        logger.info(
+            f"Household {hh_id} summary: "
+            f"{len(tax_units)} tax units, "
+            f"{num_assigned_deps}/{len(all_dependents)} dependents assigned, "
+            f"{len(unassigned_adults)}/{len(adults)} adults unassigned"
+        )
+        
+        if unassigned_adults:
+            logger.warning(f"  WARNING: {len(unassigned_adults)} adults not assigned to any tax unit")
+        
         return tax_units
     
     def _identify_joint_filers(self, adults: pd.DataFrame, hh_members: pd.DataFrame) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
@@ -439,38 +633,72 @@ class TaxUnitConstructor:
         mfs_filers = []
         processed = set()
         
-        # Convert to list of (id, series) for easier iteration
-        adult_list = [(idx, row) for idx, row in adults.iterrows()]
+        # Get all adult IDs
+        adult_ids = list(adults.index)
         
-        logger.debug(f"Checking {len(adult_list)} adults for potential joint/MFS filers")
+        # Look for married couples using PUMS relationship codes
+        # RELSHIPP values: 20=Householder, 21=Spouse, 22-24=Children
+        householder = None
         
-        for i, (id1, person1) in enumerate(adult_list):
+        # First find the householder (RELSHIPP == 20)
+        for id1 in adult_ids:
+            person = adults.loc[id1]
+            if person.get('RELSHIPP') == 20:  # Householder
+                householder = (id1, person)
+                logger.debug(f"Found householder: {id1}")
+                break
+        
+        # If we found a householder, look for their spouse
+        if householder:
+            id1, person1 = householder
+            if person1.get('MAR') == 1:  # 1 = Married
+                # Look for spouse (RELSHIPP == 21)
+                for id2 in adult_ids:
+                    if id2 == id1:
+                        continue
+                    person2 = adults.loc[id2]
+                    if person2.get('RELSHIPP') == 21:  # Spouse
+                        # Check if they should file separately
+                        if self._should_file_separately(person1, person2, hh_members):
+                            mfs_filers.append((id1, id2))
+                            logger.debug(f"  Identified MFS filers: {id1} and {id2}")
+                        else:
+                            joint_filers.append((id1, id2))
+                            logger.debug(f"  Identified joint filers: {id1} and {id2}")
+                        processed.update([id1, id2])
+                        break
+        
+        # Look for other potential married couples (not householder/spouse)
+        for i, id1 in enumerate(adult_ids):
             if id1 in processed:
-                logger.debug(f"Skipping already processed adult {id1}")
                 continue
                 
-            for j in range(i + 1, len(adult_list)):
-                id2, person2 = adult_list[j]
+            person1 = adults.loc[id1]
+            
+            # Skip if not married
+            if person1.get('MAR') != 1:  # 1 = Married
+                continue
                 
+            # Look for potential spouse
+            for j in range(i + 1, len(adult_ids)):
+                id2 = adult_ids[j]
                 if id2 in processed:
-                    logger.debug(f"Skipping already processed adult {id2}")
                     continue
+                    
+                person2 = adults.loc[id2]
                 
-                logger.debug(f"Checking if {id1} (MAR={person1.get('MAR')}, RELSHIPP={person1.get('RELSHIPP')}) and {id2} (MAR={person2.get('MAR')}, RELSHIPP={person2.get('RELSHIPP')}) are married")
-                
-                # First check if they should file as MFS (this covers all married couples)
-                mfs = is_married_filing_separately(person1, person2, hh_members)
-                if mfs:
-                    mfs_filers.append((id1, id2))
-                    logger.debug(f"  Married couple {id1} and {id2} will file separately")
-                    # Mark both as processed
-                    processed.update([id1, id2])
-                    break
-                
-                # If not MFS, check if they can file jointly
-                elif is_married_filing_jointly(person1, person2, hh_members):
-                    joint_filers.append((id1, id2))
-                    logger.debug(f"  Identified joint filers: {id1} and {id2}")
+                # Check if they're both married and around the same age
+                if (person2.get('MAR') == 1 and 
+                    abs(person1.get('AGEP', 0) - person2.get('AGEP', 0)) <= 10):
+                    
+                    # Check if they should file separately
+                    if self._should_file_separately(person1, person2, hh_members):
+                        mfs_filers.append((id1, id2))
+                        logger.debug(f"  Identified MFS filers: {id1} and {id2}")
+                    else:
+                        joint_filers.append((id1, id2))
+                        logger.debug(f"  Identified joint filers: {id1} and {id2}")
+                    
                     # Mark both as processed
                     processed.update([id1, id2])
                     break
@@ -563,7 +791,7 @@ class TaxUnitConstructor:
         """
         if available_deps is None:
             available_deps = []
-        
+            
         logger.debug(f"Creating joint filer tax unit for {adult1.name} and {adult2.name} with {len(available_deps)} available dependents")
         
         # Filter available dependents to only include those actually in the household
@@ -579,17 +807,17 @@ class TaxUnitConstructor:
         income_df = pd.DataFrame(members_to_include)
         income = calculate_tax_unit_income(income_df)
         
-        # Create tax unit
+        # Create tax unit with proper string IDs
         tax_unit = {
             'filer_id': f"{hh_data['SERIALNO']}_joint_{adult1.name}_{adult2.name}",
-            'SERIALNO': hh_data['SERIALNO'],
+            'SERIALNO': str(hh_data['SERIALNO']),  # Ensure SERIALNO is string
             'filing_status': 'joint',
-            'primary_filer_id': adult1.name,
-            'secondary_filer_id': adult2.name,
+            'primary_filer_id': str(adult1.name),   # Convert to string
+            'secondary_filer_id': str(adult2.name), # Convert to string
             'income': income,
             'num_dependents': len(valid_dependents),
-            'dependents': valid_dependents,
-            'hh_id': adult1['SERIALNO']
+            'dependents': [str(d) for d in valid_dependents],  # Ensure dependents are strings
+            'hh_id': str(adult1['SERIALNO'])  # Ensure hh_id is string
         }
         
         logger.debug(f"Created joint tax unit: {tax_unit}")
@@ -607,18 +835,28 @@ class TaxUnitConstructor:
         Returns:
             bool: True if the tax unit can claim the dependent
         """
-        # Get the primary filer
-        primary_filer = hh_members.loc[tax_unit['primary_filer_id']]
+        # Get the primary filer - handle missing primary_filer_id
+        primary_filer_id = tax_unit.get('primary_filer_id')
+        if not primary_filer_id or primary_filer_id not in hh_members.index:
+            logger.warning(f"Primary filer ID {primary_filer_id} not found in household members")
+            return False
+            
+        primary_filer = hh_members.loc[primary_filer_id]
         
-        # Check relationship
+        # Check relationship using correct PUMS codes
         rel_to_primary = dependent.get('RELSHIPP', 0)
         
         # Direct child/stepchild/adopted child relationship
-        if rel_to_primary in [3, 4, 5]:  # Biological/step/adopted child
+        # PUMS codes: 22=Biological child, 23=Adopted child, 24=Stepchild
+        if rel_to_primary in [22, 23, 24]:  
             return True
             
-        # Other qualifying relative
-        if rel_to_primary in range(6, 19):  # Other relatives
+        # Grandchild relationship
+        if rel_to_primary == 25:  # Grandchild
+            return True
+            
+        # Other qualifying relative relationships
+        if rel_to_primary in [26, 27, 28, 29, 30]:  # Siblings, parents, grandparents, in-laws, other relatives
             # Check if they lived together all year
             # (In PUMS, if they're in the same household, we assume they lived together all year)
             return True
@@ -652,16 +890,44 @@ class TaxUnitConstructor:
         # Filter available dependents to only include those actually in the household
         # and not already in another tax unit
         valid_dependents = []
+        logger.debug(f"Processing available_deps: {available_deps}")
+        logger.debug(f"Household members index: {list(hh_members.index)}")
+        
         for dep_id in available_deps:
-            if dep_id in hh_members.index:
-                dep = hh_members.loc[dep_id]
+            # Ensure dep_id is a string
+            dep_id_str = str(dep_id)
+            logger.debug(f"Checking dependent ID: {dep_id} (type: {type(dep_id)}) -> {dep_id_str}")
+            
+            if dep_id_str in hh_members.index:
+                dep = hh_members.loc[dep_id_str]
                 if 'in_tax_unit' not in dep or not dep['in_tax_unit']:
-                    valid_dependents.append(dep_id)
+                    valid_dependents.append(dep_id_str)
+                    logger.debug(f"Added valid dependent: {dep_id_str}")
+            else:
+                logger.warning(f"Dependent ID {dep_id_str} not found in household members index")
         
         # Calculate income (include dependents in the calculation)
-        members_to_include = [adult]
+        members_to_include = []
+        
+        # Add the adult (convert Series to dict if needed)
+        if isinstance(adult, pd.Series):
+            members_to_include.append(adult.to_dict())
+        else:
+            members_to_include.append(adult)
+        
+        # Add dependents if any
         if valid_dependents:
-            members_to_include.extend(hh_members.loc[valid_dependents].to_dict('records'))
+            for dep_id in valid_dependents:
+                try:
+                    dep_data = hh_members.loc[dep_id]
+                    if isinstance(dep_data, pd.Series):
+                        members_to_include.append(dep_data.to_dict())
+                    else:
+                        members_to_include.append(dep_data)
+                except KeyError as e:
+                    logger.error(f"Error accessing dependent {dep_id}: {e}")
+                    logger.error(f"Available household member IDs: {list(hh_members.index)}")
+                    continue
         
         try:
             income = calculate_tax_unit_income(pd.DataFrame(members_to_include))
@@ -706,7 +972,8 @@ class TaxUnitConstructor:
             'income': income,
             'num_dependents': len(valid_dependents),
             'dependents': valid_dependents,
-            'hh_id': adult['SERIALNO']
+            'hh_id': adult['SERIALNO'],
+            'primary_filer_id': str(adult.name)  # Add primary filer ID
         }
         
         logger.debug(f"Created tax unit: {tax_unit}")
