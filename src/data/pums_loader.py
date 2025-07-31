@@ -31,6 +31,10 @@ class PUMSDataLoader:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
+        # Add batch state management
+        self._batch_offset = 0
+        self._total_households = None
+        
         # Define required columns for person and household data
         self.person_columns = {
             'SERIALNO': str, 'SPORDER': int, 'PUMA': str, 'ST': str,
@@ -78,14 +82,12 @@ class PUMSDataLoader:
     def load_households_batch(
         self, 
         batch_size: int = 1000, 
-        offset: int = 0,
         state: str = DEFAULT_STATE
     ) -> pd.DataFrame:
-        """Load a batch of household records.
+        """Load a batch of household records using internal state management.
         
         Args:
             batch_size: Number of records to load
-            offset: Starting record number
             state: State FIPS code (default: '15' for Hawaii)
             
         Returns:
@@ -95,17 +97,34 @@ class PUMSDataLoader:
         if not hh_file.exists():
             raise FileNotFoundError(f"Household PUMS file not found: {hh_file}")
         
-        # Read batch of records
-        logger.debug(f"Loading household batch: offset={offset}, size={batch_size}")
+        # Initialize total households if not already done
+        if self._total_households is None:
+            self._total_households = self.get_total_households(state)
+        
+        # Check if we've reached the end
+        if self._batch_offset >= self._total_households:
+            logger.debug(f"Reached end of data: offset={self._batch_offset}, total={self._total_households}")
+            return pd.DataFrame()
+        
+        # Read batch of records starting from current offset
+        logger.debug(f"Loading household batch: offset={self._batch_offset}, size={batch_size}")
+        
+        # Skip header (row 0) plus the offset rows
+        skiprows = range(1, self._batch_offset + 1) if self._batch_offset > 0 else []
+        
         hh_df = pd.read_csv(
             hh_file,
-            skiprows=range(1, offset + 1),  # +1 to skip header
+            skiprows=skiprows,
             nrows=batch_size,
             dtype=self.household_columns
         )
         
         if hh_df.empty:
             return pd.DataFrame()
+        
+        # Update offset for next batch
+        self._batch_offset += len(hh_df)
+        logger.debug(f"Updated batch offset to {self._batch_offset}")
             
         # Apply income adjustments and filters
         hh_df = self._adjust_income(hh_df)
@@ -113,6 +132,12 @@ class PUMSDataLoader:
             hh_df = hh_df[hh_df['ST'] == state].copy()
             
         return hh_df
+    
+    def reset_batch_state(self):
+        """Reset the batch loading state to start from the beginning."""
+        self._batch_offset = 0
+        self._total_households = None
+        logger.debug("Reset batch loading state")
     
     def load_persons_for_households(
         self, 
@@ -189,17 +214,23 @@ class PUMSDataLoader:
         batch_size = 10000
         hh_batches = []
         
-        for offset in range(0, total_households, batch_size):
-            current_batch_size = min(batch_size, total_households - offset)
-            logger.debug(f"Loading household batch: {offset} to {offset + current_batch_size}")
+        # Reset batch state to start from beginning
+        self.reset_batch_state()
+        
+        while True:
+            logger.debug(f"Loading household batch with size {batch_size}")
             batch = self.load_households_batch(
-                batch_size=current_batch_size,
-                offset=offset,
+                batch_size=batch_size,
                 state=state
             )
+            
+            if batch.empty:
+                logger.debug("No more households to load")
+                break
+                
             hh_batches.append(batch)
             
-        hh_df = pd.concat(hh_batches, ignore_index=True)
+        hh_df = pd.concat(hh_batches, ignore_index=True) if hh_batches else pd.DataFrame()
         
         # Load all persons for these households
         person_df = self.load_persons_for_households(

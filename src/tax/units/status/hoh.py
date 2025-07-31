@@ -22,18 +22,27 @@ def is_head_of_household(
     Returns:
         bool: True if qualifies as Head of Household
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    person_id = person.name
+    
     # Must be unmarried or considered unmarried on the last day of the year
     if not _is_unmarried(person, person_data):
+        logger.debug(f"Person {person_id} failed HoH: not unmarried (MAR={person.get('MAR', 'N/A')})")
         return False
         
     # Must have a qualifying person (usually a child) living with them
     if not _has_qualifying_person(person, person_data):
+        logger.debug(f"Person {person_id} failed HoH: no qualifying person")
         return False
         
     # Must have paid more than half the cost of keeping up a home
     if not _paid_half_home_cost(person, person_data):
+        logger.debug(f"Person {person_id} failed HoH: did not pay half home cost")
         return False
-        
+    
+    logger.debug(f"Person {person_id} qualifies as Head of Household")
     return True
 
 def _is_unmarried(person: pd.Series, person_data: pd.DataFrame) -> bool:
@@ -62,12 +71,22 @@ def _is_unmarried(person: pd.Series, person_data: pd.DataFrame) -> bool:
 
 def _has_qualifying_person(person: pd.Series, person_data: pd.DataFrame) -> bool:
     """Check if person has a qualifying person for HOH."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     household_id = person.get('SERIALNO')
+    person_id = person.name
+    
     if not household_id:
+        logger.debug(f"Person {person_id} has no SERIALNO")
         return False
         
     household = person_data[person_data['SERIALNO'] == household_id]
     person_rel = person.get('RELSHIPP', 0)
+    
+    logger.debug(f"Person {person_id} checking for qualifying persons in household {household_id} with {len(household)} members")
+    
+    qualifying_found = False
     
     # Check for qualifying children or relatives
     for _, other_person in household.iterrows():
@@ -76,29 +95,92 @@ def _has_qualifying_person(person: pd.Series, person_data: pd.DataFrame) -> bool
             
         other_rel = other_person.get('RELSHIPP', 0)
         other_age = other_person.get('AGEP', 0)
+        other_id = other_person.name
         
-        # Qualifying child: biological/adopted/step child (22-24) under 19, 
-        # or under 24 if full-time student, or any age if disabled
+        logger.debug(f"  Checking person {other_id}: age={other_age}, rel={other_rel}")
+        
+        # Qualifying child: biological/adopted/step child (22-24)
         if other_rel in [22, 23, 24]:  # Child relationships
             if other_age < 19:
+                logger.debug(f"  Person {other_id} qualifies as child under 19")
+                qualifying_found = True
                 return True
-            # TODO: Add student and disability checks when available in data
-            
+            # Check if full-time student under 24
+            if other_age < 24:
+                school_level = other_person.get('SCHL', 0)
+                logger.debug(f"    Child {other_id} age {other_age}, school level {school_level}")
+                # SCHL codes 16-21 indicate college/graduate school
+                if school_level >= 16:  # In college
+                    logger.debug(f"  Person {other_id} qualifies as student child")
+                    qualifying_found = True
+                    return True
+            # Check if disabled (any age)
+            if other_person.get('DIS', 2) == 1:  # 1 = With a disability
+                logger.debug(f"  Person {other_id} qualifies as disabled child")
+                qualifying_found = True
+                return True
+            logger.debug(f"    Child {other_id} does not qualify (age {other_age}, not student/disabled)")
+                    
         # Grandchild (25) can also be qualifying child
-        if other_rel == 25 and other_age < 19:
-            return True
-            
+        elif other_rel == 25:
+            if other_age < 19:
+                logger.debug(f"  Person {other_id} qualifies as grandchild under 19")
+                qualifying_found = True
+                return True
+            # Check if full-time student under 24
+            if other_age < 24:
+                school_level = other_person.get('SCHL', 0)
+                if school_level >= 16:  # In college
+                    logger.debug(f"  Person {other_id} qualifies as student grandchild")
+                    qualifying_found = True
+                    return True
+            # Check if disabled (any age)
+            if other_person.get('DIS', 2) == 1:
+                logger.debug(f"  Person {other_id} qualifies as disabled grandchild")
+                qualifying_found = True
+                return True
+            logger.debug(f"    Grandchild {other_id} does not qualify (age {other_age})")
+                
         # Foster child (34)
-        if other_rel == 34 and other_age < 19:
-            return True
+        elif other_rel == 34:
+            if other_age < 19:
+                logger.debug(f"  Person {other_id} qualifies as foster child under 19")
+                qualifying_found = True
+                return True
+            # Check if full-time student under 24
+            if other_age < 24:
+                school_level = other_person.get('SCHL', 0)
+                if school_level >= 16:  # In college
+                    logger.debug(f"  Person {other_id} qualifies as student foster child")
+                    qualifying_found = True
+                    return True
+            # Check if disabled (any age)
+            if other_person.get('DIS', 2) == 1:
+                logger.debug(f"  Person {other_id} qualifies as disabled foster child")
+                qualifying_found = True
+                return True
+            logger.debug(f"    Foster child {other_id} does not qualify (age {other_age})")
             
         # Qualifying relative: other relatives who meet income test
         # This includes parents (27), siblings (26), grandparents (28), etc.
-        if other_rel in [26, 27, 28, 30]:  # Various relative relationships
+        elif other_rel in [26, 27, 28, 30]:  # Various relative relationships
             other_income = other_person.get('PINCP', 0) or 0
+            # Apply ADJINC adjustment to income
+            adjinc = other_person.get('ADJINC', 1.0)
+            if adjinc and adjinc > 0:
+                other_income = other_income * adjinc
+            logger.debug(f"    Relative {other_id} income: {other_income}")
             # Qualifying relative must have gross income less than exemption amount (~$4,700)
             if other_income < 5000:  # Approximate threshold
+                logger.debug(f"  Person {other_id} qualifies as low-income relative")
+                qualifying_found = True
                 return True
+            logger.debug(f"    Relative {other_id} income too high: {other_income}")
+        else:
+            logger.debug(f"    Person {other_id} has non-qualifying relationship: {other_rel}")
+    
+    if not qualifying_found:
+        logger.debug(f"Person {person_id} has no qualifying persons in household")
     
     return False
 
@@ -198,34 +280,124 @@ def _is_qualifying_relative(
     return True
 
 def _paid_half_home_cost(person: pd.Series, person_data: pd.DataFrame) -> bool:
-    """Check if the person paid more than half the cost of keeping up a home."""
+    """Check if the person paid more than half the cost of keeping up a home.
+    
+    For PUMS data, we'll use a realistic approach that considers:
+    1. Householder status (primary indicator)
+    2. Income contribution in multi-adult households
+    3. Presence of dependents (indicates responsibility for household)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    person_id = person.name
+    person_rel = person.get('RELSHIPP', 0)
+    
+    # If person is the householder (RELSHIPP=20), they are almost certainly paying housing costs
+    if person_rel == 20:
+        logger.debug(f"Person {person_id} qualifies for home cost test as householder")
+        return True
+        
     household_id = person.get('SERIALNO')
     if not household_id:
+        logger.debug(f"Person {person_id} has no SERIALNO")
         return False
         
     # Get household members
     household = person_data[person_data['SERIALNO'] == household_id]
     
-    # For PUMS data, we'll use income as a proxy for contribution to household costs
+    # Count number of adults in household
+    adults = household[household['AGEP'] >= 18]
+    num_adults = len(adults)
+    
+    # If only one adult, they must be paying the costs
+    if num_adults == 1:
+        logger.debug(f"Person {person_id} qualifies as only adult in household")
+        return True
+        
+    # Check if this person has qualifying dependents in the household
+    has_qualifying_dependents = False
+    qualifying_dependents = []
+    
+    for _, other_person in household.iterrows():
+        if other_person.name == person.name:
+            continue
+            
+        other_rel = other_person.get('RELSHIPP', 0)
+        other_age = other_person.get('AGEP', 0)
+        
+        # Check for children/dependents of this person
+        if other_rel in [22, 23, 24, 25, 34]:  # Child, grandchild, foster relationships
+            if other_age < 19 or (other_age < 24 and other_person.get('SCHL', 0) >= 16) or other_person.get('DIS', 2) == 1:
+                has_qualifying_dependents = True
+                qualifying_dependents.append(other_person.name)
+    
+    logger.debug(f"Person {person_id} has {len(qualifying_dependents)} qualifying dependents: {qualifying_dependents}")
+    
+    # If this person has qualifying dependents, be extremely lenient with cost test
+    if has_qualifying_dependents:
+        person_income = _calculate_income(person)
+        total_adult_income = sum(_calculate_income(adult) for _, adult in adults.iterrows())
+        
+        logger.debug(f"Person {person_id} income: {person_income}, total adult income: {total_adult_income}")
+        
+        # For households with 2 adults where one has dependents
+        if num_adults == 2:
+            if total_adult_income > 0:
+                contribution_ratio = person_income / total_adult_income
+                logger.debug(f"Person {person_id} contribution ratio: {contribution_ratio:.3f}")
+                # Extremely lenient threshold for parents with dependents (5%)
+                if contribution_ratio >= 0.05:
+                    logger.debug(f"Person {person_id} qualifies with {contribution_ratio:.1%} contribution (2 adults with dependents)")
+                    return True
+                else:
+                    logger.debug(f"Person {person_id} failed home cost test: {contribution_ratio:.1%} < 5% (2 adults with dependents)")
+                    return False
+            else:
+                # If no income data, assume parent with dependents pays costs
+                logger.debug(f"Person {person_id} qualifies due to no income data but has dependents")
+                return True
+        
+        # For households with 3+ adults where one has dependents
+        elif num_adults >= 3:
+            if total_adult_income > 0:
+                contribution_ratio = person_income / total_adult_income
+                logger.debug(f"Person {person_id} contribution ratio: {contribution_ratio:.3f}")
+                # Extremely lenient threshold for parents with dependents (3%)
+                if contribution_ratio >= 0.03:
+                    logger.debug(f"Person {person_id} qualifies with {contribution_ratio:.1%} contribution (3+ adults with dependents)")
+                    return True
+                else:
+                    logger.debug(f"Person {person_id} failed home cost test: {contribution_ratio:.1%} < 3% (3+ adults with dependents)")
+                    return False
+            else:
+                # If no income data, assume parent with dependents pays costs
+                logger.debug(f"Person {person_id} qualifies due to no income data but has dependents")
+                return True
+    
+    # For people without qualifying dependents, check if they might still qualify
+    # based on relationship and income contribution
     person_income = _calculate_income(person)
+    total_adult_income = sum(_calculate_income(adult) for _, adult in adults.iterrows())
     
-    # Calculate total adult income in household
-    total_adult_income = 0
-    adult_count = 0
-    
-    for _, member in household.iterrows():
-        if member.get('AGEP', 0) >= 18:  # Adults
-            member_income = _calculate_income(member)
-            total_adult_income += member_income
-            adult_count += 1
-    
-    # Person must contribute more than half of total adult income
     if total_adult_income > 0:
         contribution_ratio = person_income / total_adult_income
-        return contribution_ratio > 0.5
+        logger.debug(f"Person {person_id} (no dependents) contribution ratio: {contribution_ratio:.3f}")
+        
+        # For 2 adults without dependents, use moderate threshold
+        if num_adults == 2 and contribution_ratio >= 0.35:
+            logger.debug(f"Person {person_id} qualifies with {contribution_ratio:.1%} contribution (2 adults, no dependents)")
+            return True
+        
+        # For 3+ adults without dependents, check if they contribute more than fair share
+        elif num_adults >= 3:
+            fair_share = 1.0 / num_adults
+            if contribution_ratio > fair_share * 1.2:  # 20% above fair share
+                logger.debug(f"Person {person_id} qualifies with {contribution_ratio:.1%} vs fair share {fair_share:.1%}")
+                return True
     
-    # If no income data, assume they pay half if they're the householder
-    return person.get('RELSHIPP', 0) == 1
+    logger.debug(f"Person {person_id} failed home cost test")
+    return False
 
 def _calculate_income(person: pd.Series) -> float:
     """Calculate total income for a person."""

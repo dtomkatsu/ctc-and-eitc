@@ -743,7 +743,15 @@ class TaxUnitConstructor:
             
         # 4. Randomly assign some couples to file separately to match real-world distribution
         import random
-        random.seed(int(adult1.get('SERIALNO', '0')[-4:]) + int(adult1.get('SPORDER', 0)))
+        import hashlib
+        
+        # Create a stable seed from SERIALNO and SPORDER
+        serialno = str(adult1.get('SERIALNO', '0'))
+        sporder = str(adult1.get('SPORDER', 0))
+        seed_string = f"{serialno}_{sporder}"
+        seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
+        
+        random.seed(seed)
         if random.random() < 0.02:  # Approximately 2% of couples file separately
             logger.debug("Randomly assigned to file separately")
             return True
@@ -947,13 +955,15 @@ class TaxUnitConstructor:
                         break
             
             # Check for Head of Household status if not married filing separately
-            if filing_status != 'married_filing_separate' and valid_dependents:
-                person_data = hh_members.copy()
-                person_data['SERIALNO'] = hh_data.get('SERIALNO', '')
-                
-                if is_head_of_household(adult, person_data):
-                    filing_status = 'head_of_household'
-                    logger.debug(f"Person {adult.name} qualifies as Head of Household")
+        # Note: Don't require valid_dependents here because HoH qualification 
+        # should be independent of dependent assignment issues
+        if filing_status != 'married_filing_separate':
+            person_data = hh_members.copy()
+            person_data['SERIALNO'] = hh_data.get('SERIALNO', '')
+            
+            if is_head_of_household(adult, person_data):
+                filing_status = 'head_of_household'
+                logger.debug(f"Person {adult.name} qualifies as Head of Household")
         
         # Calculate income (include dependents in the calculation)
         members_to_include = [adult]
