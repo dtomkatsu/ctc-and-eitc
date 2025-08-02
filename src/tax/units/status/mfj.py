@@ -61,6 +61,9 @@ def is_married_filing_jointly(
 def _are_married(person1: pd.Series, person2: pd.Series) -> bool:
     """Check if two people are married to each other.
     
+    STRICT VALIDATION: Only identifies actual married couples based on PUMS relationship codes.
+    This prevents incorrect pairing of unrelated married adults.
+    
     In PUMS data:
     - RELSHIPP=20 is householder
     - RELSHIPP=21 is spouse
@@ -75,26 +78,21 @@ def _are_married(person1: pd.Series, person2: pd.Series) -> bool:
     rel1 = person1.get('RELSHIPP', 0)
     rel2 = person2.get('RELSHIPP', 0)
     
-    # Debug logging
-    print(f"  _are_married - person1: MAR={mar1}, RELSHIPP={rel1}")
-    print(f"  _are_married - person2: MAR={mar2}, RELSHIPP={rel2}")
-    
     # Both must be marked as married
     if mar1 != 1 or mar2 != 1:
-        print(f"  _are_married: Not both marked as married (MAR1={mar1}, MAR2={mar2})")
         return False
         
-    # Check relationship codes
+    # STRICT CHECK: Only allow traditional householder + spouse patterns
+    # This prevents incorrect pairing of unrelated married adults in the same household
     is_married = (
-        # PUMS codes
+        # PUMS data codes: householder + spouse
         (rel1 == 20 and rel2 == 21) or 
         (rel1 == 21 and rel2 == 20) or
-        # Test data codes
+        # Test data codes: householder + spouse
         (rel1 == 1 and rel2 == 2) or
         (rel1 == 2 and rel2 == 1)
     )
     
-    print(f"  _are_married: {'Married' if is_married else 'Not married'} based on RELSHIPP codes")
     return is_married
 
 def _are_citizens_or_residents(person1: pd.Series, person2: pd.Series) -> bool:

@@ -258,11 +258,12 @@ class TaxUnitValidator:
         
         # Compare filing status distributions
         # Map our PUMS categories to SOI categories
-        # Note: 'joint' in our PUMS data corresponds to 'Married Filing Jointly' (MFJ) only
+        # Note: 'married_filing_jointly' in our PUMS data corresponds to 'Married Filing Jointly' (MFJ) only
         status_map = {
             'single': 'single_returns',
-            'joint': 'mfj_returns',      # Map to MFJ only (not combined with MFS)
-            'head_of_household': 'hoh_returns'
+            'married_filing_jointly': 'mfj_returns',  # Map to MFJ only (not combined with MFS)
+            'head_of_household': 'hoh_returns',
+            'married_filing_separately': 'mfs_returns'  # Add MFS mapping
         }
         
         for pums_status, soi_key in status_map.items():

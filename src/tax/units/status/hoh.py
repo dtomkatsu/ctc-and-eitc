@@ -10,7 +10,8 @@ from typing import Dict, List, Optional, Tuple, Union
 
 def is_head_of_household(
     person: pd.Series, 
-    person_data: pd.DataFrame
+    person_data: pd.DataFrame,
+    has_dependents: bool = False
 ) -> bool:
     """
     Determine if a person qualifies as Head of Household.
@@ -18,6 +19,7 @@ def is_head_of_household(
     Args:
         person: The person's data
         person_data: Full person data for reference
+        has_dependents: Whether this person has dependents in their tax unit
         
     Returns:
         bool: True if qualifies as Head of Household
@@ -26,6 +28,8 @@ def is_head_of_household(
     logger = logging.getLogger(__name__)
     
     person_id = person.name
+    person_age = person.get('AGEP', 0)
+    person_rel = person.get('RELSHIPP', 0)
     
     # Must be unmarried or considered unmarried on the last day of the year
     if not _is_unmarried(person, person_data):
@@ -33,9 +37,26 @@ def is_head_of_household(
         return False
         
     # Must have a qualifying person (usually a child) living with them
+    # BALANCED: Allow qualifying persons even if not claimed as dependents
     if not _has_qualifying_person(person, person_data):
         logger.debug(f"Person {person_id} failed HoH: no qualifying person")
         return False
+    
+    # BALANCED: Prefer people with dependents, but allow qualifying persons
+    if has_dependents:
+        # If they have dependents, they likely qualify
+        logger.debug(f"Person {person_id} has dependents, checking other criteria")
+    else:
+        # If no dependents, require stronger qualifying person criteria
+        if not _has_qualifying_person(person, person_data):
+            logger.debug(f"Person {person_id} failed HoH: no dependents and no qualifying person")
+            return False
+        
+        # BALANCED: Allow non-householders with qualifying persons
+        # but be slightly more restrictive for very young filers without dependents
+        if person_age < 22 and person_rel != 20:
+            logger.debug(f"Person {person_id} failed HoH: very young non-householder without dependents")
+            return False
         
     # Must have paid more than half the cost of keeping up a home
     if not _paid_half_home_cost(person, person_data):
@@ -99,13 +120,13 @@ def _has_qualifying_person(person: pd.Series, person_data: pd.DataFrame) -> bool
         
         logger.debug(f"  Checking person {other_id}: age={other_age}, rel={other_rel}")
         
-        # Qualifying child: biological/adopted/step child (22-24)
-        if other_rel in [22, 23, 24]:  # Child relationships
+        # BALANCED: Qualifying child - direct child (22-24) or grandchild (25)
+        if other_rel in [22, 23, 24, 25]:  # Child/grandchild relationships
             if other_age < 19:
-                logger.debug(f"  Person {other_id} qualifies as child under 19")
+                logger.debug(f"  Person {other_id} qualifies as child/grandchild under 19")
                 qualifying_found = True
                 return True
-            # Check if full-time student under 24
+            # BALANCED: Allow students under 24 (more inclusive)
             if other_age < 24:
                 school_level = other_person.get('SCHL', 0)
                 logger.debug(f"    Child {other_id} age {other_age}, school level {school_level}")
@@ -161,27 +182,70 @@ def _has_qualifying_person(person: pd.Series, person_data: pd.DataFrame) -> bool
                 return True
             logger.debug(f"    Foster child {other_id} does not qualify (age {other_age})")
             
-        # Qualifying relative: other relatives who meet income test
-        # This includes parents (27), siblings (26), grandparents (28), etc.
-        elif other_rel in [26, 27, 28, 30]:  # Various relative relationships
-            other_income = other_person.get('PINCP', 0) or 0
-            # Apply ADJINC adjustment to income
-            adjinc = other_person.get('ADJINC', 1.0)
-            if adjinc and adjinc > 0:
-                other_income = other_income * adjinc
-            logger.debug(f"    Relative {other_id} income: {other_income}")
-            # Qualifying relative must have gross income less than exemption amount (~$4,700)
-            if other_income < 5000:  # Approximate threshold
-                logger.debug(f"  Person {other_id} qualifies as low-income relative")
-                qualifying_found = True
-                return True
-            logger.debug(f"    Relative {other_id} income too high: {other_income}")
+        # For HoH purposes, be much more restrictive about qualifying relatives
+        # Only allow parents (27) if they are elderly/disabled dependents
+        elif other_rel == 27:  # Parent
+            # Only qualify if parent is elderly (65+) or disabled AND has low income
+            if (other_age >= 65 or other_person.get('DIS', 2) == 1):
+                other_income = other_person.get('PINCP', 0) or 0
+                # Apply ADJINC adjustment to income
+                adjinc = other_person.get('ADJINC', 1.0)
+                if adjinc and adjinc > 0:
+                    other_income = other_income * adjinc
+                logger.debug(f"    Parent {other_id} income: {other_income}, age: {other_age}")
+                # Must have very low income to be a qualifying dependent parent
+                if other_income < 3000:  # Very restrictive threshold
+                    logger.debug(f"  Parent {other_id} qualifies as dependent (elderly/disabled, low income)")
+                    qualifying_found = True
+                    return True
+            logger.debug(f"    Parent {other_id} does not qualify (not elderly/disabled or income too high)")
+            
+        # Remove siblings, grandparents, and other relatives as qualifying persons
+        # HoH should primarily be for people with dependent children, not other relatives
         else:
             logger.debug(f"    Person {other_id} has non-qualifying relationship: {other_rel}")
     
     if not qualifying_found:
         logger.debug(f"Person {person_id} has no qualifying persons in household")
     
+    return False
+
+def _has_strict_qualifying_person(person: pd.Series, person_data: pd.DataFrame) -> bool:
+    """Check if person has a strict qualifying person for HOH (more restrictive criteria)."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    household_id = person.get('SERIALNO')
+    person_id = person.name
+    
+    if not household_id:
+        return False
+        
+    household = person_data[person_data['SERIALNO'] == household_id]
+    
+    # STRICT: Only direct children or grandchildren under 19, or disabled dependents
+    for _, other_person in household.iterrows():
+        if other_person.name == person.name:
+            continue
+            
+        other_rel = other_person.get('RELSHIPP', 0)
+        other_age = other_person.get('AGEP', 0)
+        other_id = other_person.name
+        
+        # Only direct children (22-24) or grandchildren (25)
+        if other_rel in [22, 23, 24, 25]:
+            # Must be under 19 (no student exception for strict criteria)
+            if other_age < 19:
+                logger.debug(f"  Person {other_id} qualifies as strict qualifying child (age {other_age})")
+                return True
+            
+            # Or disabled dependent of any age
+            disability = other_person.get('DIS', 0)
+            if disability == 1:  # Has disability
+                logger.debug(f"  Person {other_id} qualifies as disabled dependent")
+                return True
+    
+    logger.debug(f"Person {person_id} has no strict qualifying persons")
     return False
 
 def _is_qualifying_child(

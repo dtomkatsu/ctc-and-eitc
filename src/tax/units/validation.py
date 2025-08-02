@@ -65,10 +65,12 @@ class TaxUnitValidator:
                 ))
         
         # Validate filing status
-        valid_statuses = [
+        valid_statuses = {
             'single', 'married_filing_jointly', 
-            'married_filing_separately', 'head_of_household'
-        ]
+            'married_filing_separately', 'head_of_household',
+            'joint',  # Allow 'joint' as alias for 'married_filing_jointly'
+            'married_filing_separate'  # Allow common variant
+        }
         
         if 'filing_status' in tax_unit and tax_unit['filing_status'] not in valid_statuses:
             issues.append(ValidationIssue(
