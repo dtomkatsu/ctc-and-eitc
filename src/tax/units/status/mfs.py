@@ -38,19 +38,24 @@ def is_married_filing_separately(
     income1 = _calculate_income(person1)
     income2 = _calculate_income(person2)
     
-    # Strong indicators for filing separately:
+    # Strong indicators for filing separately (VERY CONSERVATIVE):
     
-    # 1. Large income disparity (one spouse earns significantly more)
+    # 1. Extreme income disparity (one spouse earns significantly more)
+    # Made much more conservative to reduce MFS rate
     if income1 > 0 and income2 > 0:
         ratio = max(income1, income2) / min(income1, income2)
         print(f"Income ratio check - income1: {income1}, income2: {income2}, ratio: {ratio}")
-        if ratio > 100:  # One earns 100x more than the other (relaxed from 15x)
-            print(f"  Income ratio {ratio} > 100, returning True for MFS")
-            print(f"MFS Check: About to return True due to income ratio")
+        
+        # Only force MFS for extreme disparities (500:1 or higher)
+        # AND only if the high earner makes over $500k
+        max_income = max(income1, income2)
+        if ratio > 500 and max_income > 500000:  # Very extreme cases only
+            print(f"  Extreme income ratio {ratio} > 500 with high income ${max_income:,.0f}, returning True for MFS")
             return True
     
     # 2. One spouse has significant negative income (business losses)
-    if (income1 < -10000 and income2 > 75000) or (income2 < -10000 and income1 > 75000):
+    # Made more conservative: require larger losses and higher other income
+    if (income1 < -50000 and income2 > 200000) or (income2 < -50000 and income1 > 200000):
         return True
     
     # 3. One spouse has very high medical expenses (disability indicator)
@@ -62,6 +67,7 @@ def is_married_filing_separately(
                     return True
     
     # 4. Different citizenship status with tax implications
+    # Made more conservative: require higher income threshold
     if 'CIT' in person1 and 'CIT' in person2:
         cit1 = person1.get('CIT', 0)
         cit2 = person2.get('CIT', 0)
@@ -69,7 +75,7 @@ def is_married_filing_separately(
         # If one is non-citizen and the other is citizen, and there's significant income
         if (cit1 >= 4 and cit2 < 4) or (cit2 >= 4 and cit1 < 4):
             print(f"  Different citizenship status detected")
-            if max(income1, income2) > 50000:
+            if max(income1, income2) > 150000:  # Raised from 50k to 150k
                 print(f"  Income threshold met, returning True for MFS")
                 return True
     
@@ -120,7 +126,7 @@ def is_married_filing_separately(
     
     seed_value = seed_base + int(person1.get('SPORDER', 0)) + int(person2.get('SPORDER', 0))
     random.seed(seed_value)
-    if random.random() < 0.01:  # 1% random assignment (reduced from 2%)
+    if random.random() < 0.003:  # 0.3% random assignment (reduced from 1% to be more conservative)
         print(f"MFS Check: Random assignment triggered, returning True")
         return True
     
