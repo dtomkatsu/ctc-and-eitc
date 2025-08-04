@@ -36,6 +36,9 @@ ENV/
 *.db
 *.sqlite3
 
+# Allow crosswalk files
+!**/crosswalks/*.csv
+
 # Environment variables
 .env
 
