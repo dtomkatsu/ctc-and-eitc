@@ -81,6 +81,14 @@ class DistrictCTCAnalyzer:
         Generate CTC estimates by legislative district.
         
         Args:
+            district_type: Type of district ('house', 'senate', or 'county')
+            include_demographics: Whether to include demographic breakdowns
+            
+        Returns:
+            DataFrame with district-level CTC statistics
+        """
+        logger.info(f"Generating {district_type} district estimates...")
+        
         # Add district mappings
         df_with_districts = self._add_district_mappings(district_type)
         
@@ -90,6 +98,33 @@ class DistrictCTCAnalyzer:
         # Filter out unmapped districts
         df_mapped = df_with_districts[~df_with_districts[district_col].isna()].copy()
         
+        if len(df_mapped) == 0:
+            logger.warning("No tax units could be mapped to districts")
+            return pd.DataFrame()
+            
+        # Group by district and calculate statistics
+        results = []
+        for district_name, district_group in df_mapped.groupby(district_col):
+            try:
+                stats = {'district': district_name}
+                
+                # Calculate basic CTC stats
+                stats.update(self._calculate_district_ctc_stats(district_group, district_name))
+                
+                # Add demographic breakdowns if requested
+                if include_demographics:
+                    stats.update(self._calculate_demographic_breakdowns(district_group))
+                
+                results.append(stats)
+                
+            except Exception as e:
+                logger.error(f"Error processing {district_type} district {district_name}: {e}")
+                continue
+        
+        if not results:
+            logger.error("No district results could be generated")
+            return pd.DataFrame()
+            
         results_df = pd.DataFrame(results)
         logger.info(f"Generated estimates for {len(results_df)} {district_type} districts")
         
