@@ -67,6 +67,42 @@ ctc-and-eitc/
    python scripts/download_pums.py --year 2022 --state 15 --data-dir data/raw/pums
    ```
 
+## Main Pipeline Scripts
+
+The project includes several key pipeline scripts for different types of analysis:
+
+### Full Population Analysis
+- `scripts/full_population_simple.py`: Basic analysis of CTC for the full population
+- `scripts/full_population_ctc_analysis.py`: More detailed CTC analysis with parallel processing
+- `scripts/generate_district_ctc_estimates.py`: Generate CTC estimates by legislative district
+
+### Data Processing
+- `scripts/construct_tax_units.py`: Core tax unit construction from PUMS data
+- `scripts/validate_tax_units.py`: Validation and quality checks for tax units
+- `scripts/calculate_weighted_totals.py`: Calculate weighted statistics
+
+### Analysis Scripts
+- `scripts/analyze_pums_ctc.py`: Analyze CTC eligibility and amounts
+- `scripts/compare_to_soi.py`: Compare results to SOI statistics
+- `scripts/analyze_filing_status_gaps.py`: Analyze gaps in filing status determination
+
+### Running the Pipeline
+
+To run the full analysis pipeline:
+
+```bash
+# 1. Download the data (if not already done)
+python scripts/download_pums.py
+
+# 2. Run the full analysis (simplified version)
+python scripts/full_population_simple.py
+
+# Or for more detailed analysis with parallel processing
+python scripts/full_population_ctc_analysis.py
+```
+
+The results will be saved in the `data/processed/` directory with timestamps.
+
 ## Key Features
 
 - **Tax Unit Construction**: Robust construction of tax units from PUMS data
