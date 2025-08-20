@@ -113,3 +113,35 @@
 2025-08-03 14:57:31,224 - INFO - Created county mapping for 70 PUMAs
 2025-08-03 14:57:31,227 - WARNING - 13447 tax units could not be mapped to county districts
 2025-08-03 14:57:31,227 - ERROR - Analysis failed: 'county'
+2025-08-20 09:11:41,014 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-08-20 09:11:41,014 - INFO - Output directory: output/district_ctc_analysis
+2025-08-20 09:11:41,014 - INFO - District types: ['house', 'senate', 'county']
+2025-08-20 09:11:41,014 - INFO - Loading tax units from src/data/processed/tax_units_rule_based.parquet
+2025-08-20 09:11:41,097 - INFO - Loaded 47,006 tax units
+2025-08-20 09:11:41,097 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-08-20 09:11:41,106 - INFO - Loaded 73,971 person records
+2025-08-20 09:11:41,120 - INFO - Processing dependents...
+2025-08-20 09:11:48,036 - INFO - Loading household data from data/processed/pums_household_processed.parquet
+2025-08-20 09:11:48,041 - INFO - Loaded 32,104 households
+2025-08-20 09:11:48,054 - WARNING - 33,559 tax units missing PUMA assignment
+2025-08-20 09:11:48,054 - INFO - Successfully processed 47,006 tax units with dependents and PUMA data
+2025-08-20 09:11:48,056 - INFO - Validating tax units data...
+2025-08-20 09:11:48,061 - INFO - Validation complete: 13,447 units retained (33,559 removed)
+2025-08-20 09:11:48,063 - INFO - Generating comprehensive district CTC analysis...
+2025-08-20 09:11:48,063 - INFO - Creating comprehensive CTC district analysis report...
+2025-08-20 09:11:48,064 - INFO - Validated data with 13,447 tax units
+2025-08-20 09:11:48,064 - INFO - Calculating CTC for all tax units...
+2025-08-20 09:11:48,283 - INFO - CTC calculations completed
+2025-08-20 09:11:48,284 - INFO - Generating statewide CTC summary...
+2025-08-20 09:11:48,285 - INFO - Generating house district estimates...
+2025-08-20 09:11:48,287 - INFO - Created house mapping for 70 PUMAs
+2025-08-20 09:11:48,290 - WARNING - 13447 tax units could not be mapped to house districts
+2025-08-20 09:11:48,291 - WARNING - No tax units could be mapped to districts
+2025-08-20 09:11:48,291 - INFO - Generating senate district estimates...
+2025-08-20 09:11:48,292 - INFO - Created senate mapping for 70 PUMAs
+2025-08-20 09:11:48,295 - WARNING - 13447 tax units could not be mapped to senate districts
+2025-08-20 09:11:48,295 - WARNING - No tax units could be mapped to districts
+2025-08-20 09:11:48,295 - INFO - Generating county district estimates...
+2025-08-20 09:11:48,296 - INFO - Created county mapping for 70 PUMAs
+2025-08-20 09:11:48,299 - WARNING - 13447 tax units could not be mapped to county districts
+2025-08-20 09:11:48,299 - ERROR - Analysis failed: 'county'

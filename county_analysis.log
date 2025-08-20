@@ -1,0 +1,16 @@
+2025-08-20 09:18:50,328 - INFO - Loading tax units data...
+2025-08-20 09:18:50,417 - INFO - Loaded 47,006 tax units
+2025-08-20 09:18:50,417 - INFO - Loading person data...
+2025-08-20 09:18:50,426 - INFO - Loaded 73,971 person records
+2025-08-20 09:18:50,426 - INFO - Creating PUMA mapping...
+2025-08-20 09:18:50,436 - INFO - Created mapping with 29,158 unique SERIALNO-PUMA pairs
+2025-08-20 09:18:50,436 - INFO - Merging tax units with PUMA data...
+2025-08-20 09:18:50,460 - WARNING - 33,559 tax units are missing PUMA information
+2025-08-20 09:18:50,480 - INFO - Sample of tax units with missing PUMA:
+                               filer_id  ... PUMA
+0  2019GQ0000071_single_2019GQ0000071_1  ...  NaN
+1  2019GQ0000092_single_2019GQ0000092_1  ...  NaN
+2  2019GQ0000309_single_2019GQ0000309_1  ...  NaN
+
+[3 rows x 11 columns]
+2025-08-20 09:18:50,481 - INFO - Unique PUMA values in merged data: [nan '200' '303' '308' '306' '100' '305' '304' '307' '301' '302']

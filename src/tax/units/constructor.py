@@ -956,7 +956,7 @@ class TaxUnitConstructor:
         hh_weight = float(hh_data.get('WGTP', 1.0))
         hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, 'joint')
         
-        # Create tax unit with proper string IDs and include hybrid weight
+        # Create tax unit with proper string IDs and include hybrid weight and geographic info
         tax_unit = {
             'filer_id': f"{hh_data['SERIALNO']}_joint_{adult1.name}_{adult2.name}",
             'SERIALNO': str(hh_data['SERIALNO']),  # Ensure SERIALNO is string
@@ -969,7 +969,9 @@ class TaxUnitConstructor:
             'hh_id': str(adult1['SERIALNO']),  # Ensure hh_id is string
             'weight': hybrid_weight,  # Use hybrid weight
             'hh_weight': hh_weight,   # Store original household weight for reference
-            'person_weight_sum': sum(person_weights)  # Store sum of person weights for reference
+            'person_weight_sum': sum(person_weights),  # Store sum of person weights for reference
+            'PUMA': hh_data.get('PUMA'),  # Add PUMA code for geographic analysis
+            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA'))  # Handle both PUMA and PUMA10 fields
         }
         
         logger.debug(f"Created joint tax unit: {tax_unit}")
@@ -1072,7 +1074,7 @@ class TaxUnitConstructor:
         hh_weight = float(hh_data.get('WGTP', 1.0))
         hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, 'joint')
         
-        # Create tax unit with proper string IDs and include hybrid weight
+        # Create tax unit with proper string IDs and include hybrid weight and geographic info
         tax_unit = {
             'filer_id': f"{hh_data['SERIALNO']}_joint_{adult1.name}_{adult2.name}",
             'SERIALNO': str(hh_data['SERIALNO']),  # Ensure SERIALNO is string
@@ -1085,7 +1087,9 @@ class TaxUnitConstructor:
             'hh_id': str(adult1['SERIALNO']),  # Ensure hh_id is string
             'weight': hybrid_weight,  # Use hybrid weight
             'hh_weight': hh_weight,   # Store original household weight for reference
-            'person_weight_sum': sum(person_weights)  # Store sum of person weights for reference
+            'person_weight_sum': sum(person_weights),  # Store sum of person weights for reference
+            'PUMA': hh_data.get('PUMA'),  # Add PUMA code for geographic analysis
+            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA'))  # Handle both PUMA and PUMA10 fields
         }
         
         logger.debug(f"Created joint tax unit: {tax_unit}")
@@ -1233,7 +1237,7 @@ class TaxUnitConstructor:
         hh_weight = float(hh_data.get('WGTP', 1.0))
         hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, filing_status)
         
-        # Create tax unit with hybrid weight
+        # Create tax unit with hybrid weight and geographic info
         tax_unit = {
             'filer_id': f"{hh_data.get('SERIALNO', '')}_{filing_status}_{adult.name}",
             'SERIALNO': str(hh_data.get('SERIALNO', '')),
@@ -1245,7 +1249,9 @@ class TaxUnitConstructor:
             'hh_id': str(adult.get('SERIALNO', hh_data.get('SERIALNO', ''))),
             'weight': hybrid_weight,
             'hh_weight': hh_weight,
-            'person_weight_sum': sum(person_weights)
+            'person_weight_sum': sum(person_weights),
+            'PUMA': hh_data.get('PUMA'),  # Add PUMA code for geographic analysis
+            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA'))  # Handle both PUMA and PUMA10 fields
         }
         
         logger.debug(f"Created tax unit: {tax_unit}")
