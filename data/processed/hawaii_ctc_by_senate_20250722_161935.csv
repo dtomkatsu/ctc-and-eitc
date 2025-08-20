@@ -1,0 +1,10 @@
+,,ctc_ctc_total,ctc_ctc_total,ctc_ctc_total,ctc_qualifying_children,PWGTP
+,,count,sum,mean,sum,sum
+senate_district,senate_name,,,,,
+SD01,Hawaii Kai/Portlock,3890,3068800.0,788.89,1577,75454
+SD02,Hilo/Hamakua,4863,4173950.0,858.31,2207,75494
+SD03,Kona/Kohala,5841,3235450.0,553.92,1737,110191
+SD05,West/South Maui,4901,4398900.0,897.55,2281,87454
+SD06,Central Maui,3069,2567700.0,836.66,1312,55535
+SD07,Kauai/Niihau,1928,2674050.0,1386.96,1357,41124
+SD12,Downtown/Chinatown,4568,4147700.0,907.99,2159,82379

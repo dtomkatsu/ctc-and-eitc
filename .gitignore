@@ -28,16 +28,23 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Data files
-*.csv
+# Data files (general)
 *.xlsx
 *.feather
 *.parquet
 *.db
 *.sqlite3
 
-# Allow crosswalk files
+# Allow specific CSV files in data directories
+!**/data/**/*.csv
+
+# Ignore other CSV files in root and other directories
+/*.csv
+/*/*.csv
+
+# Explicitly allow crosswalk and PUMS files (redundant but clear)
 !**/crosswalks/*.csv
+!**/raw/pums/*.csv
 
 # Environment variables
 .env

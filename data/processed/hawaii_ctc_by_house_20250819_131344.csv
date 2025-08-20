@@ -1,0 +1,11 @@
+,,ctc_ctc_total,ctc_ctc_total,ctc_ctc_total,ctc_qualifying_children,PWGTP
+,,count,sum,mean,sum,sum
+house_district,house_name,,,,,
+HD01,Hawaii Kai,3890,3068800.0,788.89,1577,75454
+HD04,Hilo,4863,4173950.0,858.31,2207,75494
+HD05,North/South Kona,5841,3235450.0,553.92,1737,110191
+HD09,West Maui,2340,1728850.0,738.82,925,40374
+HD10,Wailuku/Waihee,3069,2567700.0,836.66,1312,55535
+HD13,Molokai/Lanai,2561,2670050.0,1042.58,1356,47080
+HD14,Kauai,1928,2674050.0,1386.96,1357,41124
+HD23,Downtown/Nuuanu,4568,4147700.0,907.99,2159,82379
