@@ -46,29 +46,43 @@ missing_puma = tax_units['PUMA'].isna().sum()
 if missing_puma > 0:
     logger.warning(f"{missing_puma:,} tax units are missing PUMA information")
 
-# Print sample of tax units with missing PUMA
-if missing_puma > 0:
-    sample_missing = tax_units[tax_units['PUMA'].isna()].head(3)
-    logger.info(f"Sample of tax units with missing PUMA:\n{sample_missing}")
+# Load PUMA to county mapping - use corrected mapping
+puma_mapping_path = 'data/crosswalks/hawaii_puma_counties_corrected.csv'
+if not os.path.exists(puma_mapping_path):
+    print(f"Warning: PUMA mapping file not found at {puma_mapping_path}")
+    # Create a simple mapping based on actual Census PUMA codes
+    def map_puma_to_county(puma_str):
+        if pd.isna(puma_str):
+            return 'Unknown'
+        puma_str = str(puma_str).strip()
+        # Handle both string and numeric PUMA codes
+        if puma_str in ['100', '0100']:  # Maui + Kalawao + Kauai combined
+            return 'Maui_Kalawao_Kauai'
+        elif puma_str in ['200', '0200']:  # Hawaii County
+            return 'Hawaii'  
+        elif puma_str in ['301', '302', '303', '304', '305', '306', '307', '308',
+                         '0301', '0302', '0303', '0304', '0305', '0306', '0307', '0308']:  # Honolulu
+            return 'Honolulu'
+        else:
+            return 'Unknown'
+else:
+    puma_df = pd.read_csv(puma_mapping_path)
+    puma_to_county = dict(zip(puma_df['PUMA'].astype(str), puma_df['county']))
+    
+    def map_puma_to_county(puma_str):
+        if pd.isna(puma_str):
+            return 'Unknown'
+        puma_str = str(puma_str).strip()
+        # Try exact match first
+        if puma_str in puma_to_county:
+            return puma_to_county[puma_str]
+        # Try with leading zero
+        puma_padded = puma_str.zfill(4)
+        if puma_padded in puma_to_county:
+            return puma_to_county[puma_padded]
+        return 'Unknown'
 
-# Print unique PUMA values found
-unique_pumas = tax_units['PUMA'].unique()
-logger.info(f"Unique PUMA values in merged data: {unique_pumas}")
-
-# Map PUMA to county
-def puma_to_county(puma):
-    puma = str(puma)
-    if puma.startswith(('1', '3')):  # Oahu PUMAs start with 1 or 3
-        return 'Honolulu'
-    elif puma == '200':  # Hawaii County
-        return 'Hawaii'
-    elif puma in ('306', '307'):  # Maui County
-        return 'Maui'
-    elif puma == '308':  # Kauai County
-        return 'Kauai'
-    return 'Unknown'
-
-tax_units['county'] = tax_units['PUMA'].apply(puma_to_county)
+tax_units['county'] = tax_units['PUMA'].apply(map_puma_to_county)
 
 # Calculate basic statistics
 county_stats = tax_units.groupby('county').agg(

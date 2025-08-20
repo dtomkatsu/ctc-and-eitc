@@ -52,23 +52,23 @@ def main():
         if still_missing > 0:
             logger.warning(f"{still_missing:,} tax units still missing PUMA after second attempt")
     
-    # Map PUMA to county
-    logger.info("Mapping PUMA to county...")
-    def puma_to_county(puma):
-        if pd.isna(puma):
-            return 'Unknown'
-        puma = str(puma)
-        if puma.startswith(('1', '3')):  # Oahu PUMAs start with 1 or 3
-            return 'Honolulu'
-        elif puma == '200':  # Hawaii County
-            return 'Hawaii'
-        elif puma in ('306', '307'):  # Maui County
-            return 'Maui'
-        elif puma == '308':  # Kauai County
-            return 'Kauai'
-        return 'Unknown'
+    # Load PUMA to county mapping - use corrected mapping
+    puma_mapping_path = 'data/crosswalks/hawaii_puma_counties_corrected.csv'
+    if os.path.exists(puma_mapping_path):
+        puma_df = pd.read_csv(puma_mapping_path)
+        puma_to_county = dict(zip(puma_df['PUMA'].astype(str), puma_df['county']))
+        print(f"Loaded corrected PUMA mapping with {len(puma_to_county)} entries")
+    else:
+        print(f"PUMA mapping file not found: {puma_mapping_path}")
+        # Create basic mapping using actual Census PUMA codes
+        puma_to_county = {
+            '0100': 'Maui_Kalawao_Kauai',  # Combined county
+            '0200': 'Hawaii',              # Hawaii County
+            '0301': 'Honolulu', '0302': 'Honolulu', '0303': 'Honolulu', '0304': 'Honolulu',
+            '0305': 'Honolulu', '0306': 'Honolulu', '0307': 'Honolulu', '0308': 'Honolulu'
+        }
     
-    tax_units['county'] = tax_units['PUMA'].apply(puma_to_county)
+    tax_units['county'] = tax_units['PUMA'].apply(lambda x: puma_to_county.get(str(x), 'Unknown'))
     
     # Save the updated tax units with PUMA and county information
     output_path = 'data/processed/tax_units_with_geography.parquet'

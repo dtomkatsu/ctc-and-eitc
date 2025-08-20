@@ -31,12 +31,14 @@ tax_units_with_puma = tax_units.merge(
     how='left'
 )
 
+# Load PUMA to county mapping - use corrected mapping
+puma_mapping_path = 'data/crosswalks/hawaii_puma_counties_corrected.csv'
+puma_df = pd.read_csv(puma_mapping_path)
+puma_to_county = dict(zip(puma_df['PUMA'].astype(str), puma_df['county']))
+
 # Merge with county mapping
-tax_units_with_county = tax_units_with_puma.merge(
-    puma_to_county,
-    on='PUMA',
-    how='left'
-)
+tax_units_with_county = tax_units_with_puma.copy()
+tax_units_with_county['county'] = tax_units_with_county['PUMA'].map(puma_to_county)
 
 # Calculate CTC for each tax unit
 tax_units_with_ctc = []
