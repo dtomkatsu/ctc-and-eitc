@@ -25,6 +25,7 @@ def test_ctc_basic_calculation():
     tax_unit = {
         'filing_status': 'single',
         'income': 50000,
+        'earned_income': 30000,  # $30,000 in earned income
         'dependents': [
             {'age': 10, 'relationship': '22', 'citizenship': '1'},  # Qualifying child
             {'age': 15, 'relationship': '22', 'citizenship': '1'}   # Qualifying child
@@ -36,8 +37,11 @@ def test_ctc_basic_calculation():
     
     assert result['qualifying_children'] == 2
     assert result['ctc_total'] == 4000  # 2 children × $2,000
-    assert result['ctc_refundable'] == 3200  # 2 children × $1,600
-    assert result['ctc_nonrefundable'] == 800  # Remainder
+    
+    # ACTC calculation: 15% of ($30,000 - $2,500) = $4,125, but capped at $3,200 ($1,600 × 2)
+    expected_actc = min((30000 - 2500) * 0.15, 2 * 1600)
+    assert result['ctc_refundable'] == expected_actc
+    assert result['ctc_nonrefundable'] == 4000 - expected_actc  # Remainder
 
 
 def test_ctc_no_qualifying_children():

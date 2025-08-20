@@ -69,13 +69,30 @@ def calculate_ctc(tax_unit: Dict, tax_year: int = 2023) -> Dict[str, float]:
         base_credit, income, filing_status, params
     )
     
-    # Calculate refundable and non-refundable portions
-    max_refundable = len(qualifying_children) * params.refundable_limit_per_child
+    # Calculate Additional Child Tax Credit (ACTC) - refundable portion
+    earned_income = tax_unit.get('earned_income', tax_unit.get('income', 0))  # Fallback to total income if earned_income not available
     
-    # The refundable portion is limited by earned income and other factors
-    # For simplicity, we'll use the minimum of the credit and refundable limit
-    refundable_portion = min(phased_out_credit, max_refundable)
-    nonrefundable_portion = phased_out_credit - refundable_portion
+    # ACTC is 15% of earned income above $2,500, up to $1,600 per child
+    actc_per_child = min(
+        max(0, earned_income - 2500) * 0.15,  # 15% of income above $2,500
+        params.refundable_limit_per_child      # Max $1,600 per child
+    )
+    
+    # Total potential ACTC is per-child amount * number of children
+    max_actc = len(qualifying_children) * actc_per_child
+    
+    # The refundable portion is the lesser of:
+    # 1. The total credit amount after phaseout
+    # 2. The ACTC amount (15% of earned income above $2,500, up to $1,600/child)
+    # 3. The refundable limit ($1,600/child)
+    refundable_portion = min(
+        phased_out_credit,  # Total credit after phaseout
+        max_actc,           # ACTC amount based on earned income
+        len(qualifying_children) * params.refundable_limit_per_child  # $1,600/child cap
+    )
+    
+    # Non-refundable portion is the remaining credit
+    nonrefundable_portion = max(0, phased_out_credit - refundable_portion)
     
     result.update({
         'ctc_total': phased_out_credit,
