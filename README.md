@@ -45,7 +45,23 @@ ctc-and-eitc/
    pip install -r requirements.txt
    ```
 
-3. Set up environment variables:
+3. Download 2023 PUMS data:
+   ```bash
+   # Download using the provided script (requires Python 3.6+)
+   python scripts/download_pums_direct.py
+   
+   # Or manually download and extract:
+   mkdir -p data/raw/pums
+   cd data/raw/pums
+   curl -k -O https://www2.census.gov/programs-surveys/acs/data/pums/2023/5-Year/csv_phi.zip
+   curl -k -O https://www2.census.gov/programs-surveys/acs/data/pums/2023/5-Year/csv_hhi.zip
+   unzip csv_phi.zip
+   unzip csv_hhi.zip
+   mv psam_p15.csv psam_p15_2023.csv
+   mv psam_h15.csv psam_h15_2023.csv
+   ```
+
+4. Set up environment variables:
    - Copy `.env.example` to `.env`:
      ```bash
      cp .env.example .env

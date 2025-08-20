@@ -8,30 +8,42 @@ with specific attention to variables needed for CTC and EITC calculations.
 import logging
 import pandas as pd
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Optional, Tuple, Dict, Any, List, Union
 import numpy as np
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 # Default values
-DEFAULT_PUMS_YEAR = 2022  # Most recent year available
+DEFAULT_PUMS_YEAR = 2023  # Most recent year available
 DEFAULT_STATE = '15'  # Hawaii FIPS code
 DEFAULT_DATA_DIR = Path(__file__).parent.parent.parent / 'data' / 'raw' / 'pums'
 
 class PUMSDataLoader:
     """Handles loading and processing of PUMS data for tax benefit analysis."""
     
-    def __init__(self, data_dir: Path = DEFAULT_DATA_DIR):
+    def __init__(self, data_dir: Union[str, Path] = None, year: int = DEFAULT_PUMS_YEAR):
         """Initialize the PUMS data loader.
         
         Args:
-            data_dir: Directory containing PUMS data files
+            data_dir: Directory containing PUMS data files. If not provided,
+                     defaults to project's data/raw/pums directory.
+            year: Year of PUMS data to load (default: 2023)
         """
-        self.data_dir = Path(data_dir)
+        if data_dir is None:
+            # Set default data directory to project's data/raw/pums
+            project_root = Path(__file__).parents[3]  # Go up 3 levels to project root
+            self.data_dir = project_root / 'data' / 'raw' / 'pums'
+        else:
+            self.data_dir = Path(data_dir)
+            
+        # Ensure data directory exists
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
-        # Add batch state management
+        # Store year for batch loading
+        self.year = year
+        
+        # Initialize batch loading state
         self._batch_offset = 0
         self._total_households = None
         
@@ -60,16 +72,20 @@ class PUMSDataLoader:
             'YBL': int
         }
     
-    def get_total_households(self, state: str = DEFAULT_STATE) -> int:
+    def get_total_households(self, state: str = DEFAULT_STATE, year: int = DEFAULT_PUMS_YEAR) -> int:
         """Get the total number of households in the dataset.
         
         Args:
             state: State FIPS code (default: '15' for Hawaii)
+            year: Year of PUMS data to load (default: 2023)
             
         Returns:
             Total number of households
         """
-        hh_file = self.data_dir / f'psam_h{state}.csv'
+        # Try year-specific file first, fall back to default
+        hh_file = self.data_dir / f'psam_h{state}_{year}.csv'
+        if not hh_file.exists():
+            hh_file = self.data_dir / f'psam_h{state}.csv'
         if not hh_file.exists():
             raise FileNotFoundError(f"Household PUMS file not found: {hh_file}")
             
@@ -82,18 +98,23 @@ class PUMSDataLoader:
     def load_households_batch(
         self, 
         batch_size: int = 1000, 
-        state: str = DEFAULT_STATE
+        state: str = DEFAULT_STATE,
+        year: int = DEFAULT_PUMS_YEAR
     ) -> pd.DataFrame:
         """Load a batch of household records using internal state management.
         
         Args:
             batch_size: Number of records to load
             state: State FIPS code (default: '15' for Hawaii)
+            year: Year of PUMS data to load (default: 2023)
             
         Returns:
             DataFrame with household data
         """
-        hh_file = self.data_dir / f'psam_h{state}.csv'
+        # Try year-specific file first, fall back to default
+        hh_file = self.data_dir / f'psam_h{state}_{year}.csv'
+        if not hh_file.exists():
+            hh_file = self.data_dir / f'psam_h{state}.csv'
         if not hh_file.exists():
             raise FileNotFoundError(f"Household PUMS file not found: {hh_file}")
         
@@ -142,13 +163,15 @@ class PUMSDataLoader:
     def load_persons_for_households(
         self, 
         serialnos: List[str],
-        state: str = DEFAULT_STATE
+        state: str = DEFAULT_STATE,
+        year: int = DEFAULT_PUMS_YEAR
     ) -> pd.DataFrame:
         """Load person records for specific households.
         
         Args:
             serialnos: List of SERIALNO values to load
             state: State FIPS code (default: '15' for Hawaii)
+            year: Year of PUMS data to load (default: 2023)
             
         Returns:
             DataFrame with person data for the specified households
@@ -157,7 +180,10 @@ class PUMSDataLoader:
         if serialnos is None or (hasattr(serialnos, '__len__') and len(serialnos) == 0):
             return pd.DataFrame()
             
-        person_file = self.data_dir / f'psam_p{state}.csv'
+        # Try year-specific file first, fall back to default
+        person_file = self.data_dir / f'psam_p{state}_{year}.csv'
+        if not person_file.exists():
+            person_file = self.data_dir / f'psam_p{state}.csv'
         if not person_file.exists():
             raise FileNotFoundError(f"Person PUMS file not found: {person_file}")
         
@@ -206,26 +232,15 @@ class PUMSDataLoader:
         """
         logger.info(f"Loading PUMS data for state {state} from {year}...")
         
-        # Load all households first by getting total count and loading in batches
-        total_households = self.get_total_households(state=state)
-        logger.info(f"Loading all {total_households} households...")
-        
-        # Load in batches to manage memory
-        batch_size = 10000
-        hh_batches = []
-        
-        # Reset batch state to start from beginning
+        # Reset batch state before starting
         self.reset_batch_state()
         
+        # Load households in batches
+        hh_batches = []
+        
         while True:
-            logger.debug(f"Loading household batch with size {batch_size}")
-            batch = self.load_households_batch(
-                batch_size=batch_size,
-                state=state
-            )
-            
+            batch = self.load_households_batch(state=state, year=year)
             if batch.empty:
-                logger.debug("No more households to load")
                 break
                 
             hh_batches.append(batch)
@@ -235,7 +250,8 @@ class PUMSDataLoader:
         # Load all persons for these households
         person_df = self.load_persons_for_households(
             serialnos=hh_df['SERIALNO'].tolist(),
-            state=state
+            state=state,
+            year=year
         )
         
         # Take sample if requested

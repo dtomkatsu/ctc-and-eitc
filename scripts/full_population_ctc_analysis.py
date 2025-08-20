@@ -37,40 +37,41 @@ def create_hawaii_legislative_crosswalk():
     """Create detailed PUMA to legislative district crosswalk for Hawaii."""
     print("Creating Hawaii legislative district crosswalk...")
     
-    # Hawaii 2020 PUMA to Legislative District mapping
-    # Based on Hawaii State Legislature districts and Census PUMA boundaries
+    # CORRECTED: Hawaii 2020 PUMA to Legislative District mapping
+    # Based on actual PUMS data PUMAs and correct county assignments
     crosswalk_data = [
-        # Oahu PUMAs
-        {'PUMA': '00100', 'county': 'Honolulu', 'island': 'Oahu', 'region': 'Urban Honolulu',
+        # CORRECTED Oahu/Honolulu County PUMAs (should have most of the population)
+        {'PUMA': '00100', 'county': 'Honolulu', 'island': 'Oahu', 'region': 'West/Central Oahu',
+         'senate_district': 'SD18', 'house_district': 'HD35', 'senate_name': 'Ewa/Kapolei', 'house_name': 'Ewa Beach/Iroquois Point'},
+        
+        {'PUMA': '00200', 'county': 'Honolulu', 'island': 'Oahu', 'region': 'East Honolulu/Windward',
+         'senate_district': 'SD24', 'house_district': 'HD47', 'senate_name': 'Kaneohe/Kailua', 'house_name': 'Kaneohe'},
+        
+        # CORRECTED: These are actually Honolulu County PUMAs, not outer islands
+        {'PUMA': '00301', 'county': 'Honolulu', 'island': 'Oahu', 'region': 'Urban Honolulu West',
          'senate_district': 'SD12', 'house_district': 'HD23', 'senate_name': 'Downtown/Chinatown', 'house_name': 'Downtown/Nuuanu'},
         
-        {'PUMA': '00200', 'county': 'Honolulu', 'island': 'Oahu', 'region': 'East Honolulu', 
-         'senate_district': 'SD01', 'house_district': 'HD01', 'senate_name': 'Hawaii Kai/Portlock', 'house_name': 'Hawaii Kai'},
+        {'PUMA': '00302', 'county': 'Honolulu', 'island': 'Oahu', 'region': 'Urban Honolulu Central',
+         'senate_district': 'SD13', 'house_district': 'HD25', 'senate_name': 'Kalihi/Sand Island', 'house_name': 'Kalihi-Palama/Keeaumoku'},
         
-        # Big Island PUMAs  
-        {'PUMA': '00301', 'county': 'Hawaii', 'island': 'Hawaii', 'region': 'Hilo',
+        {'PUMA': '00303', 'county': 'Honolulu', 'island': 'Oahu', 'region': 'Urban Honolulu East',
+         'senate_district': 'SD11', 'house_district': 'HD21', 'senate_name': 'Kaimuki/Kapahulu', 'house_name': 'Kaimuki/Kapahulu'},
+        
+        {'PUMA': '00304', 'county': 'Honolulu', 'island': 'Oahu', 'region': 'North Shore/Central',
+         'senate_district': 'SD23', 'house_district': 'HD45', 'senate_name': 'North Shore/Wahiawa', 'house_name': 'North Shore'},
+        
+        # Big Island (Hawaii County) PUMAs
+        {'PUMA': '00305', 'county': 'Hawaii', 'island': 'Hawaii', 'region': 'Hilo/Puna',
          'senate_district': 'SD02', 'house_district': 'HD04', 'senate_name': 'Hilo/Hamakua', 'house_name': 'Hilo'},
         
-        {'PUMA': '00302', 'county': 'Hawaii', 'island': 'Hawaii', 'region': 'Kona',
-         'senate_district': 'SD03', 'house_district': 'HD05', 'senate_name': 'Kona/Kohala', 'house_name': 'North/South Kona'},
-        
-        {'PUMA': '00303', 'county': 'Hawaii', 'island': 'Hawaii', 'region': 'Puna',
-         'senate_district': 'SD02', 'house_district': 'HD04', 'senate_name': 'Hilo/Hamakua', 'house_name': 'Hilo'},
-        
-        {'PUMA': '00304', 'county': 'Hawaii', 'island': 'Hawaii', 'region': 'Ka\'u',
-         'senate_district': 'SD03', 'house_district': 'HD05', 'senate_name': 'Kona/Kohala', 'house_name': 'North/South Kona'},
-        
-        # Maui County PUMAs
-        {'PUMA': '00305', 'county': 'Maui', 'island': 'Maui', 'region': 'West Maui',
-         'senate_district': 'SD05', 'house_district': 'HD09', 'senate_name': 'West/South Maui', 'house_name': 'West Maui'},
-        
-        {'PUMA': '00306', 'county': 'Maui', 'island': 'Maui', 'region': 'Central Maui',
+        # Maui County PUMAs  
+        {'PUMA': '00306', 'county': 'Maui', 'island': 'Maui', 'region': 'Central/West Maui',
          'senate_district': 'SD06', 'house_district': 'HD10', 'senate_name': 'Central Maui', 'house_name': 'Wailuku/Waihee'},
         
-        {'PUMA': '00307', 'county': 'Maui', 'island': 'Molokai', 'region': 'Molokai',
+        {'PUMA': '00307', 'county': 'Maui', 'island': 'Molokai/Lanai', 'region': 'Molokai/Lanai',
          'senate_district': 'SD05', 'house_district': 'HD13', 'senate_name': 'West/South Maui', 'house_name': 'Molokai/Lanai'},
         
-        # Kauai PUMA
+        # Kauai County PUMA
         {'PUMA': '00308', 'county': 'Kauai', 'island': 'Kauai', 'region': 'Kauai',
          'senate_district': 'SD07', 'house_district': 'HD14', 'senate_name': 'Kauai/Niihau', 'house_name': 'Kauai'},
     ]

@@ -20,6 +20,8 @@ class CTCParameters:
     phaseout_threshold_joint: int = 400000
     phaseout_rate: float = 0.05  # $50 per $1,000 over threshold
     qualifying_age_limit: int = 17  # Must be under 17
+    actc_earned_income_threshold: int = 2500  # Minimum earned income for ACTC
+    actc_rate: float = 0.15  # 15% of earned income above threshold
 
 
 def calculate_ctc(tax_unit: Dict, tax_year: int = 2023) -> Dict[str, float]:
@@ -30,6 +32,7 @@ def calculate_ctc(tax_unit: Dict, tax_year: int = 2023) -> Dict[str, float]:
         tax_unit: Dictionary containing tax unit information with keys:
             - filing_status: str ('single', 'married_filing_jointly', etc.)
             - income: float (Modified Adjusted Gross Income)
+            - earned_income: float (Earned income for ACTC calculation)
             - dependents: List of dependent dictionaries
             - num_dependents: int
         tax_year: Tax year for calculation (default 2023)
@@ -69,12 +72,14 @@ def calculate_ctc(tax_unit: Dict, tax_year: int = 2023) -> Dict[str, float]:
         base_credit, income, filing_status, params
     )
     
-    # Calculate refundable and non-refundable portions
-    max_refundable = len(qualifying_children) * params.refundable_limit_per_child
+    # Calculate ACTC (Additional Child Tax Credit) - refundable portion
+    earned_income = tax_unit.get('earned_income', tax_unit.get('income', 0))  # Fallback to total income
+    actc_amount = _calculate_actc(earned_income, len(qualifying_children), params)
     
-    # The refundable portion is limited by earned income and other factors
-    # For simplicity, we'll use the minimum of the credit and refundable limit
-    refundable_portion = min(phased_out_credit, max_refundable)
+    # The refundable portion is the minimum of:
+    # 1. The phased-out credit amount
+    # 2. The ACTC calculation based on earned income
+    refundable_portion = min(phased_out_credit, actc_amount)
     nonrefundable_portion = phased_out_credit - refundable_portion
     
     result.update({
@@ -235,6 +240,37 @@ def _apply_income_phaseout(
     phased_out_credit = max(0, base_credit - phaseout_amount)
     
     return phased_out_credit
+
+
+def _calculate_actc(earned_income: float, num_qualifying_children: int, params: CTCParameters) -> float:
+    """
+    Calculate Additional Child Tax Credit (ACTC) - the refundable portion.
+    
+    The ACTC is calculated as 15% of earned income above $2,500, 
+    up to $1,600 per qualifying child.
+    
+    Args:
+        earned_income: Earned income amount
+        num_qualifying_children: Number of qualifying children
+        params: CTC parameters
+        
+    Returns:
+        ACTC amount (refundable portion)
+    """
+    if num_qualifying_children == 0:
+        return 0.0
+    
+    # Calculate 15% of earned income above $2,500
+    if earned_income <= params.actc_earned_income_threshold:
+        return 0.0
+    
+    excess_earned_income = earned_income - params.actc_earned_income_threshold
+    actc_from_earned_income = excess_earned_income * params.actc_rate
+    
+    # Limit to $1,600 per qualifying child
+    max_actc = num_qualifying_children * params.refundable_limit_per_child
+    
+    return min(actc_from_earned_income, max_actc)
 
 
 def calculate_ctc_for_tax_units(tax_units_df: pd.DataFrame) -> pd.DataFrame:
