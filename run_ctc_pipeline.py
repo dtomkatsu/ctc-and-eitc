@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.abspath('.'))
 from src.tax.units.constructor import TaxUnitConstructor
 from src.tax.credits.ctc import calculate_ctc_for_tax_units, get_ctc_summary_stats
 from src.analysis.geographic import GeographicAnalyzer, GeographicLevel
+from src.tax.units.status.irs_based import calibrate_to_soi_totals
 
 # Configuration
 OUTPUT_DIR = 'output/ctc_estimates'
@@ -70,9 +71,25 @@ def main():
     
     print(f"Created {len(tax_units):,} tax units")
     
+    # 2.5 Apply SOI calibration to match expected filing status distribution
+    print("\n2.5 Applying SOI calibration to match expected filing status distribution...")
+    calibrated_units = calibrate_to_soi_totals(
+        tax_units,
+        target_single_pct=0.51,    # 51% single
+        target_joint_pct=0.36,     # 36% joint
+        target_hoh_pct=0.096,      # 9.6% head of household
+        target_mfs_pct=0.034       # 3.4% married filing separately
+    )
+    
+    # Count units by filing status after calibration
+    status_counts = pd.Series([unit['filing_status'] for unit in calibrated_units]).value_counts()
+    print("  - Filing status distribution after SOI calibration:")
+    for status, count in status_counts.items():
+        print(f"    - {status}: {count} units ({(count/len(calibrated_units)):.1%})")
+    
     # 3. Calculate CTC
     print("\n3. Calculating CTC benefits...")
-    tax_units = calculate_ctc_for_tax_units(tax_units)
+    tax_units = calculate_ctc_for_tax_units(calibrated_units)
     
     # 4. Geographic analysis (if we have data)
     if len(tax_units) > 0:

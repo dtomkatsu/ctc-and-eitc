@@ -68,37 +68,67 @@ class MLTaxUnitValidator:
         Returns:
             DataFrame with extracted features
         """
-        # Convert to DataFrame for easier manipulation
-        df = pd.DataFrame(tax_units)
-        
         # Calculate derived features
         features = {}
         
         # Basic features
-        features['income'] = df.get('income', 0).astype(float)
-        features['num_dependents'] = df.get('dependents', []).apply(len).astype(int)
-        features['age'] = df.get('primary_filer', {}).apply(
-            lambda x: x.get('age', 0) if isinstance(x, dict) else 0
-        ).astype(int)
+        features['income'] = [float(unit.get('income', 0)) for unit in tax_units]
+        features['num_dependents'] = [int(unit.get('num_dependents', 0)) for unit in tax_units]
+        
+        # Extract age from primary_filer if available
+        ages = []
+        for unit in tax_units:
+            primary_filer = unit.get('primary_filer', {})
+            if isinstance(primary_filer, dict):
+                age = primary_filer.get('age')
+                if age is None or age == 0:
+                    # Use income-based age estimation if age is missing
+                    income = float(unit.get('income', 0))
+                    if income < 25000:
+                        age = 25  # Young worker
+                    elif income < 50000:
+                        age = 35  # Mid-career
+                    elif income < 100000:
+                        age = 45  # Experienced worker
+                    else:
+                        age = 50  # Senior worker
+                else:
+                    age = int(age)
+            else:
+                age = 35  # Default age
+            ages.append(age)
+        features['age'] = ages
         
         # Boolean features
-        features['has_children'] = (features['num_dependents'] > 0).astype(int)
-        features['is_householder'] = df.get('is_householder', 0).astype(int)
+        features['has_children'] = [1 if deps > 0 else 0 for deps in features['num_dependents']]
+        features['is_householder'] = [int(unit.get('is_householder', 1)) for unit in tax_units]
         
-        # Financial ratios
-        total_income = features['income'].clip(lower=1)  # Avoid division by zero
-        housing_costs = df.get('housing_costs', 0).astype(float)
-        features['housing_cost_ratio'] = (housing_costs / total_income).fillna(0)
+        # Financial ratios - use default housing cost ratio if not available
+        housing_ratios = []
+        for unit in tax_units:
+            income = float(unit.get('income', 1))
+            housing_costs = float(unit.get('housing_costs', income * 0.3))  # Default 30% of income
+            ratio = housing_costs / max(income, 1) if income > 0 else 0.3
+            housing_ratios.append(min(ratio, 1.0))  # Cap at 100%
+        features['housing_cost_ratio'] = housing_ratios
         
         # Categorical features - one-hot encode marital status
-        marital_status = df.get('marital_status', 'unknown').fillna('unknown')
+        marital_statuses = []
+        for unit in tax_units:
+            primary_filer = unit.get('primary_filer', {})
+            if isinstance(primary_filer, dict):
+                marital_status = primary_filer.get('marital_status', 'single')
+            else:
+                marital_status = 'single'
+            marital_statuses.append(marital_status)
+        
         for status in ['single', 'married', 'divorced', 'widowed']:
-            features[f'marital_status_{status}'] = (marital_status == status).astype(int)
+            features[f'marital_status_{status}'] = [1 if ms == status else 0 for ms in marital_statuses]
         
         # Create final feature DataFrame with consistent column order
-        feature_df = pd.DataFrame({k: features[k] for k in self.features if k in features})
+        feature_df = pd.DataFrame(features)
         
-        # Ensure all expected columns are present
+        # Ensure all expected columns are present and in correct order
         for col in self.features:
             if col not in feature_df.columns:
                 feature_df[col] = 0
@@ -131,8 +161,14 @@ class MLTaxUnitValidator:
             probas = self.model.predict_proba(features)
             predicted_classes = self.model.classes_
             
+            logger.info(f"ML validation processing {len(tax_units)} tax units")
+            logger.debug(f"Model classes: {predicted_classes}")
+            
             # For each tax unit, get the predicted class and confidence
             validated_units = []
+            ml_flags_count = 0
+            rule_flags_count = 0
+            
             for i, unit in enumerate(tax_units):
                 unit = unit.copy()
                 current_status = str(unit.get('filing_status', '')).lower()
@@ -142,10 +178,15 @@ class MLTaxUnitValidator:
                 predicted_status = str(predicted_classes[max_idx]).lower()
                 confidence = float(probas[i][max_idx])
                 
+                logger.debug(f"Unit {i+1}: {current_status} -> {predicted_status} (confidence: {confidence:.1%})")
+                
+                # Normalize status names for comparison
+                current_normalized = current_status.replace('married_filing_jointly', 'joint').replace('head_of_household', 'hoh')
+                
                 # Only flag if prediction is different from current status
-                # and confidence is above threshold
-                if (predicted_status != current_status and 
-                    confidence > 0.7 and 
+                # and confidence is above threshold (lowered from 0.7 to 0.6)
+                if (predicted_status != current_normalized and 
+                    confidence > 0.6 and 
                     predicted_status in ['single', 'hoh', 'joint']):
                     
                     unit.setdefault('validation_flags', []).append({
@@ -158,10 +199,21 @@ class MLTaxUnitValidator:
                         'confidence': confidence,
                         'suggested_status': predicted_status
                     })
+                    ml_flags_count += 1
+                    logger.info(f"ML flag added for unit {i+1}: {current_status} -> {predicted_status}")
                 
                 # Add rule-based validations as well
+                unit_before_rules = len(unit.get('validation_flags', []))
                 unit = self._apply_rule_based_validation(unit, features.iloc[i])
+                unit_after_rules = len(unit.get('validation_flags', []))
+                
+                if unit_after_rules > unit_before_rules:
+                    rule_flags_count += unit_after_rules - unit_before_rules
+                    logger.debug(f"Rule-based flags added for unit {i+1}: {unit_after_rules - unit_before_rules}")
+                
                 validated_units.append(unit)
+            
+            logger.info(f"ML validation complete: {ml_flags_count} ML flags, {rule_flags_count} rule-based flags")
                 
             return validated_units
             
