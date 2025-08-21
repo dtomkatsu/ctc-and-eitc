@@ -86,11 +86,14 @@ def main():
             print(f"\nAnalyzing at {level.name} level...")
             try:
                 results = geo_analyzer.analyze(level)
-        
-        # Save results
-        filename = f"ctc_estimates_{level.name.lower()}.csv"
-        results.to_csv(os.path.join(OUTPUT_DIR, filename), index=False)
-        print(f"  - Saved results to {os.path.join(OUTPUT_DIR, filename)}")
+                
+                # Save results
+                filename = f"ctc_estimates_{level.name.lower()}.csv"
+                results.to_csv(os.path.join(OUTPUT_DIR, filename), index=False)
+                print(f"  - Saved results to {os.path.join(OUTPUT_DIR, filename)}")
+            except Exception as e:
+                print(f"  - Error analyzing {level.name} level: {e}")
+                continue
     
     # 5. Generate summary statistics
     print("\n5. Generating summary statistics...")

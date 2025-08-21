@@ -21,9 +21,23 @@ from .status import is_married_filing_jointly, is_married_filing_separately, is_
 from .income import calculate_tax_unit_income
 from .dependencies import identify_dependents
 from .utils import setup_logging, validate_input_data, create_person_id
-from .validation import TaxUnitValidator, ValidationIssue, ValidationSeverity
 from .fixes import apply_overcounting_fixes
-from src.tax.units.status.irs_based import should_file_jointly_irs_method, calibrate_to_soi_totals
+
+# Import base validation components
+from .validation import (
+    TaxUnitValidator, 
+    ValidationIssue, 
+    ValidationSeverity,
+    MLTaxUnitValidator,
+    ML_VALIDATOR_AVAILABLE
+)
+
+# Import IRS-based methods
+try:
+    from src.tax.units.status.irs_based import should_file_jointly_irs_method, calibrate_to_soi_totals
+except ImportError:
+    should_file_jointly_irs_method = None
+    calibrate_to_soi_totals = None
 
 # Constants for optimization
 DEFAULT_BATCH_SIZE = 1000
@@ -41,18 +55,22 @@ class TaxUnitConstructor:
     specialized modules for different aspects of the process.
     """
     
+    # Maximum number of tax units allowed per household
+    MAX_TAX_UNITS_PER_HOUSEHOLD = 4
+    
     def __init__(self, person_df: pd.DataFrame, hh_df: pd.DataFrame, 
                  batch_size: int = None, num_processes: int = None,
-                 progress_bar: bool = True):
+                 progress_bar: bool = True, ml_model_path: str = None):
         """
-        Initialize the TaxUnitConstructor with person and household data.
+        Initialize the TaxUnitConstructor.
         
         Args:
             person_df: DataFrame containing person-level PUMS data
             hh_df: DataFrame containing household-level PUMS data
-            batch_size: Number of households to process in each batch (default: 1000)
-            num_processes: Number of parallel processes to use (default: CPU count - 1)
+            batch_size: Number of households to process in each batch (for parallel processing)
+            num_processes: Number of processes to use for parallel processing
             progress_bar: Whether to show a progress bar during processing
+            ml_model_path: Path to trained ML model for validation (optional)
         """
         self.person_df = person_df.copy()
         self.hh_df = hh_df.copy()
@@ -63,10 +81,19 @@ class TaxUnitConstructor:
         self.num_processes = num_processes or DEFAULT_NUM_PROCESSES
         self.progress_bar = progress_bar and (len(person_df) > 1000)  # Only show for large datasets
         
+        # Initialize validator
+        self.validator = TaxUnitValidator()
+        
+        # Initialize ML validator if model path is provided
+        self.ml_validator = MLTaxUnitValidator(ml_model_path) if ml_model_path else None
+        if self.ml_validator and self.ml_validator.model is None:
+            logger.warning("Failed to load ML model, falling back to rule-based validation")
+        
         # Setup logging
         setup_logging()
         logger.info(f"Initialized TaxUnitConstructor with batch_size={self.batch_size}, "
-                   f"num_processes={self.num_processes}")
+                   f"num_processes={self.num_processes}, "
+                   f"max_tax_units_per_household={self.MAX_TAX_UNITS_PER_HOUSEHOLD}")
         
         # Validate inputs
         is_valid, error_msg = validate_input_data(self.person_df, self.hh_df)
@@ -122,13 +149,36 @@ class TaxUnitConstructor:
                 household_units = self._process_household(hh_group)
                 
                 if household_units:
-                    # Validate individual tax units
+                    # Run standard validation
                     for unit in household_units:
-                        issues = TaxUnitValidator.validate_tax_unit(unit)
+                        issues = self.validator.validate_tax_unit(unit)
                         batch_issues.extend(issues)
                     
+                    # Run ML-based validation if available
+                    if self.ml_validator and household_units:
+                        try:
+                            # Run ML validation
+                            validated_units = self.ml_validator.predict(household_units)
+                            
+                            # Update units with ML validation flags
+                            for i, unit in enumerate(household_units):
+                                if 'validation_flags' in validated_units[i]:
+                                    unit['ml_validation_flags'] = validated_units[i]['validation_flags']
+                                    
+                                    # Log ML validation flags
+                                    for flag in validated_units[i]['validation_flags']:
+                                        batch_issues.append({
+                                            'household_id': hh_id,
+                                            'filer_id': unit.get('filer_id', 'unknown'),
+                                            'severity': 'WARNING',
+                                            'message': f"ML Validation: {flag['message']} (Confidence: {flag.get('confidence', 0.0):.2f})",
+                                            'suggested_status': flag.get('suggested_status')
+                                        })
+                        except Exception as e:
+                            logger.error(f"Error in ML validation for household {hh_id}: {str(e)}", exc_info=True)
+                    
                     # Validate household coverage
-                    coverage_issues = TaxUnitValidator.validate_household_coverage(
+                    coverage_issues = self.validator.validate_household_coverage(
                         household_units, hh_group
                     )
                     batch_issues.extend(coverage_issues)
@@ -283,8 +333,8 @@ class TaxUnitConstructor:
             
             # Update the tax_units DataFrame with fixed data
             if fixed_tax_units:
-                # TEMPORARILY DISABLED: SOI calibration to see true distribution
-                logger.info("SOI calibration disabled - showing true filing status distribution")
+                # DISABLE SOI calibration - it creates unrealistic distributions
+                logger.info("SOI calibration disabled - using natural filing status distribution")
                 calibrated_tax_units = fixed_tax_units  # No artificial adjustment
                 
                 self.tax_units = pd.DataFrame(calibrated_tax_units)
@@ -634,9 +684,37 @@ class TaxUnitConstructor:
         unassigned_adults = set(adults.index) - processed_adults
         num_assigned_deps = len(claimed_dependents)
         
+        # Enforce maximum tax units per household
+        if len(tax_units) > self.MAX_TAX_UNITS_PER_HOUSEHOLD:
+            # Sort tax units by priority: joint > head_of_household > single > married_filing_separately
+            def get_priority(tax_unit):
+                status = tax_unit.get('filing_status', '')
+                if status == 'joint':
+                    return 0
+                elif status == 'head_of_household':
+                    return 1
+                elif status == 'single':
+                    return 2
+                else:  # married_filing_separately and others
+                    return 3
+            
+            # Sort by priority and then by number of dependents (descending)
+            tax_units.sort(key=lambda x: (get_priority(x), -x.get('num_dependents', 0)))
+            
+            # Keep only the first MAX_TAX_UNITS_PER_HOUSEHOLD tax units
+            removed_units = tax_units[self.MAX_TAX_UNITS_PER_HOUSEHOLD:]
+            tax_units = tax_units[:self.MAX_TAX_UNITS_PER_HOUSEHOLD]
+            
+            # Log a warning about the removed tax units
+            logger.warning(
+                f"Household {hh_id} had {len(tax_units) + len(removed_units)} tax units, "
+                f"capped at {self.MAX_TAX_UNITS_PER_HOUSEHOLD}. "
+                f"Removed {len(removed_units)} tax units: {[u['filing_status'] for u in removed_units]}"
+            )
+        
         logger.info(
             f"Household {hh_id} summary: "
-            f"{len(tax_units)} tax units, "
+            f"{len(tax_units)} tax units (max {self.MAX_TAX_UNITS_PER_HOUSEHOLD}), "
             f"{num_assigned_deps}/{len(all_dependents)} dependents assigned, "
             f"{len(unassigned_adults)}/{len(adults)} adults unassigned"
         )

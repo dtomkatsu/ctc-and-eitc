@@ -22,18 +22,19 @@ from .status import (
     is_married_filing_jointly,
     is_married_filing_separately
 )
-from .validation import (
-    TaxUnitValidator,
-    ValidationIssue,
-    ValidationSeverity
-)
+
+# Import validation components directly to avoid circular imports
+MLTaxUnitValidator = None
+try:
+    from .validation.ml_validator import MLTaxUnitValidator, validate_tax_units
+except ImportError:
+    pass
 
 # Define what gets imported with 'from tax.units import *'
 __all__ = [
     'TaxUnitConstructor',
-    'TaxUnitValidator',
-    'ValidationIssue',
-    'ValidationSeverity',
+    'MLTaxUnitValidator',
+    'validate_tax_units',
     'identify_dependents',
     'calculate_tax_unit_income',
     'identify_relationships',

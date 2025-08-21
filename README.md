@@ -1,11 +1,53 @@
 # CTC and EITC Analysis for Hawaii
 
-This project analyzes the Child Tax Credit (CTC) and Earned Income Tax Credit (EITC) using PUMS microdata for Hawaii at various geographic levels (state, county, and legislative district). The system includes robust tax unit construction with support for various filing statuses and Hawaii-specific rules.
+This project analyzes the Child Tax Credit (CTC) and Earned Income Tax Credit (EITC) using PUMS microdata for Hawaii at various geographic levels (state, county, and legislative district). The system includes robust tax unit construction with support for various filing statuses, Hawaii-specific rules, and machine learning-based validation.
+
+## ML-Based Validation
+
+The project includes a machine learning-based validation system to identify potential misclassifications in tax unit filing statuses. The validator can detect:
+
+- Single filers who might qualify as Head of Household
+- High-income HoH filers that might need verification
+- Other potential filing status issues
+
+### Usage
+
+```python
+from src.tax.units.validation.ml_validator import validate_tax_units
+
+# Get your tax units (list of dictionaries)
+tax_units = [...]
+
+# Validate tax units
+validated_units = validate_tax_units(tax_units)
+
+# Check validation flags
+for unit in validated_units:
+    if 'validation_flags' in unit:
+        print(f"Tax Unit {unit['id']} has {len(unit['validation_flags'])} issues:")
+        for flag in unit['validation_flags']:
+            print(f"  - {flag['message']} (Confidence: {flag['confidence']:.1f})")
+```
+
+### Running Tests
+
+Test the ML validator with sample data:
+
+```bash
+python scripts/test_ml_validation.py
+```
 
 ## Project Structure
 
 ```
 ctc-and-eitc/
+├── src/
+│   └── tax/
+│       └── units/
+│           └── validation/
+│               └── ml_validator.py  # ML-based validation
+├── scripts/
+│   └── test_ml_validation.py       # Test script for ML validation
 ├── data/                           # Data storage
 │   ├── raw/                       # Raw data files (e.g., PUMS microdata)
 │   └── processed/                 # Processed and cleaned data

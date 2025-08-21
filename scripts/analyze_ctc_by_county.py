@@ -1,16 +1,29 @@
 #!/usr/bin/env python3
 """
-Analyze CTC results by county using PUMA mapping.
+Analyze CTC results by county using PUMA mapping with PUMA 0100 imputation.
 """
 import pandas as pd
 import numpy as np
 from pathlib import Path
 import sys
+import logging
 
 # Add the src directory to the Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.tax.credits.ctc import calculate_ctc
+from src.analysis.puma_imputation import PUMA0100Imputer
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('county_ctc_analysis.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Load data
 tax_units = pd.read_parquet('src/data/processed/tax_units_rule_based.parquet')
@@ -39,6 +52,15 @@ puma_to_county = dict(zip(puma_df['PUMA'].astype(str), puma_df['county']))
 # Merge with county mapping
 tax_units_with_county = tax_units_with_puma.copy()
 tax_units_with_county['county'] = tax_units_with_county['PUMA'].map(puma_to_county)
+
+# Apply PUMA 0100 imputation
+puma_0100_mask = tax_units_with_county['PUMA'].astype(str).isin(['100', '0100'])
+if puma_0100_mask.any():
+    logger.info(f"Found {puma_0100_mask.sum():,} tax units in PUMA 0100, applying imputation...")
+    imputer = PUMA0100Imputer()
+    tax_units_with_county = imputer.impute_counties(tax_units_with_county)
+else:
+    logger.info("No PUMA 0100 tax units found, skipping imputation")
 
 # Calculate CTC for each tax unit
 tax_units_with_ctc = []
