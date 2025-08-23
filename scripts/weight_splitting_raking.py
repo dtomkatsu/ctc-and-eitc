@@ -88,7 +88,7 @@ class WeightSplittingRaker:
             adults = hh_persons[hh_persons['AGEP'] >= 18]
             
             # Generate plausible scenarios based on household composition
-            plausible_scenarios = self._get_plausible_scenarios(adults, hh_persons)
+            plausible_scenarios = self._get_plausible_scenarios(adults, hh_persons, household_id)
             
             # Assign initial probabilities
             total_prob = sum(scenario['prob'] for scenario in plausible_scenarios)
@@ -114,8 +114,15 @@ class WeightSplittingRaker:
         
         return scenarios_df
     
-    def _get_plausible_scenarios(self, adults: pd.DataFrame, all_persons: pd.DataFrame) -> List[Dict]:
-        """Determine plausible filing status scenarios for a household."""
+    def _get_plausible_scenarios(self, adults: pd.DataFrame, all_persons: pd.DataFrame, household_id: str = None) -> List[Dict]:
+        """
+        Determine plausible filing status scenarios for a household.
+        
+        Args:
+            adults: DataFrame of adults in the household
+            all_persons: DataFrame of all persons in the household
+            household_id: Optional household identifier for debugging
+        """
         scenarios = []
         
         # Count married adults
@@ -127,29 +134,103 @@ class WeightSplittingRaker:
         num_unmarried = len(unmarried_adults)
         num_children = len(children)
         
-        # Scenario 1: All single filers
+        # Calculate base probabilities with reduced single filer probability
+        num_adults = len(adults)
+        base_probs = {
+            # Option 1: Reduce base probability of single filing
+            'single': max(0.15, 0.3 - (num_adults * 0.02)),  # Reduced and scales with household size
+            'married_filing_jointly': 0.6 if num_married == 2 else 0.4,
+            'married_filing_separately': 0.25
+        }
+        
+        # Enhanced HoH probability calculation with Option 4
+        hoh_prob = 0.0
         if num_unmarried > 0:
-            # Base probability for single filing
-            single_prob = 0.4 if num_married == 0 else 0.2
-            scenarios.append({'status': 'single', 'prob': single_prob})
+            if num_children > 0:
+                # Higher probability for clear HoH cases with children
+                hoh_prob = 0.7 if num_children >= 2 else 0.55  # Increased from 0.6/0.45
+                
+                # Option 4: Additional boost for households with children but no HoH
+                if base_probs['single'] > 0.1:
+                    base_probs['single'] *= 0.5  # 50% reduction in single probability
+                    hoh_prob = max(hoh_prob, 0.6)  # Ensure minimum HoH probability
+                
+                # Income-based adjustment for HoH
+                if 'PINCP' in unmarried_adults.columns and not unmarried_adults.empty:
+                    median_income = unmarried_adults['PINCP'].median()
+                    if median_income < 40000:  # Lower income threshold
+                        hoh_prob = min(0.8, hoh_prob * 1.4)
+                        
+            # Check for elderly dependents (65+)
+            if household_id is not None and 'AGEP' in all_persons.columns and 'SERIALNO' in all_persons.columns:
+                elderly_dependents = all_persons[
+                    (all_persons['AGEP'] >= 65) & 
+                    (all_persons['SERIALNO'] == household_id)
+                ]
+                if len(elderly_dependents) > 0:
+                    hoh_prob = 0.4
+                
+        base_probs['head_of_household'] = hoh_prob
         
-        # Scenario 2: Joint filing (if married couples exist)
+        # Dynamic MFS probability adjustments
         if num_married >= 2:
-            # Higher probability if clear married couple
-            joint_prob = 0.6 if num_married == 2 else 0.4
-            scenarios.append({'status': 'married_filing_jointly', 'prob': joint_prob})
+            mfs_factors = []
+            
+            # 1. Income disparity factor (0-0.5)
+            if 'PINCP' in married_adults.columns and len(married_adults) >= 2:
+                incomes = married_adults['PINCP'].sort_values()
+                if len(incomes) >= 2 and incomes.iloc[0] > 0:
+                    income_ratio = incomes.iloc[-1] / incomes.iloc[0]
+                    # Scale factor from 0 to 0.5 based on income ratio (5x to 50x)
+                    # More aggressive scaling with higher ratios
+                    income_factor = min(0.5, max(0, (min(income_ratio, 50) - 5) * 0.0111))  # 0.0111 = 0.5/45 (scaled to 50-5=45)
+                    mfs_factors.append(income_factor)
+            
+            # 2. Age difference factor (0-0.2)
+            if 'AGEP' in married_adults.columns and len(married_adults) >= 2:
+                ages = married_adults['AGEP'].sort_values()
+                if len(ages) >= 2:
+                    age_diff = ages.iloc[-1] - ages.iloc[0]
+                    # Scale factor from 0 to 0.2 based on age difference (10 to 30 years)
+                    age_factor = min(0.2, max(0, (min(age_diff, 30) - 10) / 100))
+                    mfs_factors.append(age_factor)
+            
+            # 3. Number of children factor (0-0.1)
+            if num_children > 0:
+                # More children slightly increases MFS probability
+                children_factor = min(0.1, num_children * 0.02)
+                mfs_factors.append(children_factor)
+            
+            # Apply MFS factors with constraints
+            mfs_adjustment = min(0.7, sum(mfs_factors))  # Increased cap to 0.7
+            base_probs['married_filing_separately'] = min(0.7, base_probs['married_filing_separately'] + mfs_adjustment)
+            
+            # More aggressive MFS: Take 40% from joint, 60% from others
+            joint_reduction = mfs_adjustment * 0.4
+            base_probs['married_filing_jointly'] = max(0.2, base_probs['married_filing_jointly'] - joint_reduction)
+            
+            # Ensure HoH doesn't get reduced below minimum
+            base_probs['head_of_household'] = max(0.1, base_probs.get('head_of_household', 0))
         
-        # Scenario 3: Head of Household (if unmarried adults with children)
+        # Add scenarios based on household composition
+        if num_unmarried > 0:
+            scenarios.append({'status': 'single', 'prob': base_probs['single']})
+        
+        if num_married >= 2:
+            scenarios.append({
+                'status': 'married_filing_jointly', 
+                'prob': base_probs['married_filing_jointly']
+            })
+            scenarios.append({
+                'status': 'married_filing_separately',
+                'prob': base_probs['married_filing_separately']
+            })
+        
         if num_unmarried > 0 and num_children > 0:
-            # Check if potential HoH qualifiers exist
-            hoh_prob = 0.3 if num_children > 0 else 0.1
-            scenarios.append({'status': 'head_of_household', 'prob': hoh_prob})
-        
-        # Scenario 4: Married Filing Separately (if married couples)
-        if num_married >= 2:
-            # Higher probability for MFS to ensure it's represented
-            mfs_prob = 0.15  # Increased from 0.05 to 0.15
-            scenarios.append({'status': 'married_filing_separately', 'prob': mfs_prob})
+            scenarios.append({
+                'status': 'head_of_household',
+                'prob': base_probs['head_of_household']
+            })
         
         # Ensure at least one scenario exists
         if not scenarios:
@@ -159,17 +240,62 @@ class WeightSplittingRaker:
     
     def rake_weights(self, scenarios_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Iteratively rake scenario weights to match IRS target shares.
+        Iteratively rake scenario weights to match IRS target shares
+        with constraints to preserve MFS and HoH representation.
         """
-        logger.info("Starting iterative raking process...")
+        logger.info("Starting constrained iterative raking process...")
         
         df = scenarios_df.copy()
         
+        # Minimum weight constraints (as proportion of total weight)
+        min_weights = {
+            'married_filing_separately': 0.025,  # 2.5% floor
+            'head_of_household': 0.09,          # 9% floor (increased from 8%)
+            'single': 0.0,                      # No floor, we want to reduce this
+            'married_filing_jointly': 0.35      # Ensure joint doesn't drop too low
+        }
+        
+        # Option 6: Cap single filer share
+        max_single_share = 0.52  # Just above target
+        
         for iteration in range(self.max_iterations):
-            # Calculate current shares
+            # Calculate current shares and apply minimums
             current_totals = df.groupby('filing_status')['scenario_weight'].sum()
             grand_total = current_totals.sum()
+            
+            # Apply minimum weight constraints
+            for status, min_weight in min_weights.items():
+                if status in current_totals:
+                    min_total = grand_total * min_weight
+                    if current_totals[status] < min_total:
+                        # Scale up under-represented statuses
+                        scale_factor = min_total / current_totals[status]
+                        mask = df['filing_status'] == status
+                        df.loc[mask, 'scenario_weight'] *= scale_factor
+                        current_totals[status] = min_total
+            
+            # Recalculate after applying minimums
+            grand_total = current_totals.sum()
             current_shares = current_totals / grand_total
+            
+            # Option 6: Enforce maximum single filer share
+            if 'single' in current_shares and current_shares['single'] > max_single_share:
+                excess_share = current_shares['single'] - max_single_share
+                total_other = sum(wt for status, wt in current_totals.items() 
+                               if status != 'single' and status in self.irs_targets)
+                
+                # Calculate how much to reduce single weight
+                single_weight = current_totals['single']
+                reduction_factor = 1 - (excess_share / current_shares['single'])
+                
+                # Apply reduction to single filers
+                single_mask = df['filing_status'] == 'single'
+                df.loc[single_mask, 'scenario_weight'] *= reduction_factor
+                
+                # Recalculate totals after adjustment
+                current_totals = df.groupby('filing_status')['scenario_weight'].sum()
+                grand_total = current_totals.sum()
+                current_shares = current_totals / grand_total
             
             # Check convergence
             max_diff = 0
