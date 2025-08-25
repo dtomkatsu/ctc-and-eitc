@@ -110,6 +110,22 @@ def is_married_filing_separately(
     # If one is in graduate school (SCHL 20-21) and the other is not
     if ((schl1 >= 20 and schl2 < 16) or (schl2 >= 20 and schl1 < 16)) and max(income1, income2) > 60000:
         return True
+        
+    # 10. HINS1 - Medicare coverage (significant factor for MFS)
+    hins1_1 = person1.get('HINS1', 0) == 1  # 1 = Yes, 2 = No
+    hins1_2 = person2.get('HINS1', 0) == 1
+    
+    # If one spouse has Medicare and the other doesn't, strongly consider MFS
+    if hins1_1 != hins1_2:
+        print(f"MFS Check: Medicare coverage mismatch - Person1: {hins1_1}, Person2: {hins1_2}")
+        # Medicare is a strong indicator - apply with high probability
+        # but still consider income differences
+        if income1 != income2 or max(income1, income2) > 30000:  # Lower threshold for Medicare
+            print("  Medicare coverage difference detected, strongly boosting MFS probability")
+            random.seed(abs(hash(f"{person1.get('SERIALNO')}{person1.get('SPORDER')}")) % 10000)
+            if random.random() < 0.8:  # 80% chance of MFS when Medicare coverage differs
+                print("  Medicare coverage difference triggered MFS")
+                return True
     
     # Use a deterministic but pseudo-random approach based on household characteristics
     try:

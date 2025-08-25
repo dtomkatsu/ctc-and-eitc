@@ -176,15 +176,53 @@ class WeightSplittingRaker:
         if num_married >= 2:
             mfs_factors = []
             
-            # 1. Income disparity factor (0-0.5)
+            # 0. Check for 65+ disabled spouse (highest priority)
+            if 'AGEP' in married_adults.columns and 'DIS' in married_adults.columns:
+                # Check if any spouse is 65+ and disabled
+                elderly_disabled = married_adults[(married_adults['AGEP'] >= 55) & 
+                                               (married_adults['DIS'] == 1)]
+                if not elderly_disabled.empty:
+                    # Very high MFS probability for this case
+                    mfs_factors.append(0.9)
+                    logger.debug(f"Found {len(elderly_disabled)} elderly disabled spouse(s), boosting MFS probability")
+            
+            # 1. Income-based factors
             if 'PINCP' in married_adults.columns and len(married_adults) >= 2:
-                incomes = married_adults['PINCP'].sort_values()
-                if len(incomes) >= 2 and incomes.iloc[0] > 0:
-                    income_ratio = incomes.iloc[-1] / incomes.iloc[0]
-                    # Scale factor from 0 to 0.5 based on income ratio (5x to 50x)
-                    # More aggressive scaling with higher ratios
-                    income_factor = min(0.5, max(0, (min(income_ratio, 50) - 5) * 0.0111))  # 0.0111 = 0.5/45 (scaled to 50-5=45)
+                # Filter out negative or zero incomes and sort in descending order
+                incomes = sorted([inc for inc in married_adults['PINCP'].dropna() if inc > 0], reverse=True)
+                
+                # Need at least 2 valid positive incomes to proceed
+                if len(incomes) >= 2:
+                    total_income = sum(incomes)
+                    higher_earner_share = incomes[0] / total_income
+                    
+                    # Condition A: Dual high-income earners (>$80k each)
+                    if incomes[0] > 80000 and incomes[1] > 80000:
+                        # Boost MFS probability for high-income dual-earner couples
+                        income_factor = 0.6  # High but slightly below the max
+                        logger.debug(f"Dual high-income earners: ${incomes[0]:,.0f} and ${incomes[1]:,.0f}")
+                    
+                    # Condition B: One spouse earns >85% of total income AND total > $200k
+                    elif higher_earner_share > 0.85 and total_income > 200000:
+                        # Significant boost for high-income, high-disparity couples
+                        income_factor = 0.7  # Highest cap for this case
+                        logger.debug(f"High income disparity: {higher_earner_share:.1%} of ${total_income:,.0f}")
+                    
+                    else:
+                        # Original ratio-based calculation with safety checks
+                        lower_income = incomes[-1]
+                        if lower_income > 0:  # Ensure we don't divide by zero
+                            income_ratio = incomes[0] / lower_income
+                            # Scale factor from 0 to 0.5 based on income ratio (5x to 50x)
+                            income_factor = min(0.5, max(0, (min(income_ratio, 50) - 5) * 0.0111))
+                        else:
+                            # Fallback if we somehow have zero income
+                            income_factor = 0.1
+                    
                     mfs_factors.append(income_factor)
+                else:
+                    # Not enough valid incomes for comparison
+                    mfs_factors.append(0.05)  # Small base probability
             
             # 2. Age difference factor (0-0.2)
             if 'AGEP' in married_adults.columns and len(married_adults) >= 2:
