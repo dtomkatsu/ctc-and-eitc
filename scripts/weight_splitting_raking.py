@@ -136,9 +136,17 @@ class WeightSplittingRaker:
         
         # Calculate base probabilities with reduced single filer probability
         num_adults = len(adults)
+        # Steeper reduction in single filing probability for larger households
+        if num_adults == 1:
+            single_prob = 0.20  # 20% for 1-person households
+        elif num_adults == 2:
+            single_prob = 0.15  # 15% for 2-person households
+        else:
+            # Steeper reduction for households > 2 people
+            single_prob = max(0.02, 0.20 - ((num_adults - 2) * 0.2))  # 20% reduction per additional person
+            
         base_probs = {
-            # Option 1: Reduce base probability of single filing
-            'single': max(0.15, 0.3 - (num_adults * 0.02)),  # Reduced and scales with household size
+            'single': single_prob,
             'married_filing_jointly': 0.6 if num_married == 2 else 0.4,
             'married_filing_separately': 0.25
         }
@@ -148,11 +156,11 @@ class WeightSplittingRaker:
         if num_unmarried > 0:
             if num_children > 0:
                 # Higher probability for clear HoH cases with children
-                hoh_prob = 0.7 if num_children >= 2 else 0.55  # Increased from 0.6/0.45
+                hoh_prob = 0.8 if num_children >= 2 else 0.65  # Increased base probabilities
                 
-                # Option 4: Additional boost for households with children but no HoH
+                # Additional boost for households with children but no HoH
                 if base_probs['single'] > 0.1:
-                    base_probs['single'] *= 0.5  # 50% reduction in single probability
+                    base_probs['single'] *= 0.4  # 60% reduction in single probability
                     hoh_prob = max(hoh_prob, 0.6)  # Ensure minimum HoH probability
                 
                 # Income-based adjustment for HoH
@@ -198,9 +206,14 @@ class WeightSplittingRaker:
                     
                     # Condition A: Dual high-income earners (>$80k each)
                     if incomes[0] > 80000 and incomes[1] > 80000:
-                        # Boost MFS probability for high-income dual-earner couples
-                        income_factor = 0.6  # High but slightly below the max
+                        # Significantly boost MFS probability for high-income dual-earner couples
+                        income_factor = 0.8  # Increased from 0.6 to 0.8
                         logger.debug(f"Dual high-income earners: ${incomes[0]:,.0f} and ${incomes[1]:,.0f}")
+                    
+                    # New condition: Moderate income disparity (3:1 to 5:1 ratio)
+                    elif len(incomes) >= 2 and incomes[1] > 0 and (incomes[0] / incomes[1]) >= 3:
+                        income_factor = 0.4  # Moderate MFS probability for moderate income disparities
+                        logger.debug(f"Moderate income disparity: {incomes[0]/incomes[1]:.1f}x ratio")
                     
                     # Condition B: One spouse earns >85% of total income AND total > $200k
                     elif higher_earner_share > 0.85 and total_income > 200000:
@@ -224,14 +237,15 @@ class WeightSplittingRaker:
                     # Not enough valid incomes for comparison
                     mfs_factors.append(0.05)  # Small base probability
             
-            # 2. Age difference factor (0-0.2)
+            # 2. Age difference factor (0-0.3)
             if 'AGEP' in married_adults.columns and len(married_adults) >= 2:
                 ages = married_adults['AGEP'].sort_values()
                 if len(ages) >= 2:
                     age_diff = ages.iloc[-1] - ages.iloc[0]
-                    # Scale factor from 0 to 0.2 based on age difference (10 to 30 years)
-                    age_factor = min(0.2, max(0, (min(age_diff, 30) - 10) / 100))
+                    # Scale factor from 0 to 0.3 based on age difference (5 to 25 years)
+                    age_factor = min(0.3, max(0, (min(age_diff, 25) - 5) * 0.015))
                     mfs_factors.append(age_factor)
+                    logger.debug(f"Age difference {age_diff} years adds {age_factor:.2f} to MFS probability")
             
             # 3. Number of children factor (0-0.1)
             if num_children > 0:
@@ -239,16 +253,25 @@ class WeightSplittingRaker:
                 children_factor = min(0.1, num_children * 0.02)
                 mfs_factors.append(children_factor)
             
-            # Apply MFS factors with constraints
-            mfs_adjustment = min(0.7, sum(mfs_factors))  # Increased cap to 0.7
-            base_probs['married_filing_separately'] = min(0.7, base_probs['married_filing_separately'] + mfs_adjustment)
+            # Base MFS probability for all married couples
+            base_mfs = 0.1  # 10% base probability for any married couple
             
-            # More aggressive MFS: Take 40% from joint, 60% from others
-            joint_reduction = mfs_adjustment * 0.4
-            base_probs['married_filing_jointly'] = max(0.2, base_probs['married_filing_jointly'] - joint_reduction)
+            # Calculate MFS adjustment with higher base and stronger factors
+            mfs_adjustment = min(0.8, base_mfs + sum(mfs_factors))  # Increased cap to 0.8
+            
+            # Set MFS probability with a minimum floor
+            base_probs['married_filing_separately'] = max(0.1, min(0.8, mfs_adjustment))
+            
+            # More aggressive MFS: Take 60% from joint, 40% from others
+            joint_reduction = mfs_adjustment * 0.6
+            base_probs['married_filing_jointly'] = max(0.15, base_probs['married_filing_jointly'] - joint_reduction)
             
             # Ensure HoH doesn't get reduced below minimum
-            base_probs['head_of_household'] = max(0.1, base_probs.get('head_of_household', 0))
+            base_probs['head_of_household'] = max(0.15, base_probs.get('head_of_household', 0))
+            
+            # Log MFS probability for debugging
+            logger.debug(f"MFS probability: {base_probs['married_filing_separately']:.2f} "
+                       f"(base: {base_mfs:.2f}, factors: {sum(mfs_factors):.2f})")
         
         # Add scenarios based on household composition
         if num_unmarried > 0:
@@ -287,14 +310,17 @@ class WeightSplittingRaker:
         
         # Minimum weight constraints (as proportion of total weight)
         min_weights = {
-            'married_filing_separately': 0.025,  # 2.5% floor
-            'head_of_household': 0.09,          # 9% floor (increased from 8%)
-            'single': 0.0,                      # No floor, we want to reduce this
-            'married_filing_jointly': 0.35      # Ensure joint doesn't drop too low
+            'married_filing_separately': 0.045,  # 4.5% floor
+            'head_of_household': 0.10,           # 10.0% floor
+            'single': 0.37,                     # Further reduced from 0.39 to reduce single filers
+            'married_filing_jointly': 0.35       # Increased to help offset single reduction
         }
         
-        # Option 6: Cap single filer share
-        max_single_share = 0.52  # Just above target
+        # Cap single filer share to prevent it from dominating
+        max_single_share = 0.52  # Slightly increased to allow more flexibility
+        
+        # Enforce minimum MFS share
+        min_mfs_share = 0.034  # Increased to match target of 3.4%
         
         for iteration in range(self.max_iterations):
             # Calculate current shares and apply minimums
@@ -316,19 +342,33 @@ class WeightSplittingRaker:
             grand_total = current_totals.sum()
             current_shares = current_totals / grand_total
             
-            # Option 6: Enforce maximum single filer share
+            # Enforce maximum single filer share
             if 'single' in current_shares and current_shares['single'] > max_single_share:
                 excess_share = current_shares['single'] - max_single_share
-                total_other = sum(wt for status, wt in current_totals.items() 
-                               if status != 'single' and status in self.irs_targets)
                 
-                # Calculate how much to reduce single weight
+                # Calculate reduction factor for single filers
                 single_weight = current_totals['single']
                 reduction_factor = 1 - (excess_share / current_shares['single'])
                 
                 # Apply reduction to single filers
                 single_mask = df['filing_status'] == 'single'
                 df.loc[single_mask, 'scenario_weight'] *= reduction_factor
+                
+                # Distribute excess weight to MFS first, then others
+                excess_weight = single_weight * (1 - reduction_factor)
+                
+                # Calculate distribution weights - prioritize MFS
+                dist_weights = {
+                    'married_filing_separately': 0.6,  # 60% of excess to MFS
+                    'head_of_household': 0.2,         # 20% to HoH
+                    'married_filing_jointly': 0.2     # 20% to MFJ
+                }
+                
+                # Apply distribution
+                for status, weight_share in dist_weights.items():
+                    if status in current_totals:
+                        status_mask = df['filing_status'] == status
+                        df.loc[status_mask, 'scenario_weight'] += excess_weight * weight_share / len(df[status_mask])
                 
                 # Recalculate totals after adjustment
                 current_totals = df.groupby('filing_status')['scenario_weight'].sum()
@@ -348,10 +388,20 @@ class WeightSplittingRaker:
                 logger.info(f"Converged after {iteration + 1} iterations")
                 break
             
-            # Apply raking adjustments
+            # Apply raking adjustments with damping for stability
             for status in self.irs_targets:
                 if status in current_shares and current_shares[status] > 0:
-                    factor = self.irs_targets[status] / current_shares[status]
+                    # Calculate adjustment factor with damping
+                    raw_factor = self.irs_targets[status] / current_shares[status]
+                    # Dampen the adjustment to prevent overshooting
+                    damping = 0.5 if iteration < 5 else 0.7  # More aggressive in later iterations
+                    factor = 1 + (raw_factor - 1) * damping
+                    
+                    # Ensure we don't completely eliminate any status
+                    if status == 'married_filing_separately' and factor < 1.0:
+                        factor = max(1.0, factor)  # Only allow increases for MFS
+                    
+                    # Apply adjustment
                     mask = df['filing_status'] == status
                     df.loc[mask, 'scenario_weight'] *= factor
         
