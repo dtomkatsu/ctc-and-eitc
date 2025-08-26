@@ -46,49 +46,59 @@ def is_married_filing_separately(
         ratio = max(income1, income2) / min(income1, income2)
         print(f"Income ratio check - income1: {income1}, income2: {income2}, ratio: {ratio}")
         
-        # Only force MFS for extreme disparities (500:1 or higher)
-        # AND only if the high earner makes over $500k
+        # Relaxed threshold for income disparity
+        # If income ratio is significant (10:1 or higher) and at least one earns a reasonable income
         max_income = max(income1, income2)
-        if ratio > 500 and max_income > 500000:  # Very extreme cases only
-            print(f"  Extreme income ratio {ratio} > 500 with high income ${max_income:,.0f}, returning True for MFS")
+        min_income = min(income1, income2)
+        
+        # Case 1: More moderate income differences
+        if ratio >= 5 and max_income > 50000 and min_income < 25000:
+            print(f"  Moderate income ratio {ratio:.1f}:1 (${max_income:,.0f} vs ${min_income:,.0f}), considering MFS")
+            return True
+            
+        # Case 2: High earner with moderate income difference
+        if ratio >= 3 and max_income > 200000:
+            print(f"  Moderate earner (${max_income:,.0f}) with ratio {ratio:.1f}:1, considering MFS")
             return True
     
-    # 2. One spouse has significant negative income (business losses)
-    # Made more conservative: require larger losses and higher other income
-    if (income1 < -50000 and income2 > 200000) or (income2 < -50000 and income1 > 200000):
+    # 2. More lenient business loss criteria
+    if (income1 < -20000 and income2 > 50000) or (income2 < -20000 and income1 > 50000):
+        print(f"  Business loss detected (${income1:,.0f} vs ${income2:,.0f}), considering MFS")
         return True
     
-    # 3. One spouse has very high medical expenses (disability indicator)
-    if 'DIS' in person1 and 'DIS' in person2:
+    # 3. More lenient disability criteria
+    if 'DIS' in person1 or 'DIS' in person2:
         if person1.get('DIS', 2) != person2.get('DIS', 2):
             if person1.get('DIS') == 1 or person2.get('DIS') == 1:
-                # Only if there's also significant income to make itemizing worthwhile
-                if max(income1, income2) > 100000:
+                # Lower income threshold for itemizing
+                if max(income1, income2) > 40000:
+                    print(f"  Disability status difference detected, considering MFS")
                     return True
     
-    # 4. Different citizenship status with tax implications
-    # Made more conservative: require higher income threshold
+    # 4. More lenient citizenship status criteria
     if 'CIT' in person1 and 'CIT' in person2:
         cit1 = person1.get('CIT', 0)
         cit2 = person2.get('CIT', 0)
         print(f"Citizenship check - CIT1: {cit1}, CIT2: {cit2}")
-        # If one is non-citizen and the other is citizen, and there's significant income
-        if (cit1 >= 4 and cit2 < 4) or (cit2 >= 4 and cit1 < 4):
+        # Broader citizenship difference check
+        if (cit1 >= 3 and cit2 < 3) or (cit2 >= 3 and cit1 < 3):
             print(f"  Different citizenship status detected")
-            if max(income1, income2) > 150000:  # Raised from 50k to 150k
-                print(f"  Income threshold met, returning True for MFS")
+            if max(income1, income2) > 30000:  # Much lower income threshold
+                print(f"  Income threshold met, considering MFS")
                 return True
     
-    # 5. Significant self-employment income differences
+    # 5. More lenient self-employment criteria
     semp1 = float(person1.get('SEMP', 0) or 0)
     semp2 = float(person2.get('SEMP', 0) or 0)
-    if (abs(semp1) > 75000 and abs(semp2) < 10000) or (abs(semp2) > 75000 and abs(semp1) < 10000):
+    if (abs(semp1) > 15000 and abs(semp2) < 5000) or (abs(semp2) > 15000 and abs(semp1) < 5000):
+        print(f"  Significant self-employment difference (${semp1:,.0f} vs ${semp2:,.0f}), considering MFS")
         return True
     
-    # 6. One spouse has significant investment income
+    # 6. More lenient investment income criteria
     intp1 = float(person1.get('INTP', 0) or 0)
     intp2 = float(person2.get('INTP', 0) or 0)
-    if (intp1 > 25000 and intp2 < 5000) or (intp2 > 25000 and intp1 < 5000):
+    if (intp1 > 5000 and intp2 < 2000) or (intp2 > 5000 and intp1 < 2000):
+        print(f"  Significant investment income difference (${intp1:,.0f} vs ${intp2:,.0f}), considering MFS")
         return True
     
     # 7. Age difference suggesting different life stages/tax situations
