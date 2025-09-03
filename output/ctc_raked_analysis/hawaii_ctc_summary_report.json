@@ -1,0 +1,26 @@
+{
+  "statewide_totals": {
+    "total_ctc_amount": "$395,881,606",
+    "total_tax_units": "27,646",
+    "ctc_recipient_rate": "16.4%",
+    "avg_ctc_per_unit": "$623",
+    "avg_ctc_per_recipient": "$3,545",
+    "total_qualifying_children": "201,901"
+  },
+  "district_analysis": {
+    "num_house_districts": 9,
+    "highest_ctc_house_district": "1",
+    "highest_ctc_amount": "$120,882,977",
+    "lowest_ctc_house_district": "4",
+    "lowest_ctc_amount": "$20,221,694"
+  },
+  "county_analysis": {
+    "num_counties": 3,
+    "highest_ctc_county": "Honolulu",
+    "county_ctc_amounts": {
+      "Hawaii": "$54,923,703",
+      "Honolulu": "$274,998,629",
+      "Maui_Kalawao_Kauai": "$65,959,274"
+    }
+  }
+}

@@ -55,12 +55,53 @@ class WeightSplittingRaker:
         self.tolerance = 0.001  # 0.1% tolerance
         
     def load_data(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """Load tax units, person, and household data."""
+        """Load tax units, person, and household data with geographic crosswalks."""
         logger.info("Loading data files...")
         
         tax_units = pd.read_parquet(self.tax_units_path)
         person_df = pd.read_parquet(self.person_path)
         household_df = pd.read_parquet(self.household_path)
+        
+        # Load geographic crosswalks
+        logger.info("Loading geographic crosswalks...")
+        puma_county = pd.read_csv("data/crosswalks/hawaii_puma_counties_corrected.csv")
+        puma_district = pd.read_csv("data/crosswalks/hawaii_puma_districts.csv")
+        
+        # Add geographic identifiers to household data
+        if 'PUMA' in household_df.columns:
+            # Convert PUMA to string for consistent merging
+            household_df['PUMA'] = household_df['PUMA'].astype(str).str.zfill(4)
+            puma_county['PUMA'] = puma_county['PUMA'].astype(str).str.zfill(4)
+            
+            # Merge county information
+            household_df = household_df.merge(
+                puma_county[['PUMA', 'county']], 
+                on='PUMA', 
+                how='left'
+            )
+            
+            # For district mapping, use the 3-digit crosswalk
+            if 'PUMA' in puma_district.columns:
+                # Convert district PUMA codes to match household format (ensure both are strings with leading zeros)
+                puma_district['PUMA_4digit'] = puma_district['PUMA'].astype(str).str.zfill(4)
+                household_df = household_df.merge(
+                    puma_district[['PUMA_4digit', 'house_district', 'senate_district']], 
+                    left_on='PUMA',
+                    right_on='PUMA_4digit',
+                    how='left'
+                )
+                
+                # Fix PUMA 100 inconsistency: it represents Maui/Kalawao/Kauai but 3-digit crosswalk maps to Honolulu
+                # Assign PUMA 100 to representative Maui district (House 1, Senate 1) based on county crosswalk
+                puma_100_mask = household_df['PUMA'] == '0100'
+                if puma_100_mask.any():
+                    household_df.loc[puma_100_mask, 'house_district'] = 1  # Maui House District 1
+                    household_df.loc[puma_100_mask, 'senate_district'] = 1  # Maui Senate District 1
+                    logger.info(f"Corrected PUMA 100 district assignment: {puma_100_mask.sum()} households assigned to Maui districts")
+            
+            logger.info(f"Added geographic identifiers to {len(household_df)} households")
+        else:
+            logger.warning("PUMA column not found in household data - geographic crosswalks not applied")
         
         logger.info(f"Loaded {len(tax_units)} tax units, {len(person_df)} persons, {len(household_df)} households")
         return tax_units, person_df, household_df
@@ -456,12 +497,23 @@ class WeightSplittingRaker:
         
         final_assignments = pd.DataFrame(final_assignments)
         
+        # Apply weight normalization to match Hawaii tax return total
+        target_total = 635117  # Hawaii resident returns in 2022
+        current_total = final_assignments['scenario_weight'].sum()
+        scale_factor = target_total / current_total
+        
+        logger.info(f"Normalizing weights: {current_total:,.0f} -> {target_total:,.0f} (factor: {scale_factor:.4f})")
+        final_assignments['scenario_weight'] *= scale_factor
+        
         # Debug: Check how many households chose each status
         assignment_counts = final_assignments['filing_status'].value_counts()
         logger.info("Final assignments by status:")
         for status, count in assignment_counts.items():
             logger.info(f"  {status}: {count} households")
         
+        # Verify final total
+        final_total = final_assignments['scenario_weight'].sum()
+        logger.info(f"Final normalized weight total: {final_total:,.0f}")
         logger.info(f"Assigned final statuses to {len(final_assignments)} households")
         
         return final_assignments
@@ -531,10 +583,67 @@ class WeightSplittingRaker:
         # Step 4: Assign final statuses
         final_assignments = self.assign_final_statuses(raked_scenarios)
         
-        # Step 5: Validate results
+        # Step 5: Add geographic information to final assignments
+        final_assignments = self.add_geographic_info(final_assignments, household_df)
+        
+        # Step 6: Validate results
         validation_results = self.validate_results(final_assignments)
         
         return final_assignments, validation_results
+    
+    def add_geographic_info(self, final_assignments: pd.DataFrame, household_df: pd.DataFrame) -> pd.DataFrame:
+        """Add geographic information to final assignments."""
+        logger.info("Adding geographic information to final assignments...")
+        
+        # Apply the same geographic crosswalk logic as in load_data
+        # Load geographic crosswalks
+        puma_county = pd.read_csv('data/crosswalks/hawaii_puma_counties_corrected.csv')
+        puma_district = pd.read_csv('data/crosswalks/hawaii_puma_districts_3digit.csv')
+        
+        # Prepare household data for merge
+        household_geo = household_df[['SERIALNO', 'PUMA']].copy()
+        household_geo['PUMA'] = household_geo['PUMA'].astype(str).str.zfill(4)
+        puma_county['PUMA'] = puma_county['PUMA'].astype(str).str.zfill(4)
+        
+        # Add county information
+        household_geo = household_geo.merge(
+            puma_county[['PUMA', 'county']], 
+            on='PUMA', 
+            how='left'
+        )
+        
+        # Add district information
+        puma_district['PUMA_4digit'] = puma_district['PUMA'].astype(str).str.zfill(4)
+        household_geo = household_geo.merge(
+            puma_district[['PUMA_4digit', 'house_district', 'senate_district']], 
+            left_on='PUMA',
+            right_on='PUMA_4digit',
+            how='left'
+        )
+        
+        # Fix PUMA 100 inconsistency
+        puma_100_mask = household_geo['PUMA'] == '0100'
+        if puma_100_mask.any():
+            household_geo.loc[puma_100_mask, 'house_district'] = 1
+            household_geo.loc[puma_100_mask, 'senate_district'] = 1
+        
+        # Merge with final assignments
+        final_assignments = final_assignments.merge(
+            household_geo[['SERIALNO', 'PUMA', 'county', 'house_district', 'senate_district']],
+            left_on='household_id',
+            right_on='SERIALNO',
+            how='left'
+        )
+        
+        # Log geographic distribution
+        if 'county' in final_assignments.columns:
+            county_weights = final_assignments.groupby('county')['scenario_weight'].sum()
+            logger.info("Weight distribution by county:")
+            for county, weight in county_weights.items():
+                pct = (weight / final_assignments['scenario_weight'].sum()) * 100
+                logger.info(f"  {county}: {weight:,.0f} ({pct:.1f}%)")
+        
+        return final_assignments
 
 def main():
     """Main execution function."""

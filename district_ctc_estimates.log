@@ -145,3 +145,310 @@
 2025-08-20 09:11:48,296 - INFO - Created county mapping for 70 PUMAs
 2025-08-20 09:11:48,299 - WARNING - 13447 tax units could not be mapped to county districts
 2025-08-20 09:11:48,299 - ERROR - Analysis failed: 'county'
+2025-09-02 13:55:41,598 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 13:55:41,598 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 13:55:41,598 - INFO - District types: ['house', 'senate', 'county']
+2025-09-02 13:55:41,598 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 13:55:42,020 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 13:55:42,021 - INFO - Geographic data already included in tax units file
+2025-09-02 13:55:42,021 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-09-02 13:55:42,041 - INFO - Loaded 73,971 person records
+2025-09-02 13:55:42,060 - INFO - Processing dependents...
+2025-09-02 13:55:42,060 - WARNING - No dependents column found - CTC calculations may be limited
+2025-09-02 13:55:42,064 - INFO - Renamed 'scenario_weight' to 'weight' for compatibility
+2025-09-02 13:55:42,064 - INFO - Successfully processed 27,646 tax units with dependents and geographic data
+2025-09-02 13:55:42,066 - INFO - Validating tax units data...
+2025-09-02 13:55:42,066 - ERROR - Analysis failed: Missing required columns: ['income']
+2025-09-02 13:56:29,931 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 13:56:29,931 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 13:56:29,931 - INFO - District types: ['house', 'senate', 'county']
+2025-09-02 13:56:29,931 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 13:56:30,041 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 13:56:30,041 - INFO - Loading original tax units from src/data/processed/tax_units_rule_based.parquet
+2025-09-02 13:56:30,098 - INFO - Loaded 41,290 original tax units
+2025-09-02 13:56:30,098 - INFO - Merging raked weights with original tax unit data...
+2025-09-02 13:56:30,099 - ERROR - Error loading tax units: "['household_id'] not in index"
+2025-09-02 13:56:30,099 - ERROR - Analysis failed: "['household_id'] not in index"
+2025-09-02 13:56:55,660 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 13:56:55,660 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 13:56:55,660 - INFO - District types: ['house', 'senate', 'county']
+2025-09-02 13:56:55,660 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 13:56:55,785 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 13:56:55,786 - INFO - Loading original tax units from src/data/processed/tax_units_rule_based.parquet
+2025-09-02 13:56:55,829 - INFO - Loaded 41,290 original tax units
+2025-09-02 13:56:55,829 - INFO - Merging raked weights with original tax unit data...
+2025-09-02 13:56:55,846 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-09-02 13:56:55,860 - INFO - Loaded 73,971 person records
+2025-09-02 13:56:55,879 - INFO - Processing dependents...
+2025-09-02 13:57:08,009 - INFO - Renamed 'scenario_weight' to 'weight' for compatibility
+2025-09-02 13:57:08,010 - INFO - Successfully processed 41,290 tax units with income, dependents and geographic data
+2025-09-02 13:57:08,019 - INFO - Validating tax units data...
+2025-09-02 13:57:08,037 - INFO - Geographic data available: 3 counties
+2025-09-02 13:57:08,038 - INFO - House districts available: 0 districts
+2025-09-02 13:57:08,038 - INFO - Senate districts available: 0 districts
+2025-09-02 13:57:08,038 - INFO - Validation complete: 41,290 units retained (0 removed)
+2025-09-02 13:57:08,039 - INFO - Generating comprehensive district CTC analysis...
+2025-09-02 13:57:08,039 - INFO - Creating comprehensive CTC district analysis report...
+2025-09-02 13:57:08,044 - INFO - Validated data with 41,290 tax units
+2025-09-02 13:57:08,044 - INFO - Calculating CTC for all tax units...
+2025-09-02 13:57:09,150 - INFO - CTC calculations completed
+2025-09-02 13:57:09,155 - INFO - Generating statewide CTC summary...
+2025-09-02 13:57:09,157 - INFO - Generating house district estimates...
+2025-09-02 13:57:09,160 - INFO - Created house mapping for 70 PUMAs
+2025-09-02 13:57:09,170 - ERROR - Analysis failed: 'house_district'
+2025-09-02 13:57:28,086 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 13:57:28,087 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 13:57:28,087 - INFO - District types: ['house', 'senate', 'county']
+2025-09-02 13:57:28,087 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 13:57:28,197 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 13:57:28,198 - INFO - Loading original tax units from src/data/processed/tax_units_rule_based.parquet
+2025-09-02 13:57:28,244 - INFO - Loaded 41,290 original tax units
+2025-09-02 13:57:28,245 - INFO - Merging raked weights with original tax unit data...
+2025-09-02 13:57:28,264 - INFO - After merge: 41,290 tax units retained
+2025-09-02 13:57:28,264 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-09-02 13:57:28,280 - INFO - Loaded 73,971 person records
+2025-09-02 13:57:28,298 - INFO - Processing dependents...
+2025-09-02 13:57:40,769 - INFO - Renamed 'scenario_weight' to 'weight' for compatibility
+2025-09-02 13:57:40,770 - INFO - Successfully processed 41,290 tax units with income, dependents and geographic data
+2025-09-02 13:57:40,780 - INFO - Validating tax units data...
+2025-09-02 13:57:40,798 - INFO - Geographic data available: 3 counties
+2025-09-02 13:57:40,798 - INFO - House districts available: 0 districts
+2025-09-02 13:57:40,799 - INFO - Senate districts available: 0 districts
+2025-09-02 13:57:40,799 - INFO - Validation complete: 41,290 units retained (0 removed)
+2025-09-02 13:57:40,800 - INFO - Generating comprehensive district CTC analysis...
+2025-09-02 13:57:40,800 - INFO - Creating comprehensive CTC district analysis report...
+2025-09-02 13:57:40,805 - INFO - Validated data with 41,290 tax units
+2025-09-02 13:57:40,805 - INFO - Calculating CTC for all tax units...
+2025-09-02 13:57:42,157 - INFO - CTC calculations completed
+2025-09-02 13:57:42,162 - INFO - Generating statewide CTC summary...
+2025-09-02 13:57:42,164 - INFO - Generating house district estimates...
+2025-09-02 13:57:42,166 - INFO - Created house mapping for 70 PUMAs
+2025-09-02 13:57:42,177 - ERROR - Analysis failed: 'house_district'
+2025-09-02 13:58:03,795 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 13:58:03,795 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 13:58:03,795 - INFO - District types: ['house', 'senate', 'county']
+2025-09-02 13:58:03,795 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 13:58:03,913 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 13:58:03,913 - INFO - Loading original tax units from src/data/processed/tax_units_rule_based.parquet
+2025-09-02 13:58:03,967 - INFO - Loaded 41,290 original tax units
+2025-09-02 13:58:03,968 - INFO - Merging original tax unit data into raked tax units...
+2025-09-02 13:58:04,010 - INFO - After merge: 27,646 tax units retained (preserving raked structure)
+2025-09-02 13:58:04,010 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-09-02 13:58:04,022 - INFO - Loaded 73,971 person records
+2025-09-02 13:58:04,040 - INFO - Processing dependents...
+2025-09-02 13:58:16,480 - INFO - Renamed 'scenario_weight' to 'weight' for compatibility
+2025-09-02 13:58:16,481 - INFO - Successfully processed 27,646 tax units with income, dependents and geographic data
+2025-09-02 13:58:16,490 - INFO - Validating tax units data...
+2025-09-02 13:58:16,501 - INFO - Geographic data available: 3 counties
+2025-09-02 13:58:16,502 - INFO - House districts available: 0 districts
+2025-09-02 13:58:16,502 - INFO - Senate districts available: 0 districts
+2025-09-02 13:58:16,502 - INFO - Validation complete: 27,646 units retained (0 removed)
+2025-09-02 13:58:16,503 - INFO - Generating comprehensive district CTC analysis...
+2025-09-02 13:58:16,503 - INFO - Creating comprehensive CTC district analysis report...
+2025-09-02 13:58:16,507 - INFO - Validated data with 27,646 tax units
+2025-09-02 13:58:16,507 - INFO - Calculating CTC for all tax units...
+2025-09-02 13:58:17,971 - INFO - CTC calculations completed
+2025-09-02 13:58:17,976 - INFO - Generating statewide CTC summary...
+2025-09-02 13:58:17,980 - INFO - Generating house district estimates...
+2025-09-02 13:58:17,992 - INFO - Created house mapping for 70 PUMAs
+2025-09-02 13:58:18,008 - ERROR - Analysis failed: 'house_district'
+2025-09-02 13:58:38,474 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 13:58:38,474 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 13:58:38,474 - INFO - District types: ['county']
+2025-09-02 13:58:38,474 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 13:58:38,549 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 13:58:38,549 - INFO - Loading original tax units from src/data/processed/tax_units_rule_based.parquet
+2025-09-02 13:58:38,582 - INFO - Loaded 41,290 original tax units
+2025-09-02 13:58:38,583 - INFO - Merging original tax unit data into raked tax units...
+2025-09-02 13:58:38,627 - INFO - After merge: 27,646 tax units retained (preserving raked structure)
+2025-09-02 13:58:38,627 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-09-02 13:58:38,650 - INFO - Loaded 73,971 person records
+2025-09-02 13:58:38,667 - INFO - Processing dependents...
+2025-09-02 13:58:50,753 - INFO - Renamed 'scenario_weight' to 'weight' for compatibility
+2025-09-02 13:58:50,753 - INFO - Successfully processed 27,646 tax units with income, dependents and geographic data
+2025-09-02 13:58:50,762 - INFO - Validating tax units data...
+2025-09-02 13:58:50,772 - INFO - Geographic data available: 3 counties
+2025-09-02 13:58:50,774 - INFO - House districts available: 0 districts
+2025-09-02 13:58:50,774 - INFO - Senate districts available: 0 districts
+2025-09-02 13:58:50,774 - INFO - Validation complete: 27,646 units retained (0 removed)
+2025-09-02 13:58:50,775 - INFO - Generating comprehensive district CTC analysis...
+2025-09-02 13:58:50,775 - INFO - Creating comprehensive CTC district analysis report...
+2025-09-02 13:58:50,778 - INFO - Validated data with 27,646 tax units
+2025-09-02 13:58:50,778 - INFO - Calculating CTC for all tax units...
+2025-09-02 13:58:51,538 - INFO - CTC calculations completed
+2025-09-02 13:58:51,542 - INFO - Generating statewide CTC summary...
+2025-09-02 13:58:51,544 - INFO - Generating house district estimates...
+2025-09-02 13:58:51,547 - INFO - Created house mapping for 70 PUMAs
+2025-09-02 13:58:51,555 - ERROR - Analysis failed: 'house_district'
+2025-09-02 14:08:30,212 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 14:08:30,213 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 14:08:30,213 - INFO - District types: ['house', 'senate', 'county']
+2025-09-02 14:08:30,213 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 14:32:05,014 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 14:32:05,015 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 14:32:05,015 - INFO - District types: ['house', 'senate', 'county']
+2025-09-02 14:32:05,015 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 14:32:05,119 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 14:32:05,119 - INFO - Loading original tax units from src/data/processed/tax_units_rule_based.parquet
+2025-09-02 14:32:05,161 - INFO - Loaded 41,290 original tax units
+2025-09-02 14:32:05,161 - INFO - Merging original tax unit data into raked tax units...
+2025-09-02 14:32:05,201 - INFO - After merge: 27,646 tax units retained (preserving raked structure)
+2025-09-02 14:32:05,201 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-09-02 14:32:05,214 - INFO - Loaded 73,971 person records
+2025-09-02 14:32:05,233 - INFO - Processing dependents...
+2025-09-02 14:32:19,129 - INFO - Renamed 'scenario_weight' to 'weight' for compatibility
+2025-09-02 14:32:19,130 - INFO - Successfully processed 27,646 tax units with income, dependents and geographic data
+2025-09-02 14:32:19,141 - INFO - Validating tax units data...
+2025-09-02 14:32:19,152 - INFO - Geographic data available: 3 counties
+2025-09-02 14:32:19,153 - INFO - House districts available: 9 districts
+2025-09-02 14:32:19,154 - INFO - Senate districts available: 5 districts
+2025-09-02 14:32:19,154 - INFO - Validation complete: 27,646 units retained (0 removed)
+2025-09-02 14:32:19,155 - INFO - Generating comprehensive district CTC analysis...
+2025-09-02 14:32:19,155 - INFO - Creating comprehensive CTC district analysis report...
+2025-09-02 14:32:19,157 - INFO - Validated data with 27,646 tax units
+2025-09-02 14:32:19,157 - INFO - Calculating CTC for all tax units...
+2025-09-02 14:32:19,867 - INFO - CTC calculations completed
+2025-09-02 14:32:19,870 - INFO - Generating statewide CTC summary...
+2025-09-02 14:32:19,872 - INFO - Generating house district estimates...
+2025-09-02 14:32:19,876 - INFO - Created house mapping for 70 PUMAs
+2025-09-02 14:32:19,884 - ERROR - Analysis failed: 'house_district'
+2025-09-02 14:33:47,875 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 14:33:47,875 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 14:33:47,875 - INFO - District types: ['house']
+2025-09-02 14:33:47,875 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 14:33:48,014 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 14:33:48,015 - INFO - Loading original tax units from src/data/processed/tax_units_rule_based.parquet
+2025-09-02 14:33:48,087 - INFO - Loaded 41,290 original tax units
+2025-09-02 14:33:48,087 - INFO - Merging original tax unit data into raked tax units...
+2025-09-02 14:33:48,134 - INFO - After merge: 27,646 tax units retained (preserving raked structure)
+2025-09-02 14:33:48,134 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-09-02 14:33:48,147 - INFO - Loaded 73,971 person records
+2025-09-02 14:33:48,166 - INFO - Processing dependents...
+2025-09-02 14:34:06,602 - INFO - Renamed 'scenario_weight' to 'weight' for compatibility
+2025-09-02 14:34:06,603 - INFO - Successfully processed 27,646 tax units with income, dependents and geographic data
+2025-09-02 14:34:06,615 - INFO - Validating tax units data...
+2025-09-02 14:34:06,615 - INFO - Geographic data available: 1 counties
+2025-09-02 14:34:06,616 - INFO - House districts available: 9 districts
+2025-09-02 14:34:06,617 - INFO - Senate districts available: 5 districts
+2025-09-02 14:34:06,633 - INFO - Geographic data available: 3 counties
+2025-09-02 14:34:06,634 - INFO - House districts available: 9 districts
+2025-09-02 14:34:06,634 - INFO - Senate districts available: 5 districts
+2025-09-02 14:34:06,635 - INFO - Validation complete: 27,646 units retained (0 removed)
+2025-09-02 14:34:06,636 - INFO - Generating comprehensive district CTC analysis...
+2025-09-02 14:34:06,637 - INFO - Creating comprehensive CTC district analysis report...
+2025-09-02 14:34:06,641 - INFO - Validated data with 27,646 tax units
+2025-09-02 14:34:06,642 - INFO - Calculating CTC for all tax units...
+2025-09-02 14:34:07,989 - INFO - CTC calculations completed
+2025-09-02 14:34:07,992 - INFO - Generating statewide CTC summary...
+2025-09-02 14:34:07,997 - INFO - Generating house district estimates...
+2025-09-02 14:34:07,997 - INFO - house_district column already exists in tax units data
+2025-09-02 14:34:07,997 - INFO - All tax units have valid house_district assignments
+2025-09-02 14:34:08,064 - INFO - Generated estimates for 9 house districts
+2025-09-02 14:34:08,065 - INFO - Generating senate district estimates...
+2025-09-02 14:34:08,066 - INFO - senate_district column already exists in tax units data
+2025-09-02 14:34:08,066 - INFO - All tax units have valid senate_district assignments
+2025-09-02 14:34:08,129 - INFO - Generated estimates for 5 senate districts
+2025-09-02 14:34:08,131 - INFO - Generating county district estimates...
+2025-09-02 14:34:08,132 - INFO - Creating county_district mappings from PUMA codes
+2025-09-02 14:34:08,136 - INFO - Created county mapping for 70 PUMAs
+2025-09-02 14:34:08,158 - WARNING - 27646 tax units could not be mapped to county districts
+2025-09-02 14:34:08,263 - INFO - Generated estimates for 3 county districts
+2025-09-02 14:34:08,267 - INFO - Exporting house district profiles...
+2025-09-02 14:34:08,268 - INFO - Generating house district estimates...
+2025-09-02 14:34:08,268 - INFO - house_district column already exists in tax units data
+2025-09-02 14:34:08,268 - INFO - All tax units have valid house_district assignments
+2025-09-02 14:34:08,371 - INFO - Generated estimates for 9 house districts
+2025-09-02 14:34:08,378 - INFO - Saved summary to output/ctc_raked_analysis/house/hawaii_house_districts_ctc_summary.csv
+2025-09-02 14:34:08,386 - INFO - Exported 9 district profiles to output/ctc_raked_analysis/house
+2025-09-02 14:34:08,386 - INFO - Exporting senate district profiles...
+2025-09-02 14:34:08,386 - INFO - Generating senate district estimates...
+2025-09-02 14:34:08,386 - INFO - senate_district column already exists in tax units data
+2025-09-02 14:34:08,386 - INFO - All tax units have valid senate_district assignments
+2025-09-02 14:34:08,448 - INFO - Generated estimates for 5 senate districts
+2025-09-02 14:34:08,451 - INFO - Saved summary to output/ctc_raked_analysis/senate/hawaii_senate_districts_ctc_summary.csv
+2025-09-02 14:34:08,454 - INFO - Exported 5 district profiles to output/ctc_raked_analysis/senate
+2025-09-02 14:34:08,454 - INFO - Exporting county district profiles...
+2025-09-02 14:34:08,454 - INFO - Generating county district estimates...
+2025-09-02 14:34:08,454 - INFO - Creating county_district mappings from PUMA codes
+2025-09-02 14:34:08,456 - INFO - Created county mapping for 70 PUMAs
+2025-09-02 14:34:08,469 - WARNING - 27646 tax units could not be mapped to county districts
+2025-09-02 14:34:08,549 - INFO - Generated estimates for 3 county districts
+2025-09-02 14:34:08,555 - INFO - Saved summary to output/ctc_raked_analysis/county/hawaii_county_districts_ctc_summary.csv
+2025-09-02 14:34:08,564 - INFO - Exported 3 district profiles to output/ctc_raked_analysis/county
+2025-09-02 14:34:08,564 - INFO - CTC district analysis report completed
+2025-09-02 14:34:08,565 - INFO - Generating summary report...
+2025-09-02 14:34:08,568 - ERROR - Analysis failed: Object of type int64 is not JSON serializable
+2025-09-02 14:34:51,255 - INFO - === Hawaii District-Level CTC Analysis ===
+2025-09-02 14:34:51,255 - INFO - Output directory: output/ctc_raked_analysis
+2025-09-02 14:34:51,255 - INFO - District types: ['house']
+2025-09-02 14:34:51,255 - INFO - Loading weight-raked tax units from src/data/processed/tax_units_weight_split_raked.parquet
+2025-09-02 14:34:51,381 - INFO - Loaded 27,646 weight-raked tax units
+2025-09-02 14:34:51,381 - INFO - Loading original tax units from src/data/processed/tax_units_rule_based.parquet
+2025-09-02 14:34:51,442 - INFO - Loaded 41,290 original tax units
+2025-09-02 14:34:51,442 - INFO - Merging original tax unit data into raked tax units...
+2025-09-02 14:34:51,487 - INFO - After merge: 27,646 tax units retained (preserving raked structure)
+2025-09-02 14:34:51,488 - INFO - Loading person data from data/processed/pums_person_processed.parquet
+2025-09-02 14:34:51,501 - INFO - Loaded 73,971 person records
+2025-09-02 14:34:51,520 - INFO - Processing dependents...
+2025-09-02 14:35:04,651 - INFO - Renamed 'scenario_weight' to 'weight' for compatibility
+2025-09-02 14:35:04,652 - INFO - Successfully processed 27,646 tax units with income, dependents and geographic data
+2025-09-02 14:35:04,663 - INFO - Validating tax units data...
+2025-09-02 14:35:04,663 - INFO - Geographic data available: 1 counties
+2025-09-02 14:35:04,664 - INFO - House districts available: 9 districts
+2025-09-02 14:35:04,665 - INFO - Senate districts available: 5 districts
+2025-09-02 14:35:04,675 - INFO - Geographic data available: 3 counties
+2025-09-02 14:35:04,675 - INFO - House districts available: 9 districts
+2025-09-02 14:35:04,675 - INFO - Senate districts available: 5 districts
+2025-09-02 14:35:04,676 - INFO - Validation complete: 27,646 units retained (0 removed)
+2025-09-02 14:35:04,677 - INFO - Generating comprehensive district CTC analysis...
+2025-09-02 14:35:04,677 - INFO - Creating comprehensive CTC district analysis report...
+2025-09-02 14:35:04,680 - INFO - Validated data with 27,646 tax units
+2025-09-02 14:35:04,680 - INFO - Calculating CTC for all tax units...
+2025-09-02 14:35:05,458 - INFO - CTC calculations completed
+2025-09-02 14:35:05,461 - INFO - Generating statewide CTC summary...
+2025-09-02 14:35:05,463 - INFO - Generating house district estimates...
+2025-09-02 14:35:05,463 - INFO - house_district column already exists in tax units data
+2025-09-02 14:35:05,463 - INFO - All tax units have valid house_district assignments
+2025-09-02 14:35:05,516 - INFO - Generated estimates for 9 house districts
+2025-09-02 14:35:05,517 - INFO - Generating senate district estimates...
+2025-09-02 14:35:05,517 - INFO - senate_district column already exists in tax units data
+2025-09-02 14:35:05,518 - INFO - All tax units have valid senate_district assignments
+2025-09-02 14:35:05,562 - INFO - Generated estimates for 5 senate districts
+2025-09-02 14:35:05,564 - INFO - Generating county district estimates...
+2025-09-02 14:35:05,564 - INFO - Creating county_district mappings from PUMA codes
+2025-09-02 14:35:05,568 - INFO - Created county mapping for 70 PUMAs
+2025-09-02 14:35:05,582 - WARNING - 27646 tax units could not be mapped to county districts
+2025-09-02 14:35:05,628 - INFO - Generated estimates for 3 county districts
+2025-09-02 14:35:05,630 - INFO - Exporting house district profiles...
+2025-09-02 14:35:05,631 - INFO - Generating house district estimates...
+2025-09-02 14:35:05,631 - INFO - house_district column already exists in tax units data
+2025-09-02 14:35:05,631 - INFO - All tax units have valid house_district assignments
+2025-09-02 14:35:05,684 - INFO - Generated estimates for 9 house districts
+2025-09-02 14:35:05,688 - INFO - Saved summary to output/ctc_raked_analysis/house/hawaii_house_districts_ctc_summary.csv
+2025-09-02 14:35:05,692 - INFO - Exported 9 district profiles to output/ctc_raked_analysis/house
+2025-09-02 14:35:05,692 - INFO - Exporting senate district profiles...
+2025-09-02 14:35:05,692 - INFO - Generating senate district estimates...
+2025-09-02 14:35:05,692 - INFO - senate_district column already exists in tax units data
+2025-09-02 14:35:05,693 - INFO - All tax units have valid senate_district assignments
+2025-09-02 14:35:05,731 - INFO - Generated estimates for 5 senate districts
+2025-09-02 14:35:05,734 - INFO - Saved summary to output/ctc_raked_analysis/senate/hawaii_senate_districts_ctc_summary.csv
+2025-09-02 14:35:05,736 - INFO - Exported 5 district profiles to output/ctc_raked_analysis/senate
+2025-09-02 14:35:05,736 - INFO - Exporting county district profiles...
+2025-09-02 14:35:05,736 - INFO - Generating county district estimates...
+2025-09-02 14:35:05,736 - INFO - Creating county_district mappings from PUMA codes
+2025-09-02 14:35:05,738 - INFO - Created county mapping for 70 PUMAs
+2025-09-02 14:35:05,755 - WARNING - 27646 tax units could not be mapped to county districts
+2025-09-02 14:35:05,828 - INFO - Generated estimates for 3 county districts
+2025-09-02 14:35:05,831 - INFO - Saved summary to output/ctc_raked_analysis/county/hawaii_county_districts_ctc_summary.csv
+2025-09-02 14:35:05,833 - INFO - Exported 3 district profiles to output/ctc_raked_analysis/county
+2025-09-02 14:35:05,833 - INFO - CTC district analysis report completed
+2025-09-02 14:35:05,834 - INFO - Generating summary report...
+2025-09-02 14:35:05,839 - INFO - Summary report saved to output/ctc_raked_analysis/hawaii_ctc_summary_report.json and output/ctc_raked_analysis/README.md
+2025-09-02 14:35:05,839 - INFO - === KEY RESULTS ===
+2025-09-02 14:35:05,839 - INFO - Total CTC Amount: $395,881,606
+2025-09-02 14:35:05,839 - INFO - CTC Recipients: 4,524 (16.4%)
+2025-09-02 14:35:05,839 - INFO - Average CTC per Recipient: $3,545
+2025-09-02 14:35:05,839 - INFO - Qualifying Children: 201,901
+2025-09-02 14:35:05,839 - INFO - House Districts: 9 analyzed
+2025-09-02 14:35:05,839 - INFO - Analysis complete! Results saved to: output/ctc_raked_analysis
+2025-09-02 14:35:05,839 - INFO - Check README.md for detailed summary and file descriptions.

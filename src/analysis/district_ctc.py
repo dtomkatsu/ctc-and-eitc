@@ -132,13 +132,27 @@ class DistrictCTCAnalyzer:
     
     def _add_district_mappings(self, district_type: str) -> pd.DataFrame:
         """Add district mappings to tax units based on PUMA codes."""
-        # Create mapping from PUMA to district
+        district_col = f'{district_type}_district'
+        
+        # Check if district column already exists in tax units
+        if district_col in self.tax_units_df.columns:
+            logger.info(f"{district_col} column already exists in tax units data")
+            # Check for missing values
+            missing_districts = self.tax_units_df[district_col].isna().sum()
+            if missing_districts > 0:
+                logger.warning(f"{missing_districts} tax units have missing {district_col} values")
+            else:
+                logger.info(f"All tax units have valid {district_col} assignments")
+            return self.tax_units_df
+        
+        # If district column doesn't exist, create mapping from PUMA to district
+        logger.info(f"Creating {district_col} mappings from PUMA codes")
         puma_district_map = self._create_puma_district_mapping(district_type)
         
         # Create a DataFrame from the mapping
         puma_df = pd.DataFrame({
             'PUMA': list(puma_district_map.keys()),
-            f'{district_type}_district': list(puma_district_map.values())
+            district_col: list(puma_district_map.values())
         })
         
         # Ensure PUMA is string type in both DataFrames
@@ -153,7 +167,7 @@ class DistrictCTCAnalyzer:
         )
         
         # Log unmapped PUMAs
-        unmapped = df_with_districts[df_with_districts[f'{district_type}_district'].isna()]
+        unmapped = df_with_districts[df_with_districts[district_col].isna()]
         if len(unmapped) > 0:
             logger.warning(f"{len(unmapped)} tax units could not be mapped to {district_type} districts")
         

@@ -35,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def load_tax_units(
-    tax_units_path: str = 'src/data/processed/tax_units_rule_based.parquet',
+    tax_units_path: str = 'src/data/processed/tax_units_weight_split_raked.parquet',
     person_path: str = 'data/processed/pums_person_processed.parquet',
     household_path: str = 'data/processed/pums_household_processed.parquet'
 ) -> pd.DataFrame:
@@ -51,12 +51,38 @@ def load_tax_units(
         DataFrame with tax units and merged person/household data
     """
     try:
-        # Load tax units
-        logger.info(f"Loading tax units from {tax_units_path}")
-        df = pd.read_parquet(tax_units_path)
-        logger.info(f"Loaded {len(df):,} tax units")
+        # Load weight-raked tax units (includes filing status and geographic data)
+        logger.info(f"Loading weight-raked tax units from {tax_units_path}")
+        raked_df = pd.read_parquet(tax_units_path)
+        logger.info(f"Loaded {len(raked_df):,} weight-raked tax units")
         
-        # Load person data
+        # Load original tax units for income and dependents data
+        original_tax_units_path = 'src/data/processed/tax_units_rule_based.parquet'
+        logger.info(f"Loading original tax units from {original_tax_units_path}")
+        original_df = pd.read_parquet(original_tax_units_path)
+        logger.info(f"Loaded {len(original_df):,} original tax units")
+        
+        # Merge original income/dependents data into raked tax units (preserving raked structure)
+        logger.info("Merging original tax unit data into raked tax units...")
+        # Group original data by SERIALNO and take first occurrence for each household
+        original_grouped = original_df.groupby('SERIALNO').first().reset_index()
+        
+        df = raked_df.merge(
+            original_grouped[['SERIALNO', 'income', 'dependents', 'num_dependents']], 
+            on='SERIALNO', 
+            how='left'
+        )
+        
+        logger.info(f"After merge: {len(df):,} tax units retained (preserving raked structure)")
+        
+        # Check merge success
+        missing_income = df['income'].isna().sum()
+        if missing_income > 0:
+            logger.warning(f"{missing_income:,} tax units missing income data")
+            # Fill missing income with 0
+            df['income'] = df['income'].fillna(0)
+        
+        # Load person data for dependent processing
         logger.info(f"Loading person data from {person_path}")
         person_df = pd.read_parquet(person_path)
         logger.info(f"Loaded {len(person_df):,} person records")
@@ -83,26 +109,18 @@ def load_tax_units(
             } for _, row in dependents.iterrows()]
         
         # Apply to all tax units
-        df['dependents'] = df['dependents'].apply(get_dependent_info)
+        if 'dependents' in df.columns:
+            df['dependents'] = df['dependents'].apply(get_dependent_info)
+        else:
+            logger.warning("No dependents column found - creating empty dependents")
+            df['dependents'] = [[] for _ in range(len(df))]
         
-        # Load household data for PUMA information
-        logger.info(f"Loading household data from {household_path}")
-        household_df = pd.read_parquet(household_path)
-        logger.info(f"Loaded {len(household_df):,} households")
+        # Rename weight column to match expected format
+        if 'scenario_weight' in df.columns:
+            df['weight'] = df['scenario_weight']
+            logger.info("Renamed 'scenario_weight' to 'weight' for compatibility")
         
-        # Merge tax units with household PUMA data
-        df = df.merge(
-            household_df[['SERIALNO', 'PUMA']], 
-            on='SERIALNO', 
-            how='left'
-        )
-        
-        # Check merge success
-        missing_puma = df['PUMA'].isna().sum()
-        if missing_puma > 0:
-            logger.warning(f"{missing_puma:,} tax units missing PUMA assignment")
-        
-        logger.info(f"Successfully processed {len(df):,} tax units with dependents and PUMA data")
+        logger.info(f"Successfully processed {len(df):,} tax units with income, dependents and geographic data")
         return df
         
     except Exception as e:
@@ -115,21 +133,42 @@ def validate_tax_units(df: pd.DataFrame) -> pd.DataFrame:
     
     original_count = len(df)
     
-    # Check for required columns
-    required_cols = ['PUMA', 'weight', 'filing_status', 'income']
+    # Check for required columns - updated for raked tax units
+    required_cols = ['weight', 'filing_status', 'income']
+    
+    # Geographic columns should be present in raked tax units
+    geo_cols = ['PUMA', 'county', 'house_district', 'senate_district']
+    available_geo_cols = [col for col in geo_cols if col in df.columns]
+    
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
         raise ValueError(f"Missing required columns: {missing_cols}")
     
-    # Remove units with missing PUMA (can't assign to districts)
-    df = df.dropna(subset=['PUMA'])
+    # Log available geographic data
+    logger.info(f"Geographic data available: {len([col for col in ['county'] if col in df.columns])} counties")
+    if 'house_district' in df.columns:
+        logger.info(f"House districts available: {df['house_district'].nunique()} districts")
+    if 'senate_district' in df.columns:
+        logger.info(f"Senate districts available: {df['senate_district'].nunique()} districts")
     
     # Remove units with zero or negative weights
     df = df[df['weight'] > 0]
     
-    # Ensure PUMA is string format (Hawaii uses 3-digit format: 701XX)
-    df['PUMA'] = '70' + df['PUMA'].astype(str).str.zfill(3)
+    # Handle PUMA formatting if PUMA column exists
+    if 'PUMA' in df.columns:
+        # Remove units with missing PUMA (can't assign to districts)
+        df = df.dropna(subset=['PUMA'])
+        # Ensure PUMA is string format (Hawaii uses 4-digit format: 0100, 0200, etc.)
+        df['PUMA'] = df['PUMA'].astype(str).str.zfill(4)
+    
+    # Validate geographic data
+    if 'county' in df.columns:
+        logger.info(f"Geographic data available: {df['county'].nunique()} counties")
+    if 'house_district' in df.columns:
+        logger.info(f"House districts available: {df['house_district'].nunique()} districts")
+    if 'senate_district' in df.columns:
+        logger.info(f"Senate districts available: {df['senate_district'].nunique()} districts")
     
     logger.info(f"Validation complete: {len(df):,} units retained ({original_count - len(df):,} removed)")
     return df
@@ -153,17 +192,17 @@ def generate_summary_report(results: dict, output_dir: Path) -> None:
             'total_qualifying_children': f"{statewide['total_qualifying_children']:,.0f}"
         },
         'district_analysis': {
-            'num_house_districts': len(house_districts),
-            'highest_ctc_house_district': house_districts.loc[house_districts['total_ctc_amount'].idxmax(), 'district'],
-            'highest_ctc_amount': f"${house_districts['total_ctc_amount'].max():,.0f}",
-            'lowest_ctc_house_district': house_districts.loc[house_districts['total_ctc_amount'].idxmin(), 'district'],
-            'lowest_ctc_amount': f"${house_districts['total_ctc_amount'].min():,.0f}"
+            'num_house_districts': int(len(house_districts)),
+            'highest_ctc_house_district': str(house_districts.loc[house_districts['total_ctc_amount'].idxmax(), 'district']),
+            'highest_ctc_amount': f"${float(house_districts['total_ctc_amount'].max()):,.0f}",
+            'lowest_ctc_house_district': str(house_districts.loc[house_districts['total_ctc_amount'].idxmin(), 'district']),
+            'lowest_ctc_amount': f"${float(house_districts['total_ctc_amount'].min()):,.0f}"
         },
         'county_analysis': {
-            'num_counties': len(counties),
-            'highest_ctc_county': counties.loc[counties['total_ctc_amount'].idxmax(), 'district'],
+            'num_counties': int(len(counties)),
+            'highest_ctc_county': str(counties.loc[counties['total_ctc_amount'].idxmax(), 'district']),
             'county_ctc_amounts': {
-                row['district']: f"${row['total_ctc_amount']:,.0f}" 
+                str(row['district']): f"${float(row['total_ctc_amount']):,.0f}" 
                 for _, row in counties.iterrows()
             }
         }
@@ -236,7 +275,7 @@ def main():
                        choices=['house', 'senate', 'county'],
                        help='District types to analyze')
     parser.add_argument('--tax-units-file', '-t',
-                       default='src/data/processed/tax_units_rule_based.parquet',
+                       default='src/data/processed/tax_units_weight_split_raked.parquet',
                        help='Path to tax units file')
     
     args = parser.parse_args()
