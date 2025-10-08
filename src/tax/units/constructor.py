@@ -804,7 +804,8 @@ class TaxUnitConstructor:
                     if age_diff < 15 and opposite_sex:
                         logger.debug(f"Found potential married couple: {id1} and {id2} (both MAR=1, age_diff={age_diff}, opposite_sex={opposite_sex})")
                         
-                        # Check if they should file separately
+                        # Default to joint filing for married couples
+                        # Only file separately if there are strong indicators
                         if self._should_file_separately(person1, person2, hh_members):
                             mfs_filers.append((id1, id2))
                             logger.debug(f"  Identified MFS filers: {id1} and {id2}")
@@ -891,19 +892,33 @@ class TaxUnitConstructor:
             mfs_score += 1
         
         # Determine MFS threshold based on analysis
-        # Target: ~3.1% of couples should file separately
-        # Analysis showed score >= 6 gives ~2.4%, score >= 5 gives ~9.3%
-        # Use a mixed approach: score >= 6 always MFS, score 5 sometimes MFS
+        # Target: ~3.4% of all returns should file MFS (SOI benchmark)
+        # Current: 1.9% MFS, need to increase to 3.4%
+        # Adjust thresholds to increase MFS rate while maintaining joint filers
         
         should_file_separately = False
         
-        if mfs_score >= 6:
-            # High score: definitely file separately
+        if mfs_score >= 7:
+            # Very high score: definitely file separately
             should_file_separately = True
-            reason = f"high MFS score ({mfs_score})"
+            reason = f"very high MFS score ({mfs_score})"
+        elif mfs_score == 6:
+            # High score: file separately most of the time
+            serialno = str(adult1.get('SERIALNO', '0'))
+            sporder1 = str(adult1.get('SPORDER', 0))
+            sporder2 = str(adult2.get('SPORDER', 1))
+            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score6"
+            
+            import hashlib
+            seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
+            import random
+            random.seed(seed)
+            
+            # File separately ~70% of the time for score 6 couples
+            should_file_separately = random.random() < 0.7
+            reason = f"high MFS score ({mfs_score}), random: {should_file_separately}"
         elif mfs_score == 5:
-            # Medium-high score: file separately based on additional factors
-            # Use deterministic randomness to get consistent results
+            # Medium-high score: file separately half the time
             serialno = str(adult1.get('SERIALNO', '0'))
             sporder1 = str(adult1.get('SPORDER', 0))
             sporder2 = str(adult2.get('SPORDER', 1))
@@ -914,22 +929,24 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~40% of the time for score 5 couples
-            should_file_separately = random.random() < 0.4
-            reason = f"medium MFS score ({mfs_score}), random: {should_file_separately}"
+            # File separately ~50% of the time for score 5 couples
+            should_file_separately = random.random() < 0.5
+            reason = f"medium-high MFS score ({mfs_score}), random: {should_file_separately}"
         elif mfs_score == 4:
-            # Medium score: file separately based on strongest factors
-            # Only if they have extreme income disparity or high-low pattern
-            if income1 > 0 and income2 > 0:
-                ratio = max(income1, income2) / min(income1, income2)
-                if ratio > 15:  # Very high disparity
-                    should_file_separately = True
-                    reason = f"medium MFS score ({mfs_score}) with extreme income ratio ({ratio:.1f}:1)"
+            # Medium score: file separately sometimes
+            serialno = str(adult1.get('SERIALNO', '0'))
+            sporder1 = str(adult1.get('SPORDER', 0))
+            sporder2 = str(adult2.get('SPORDER', 1))
+            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score4"
             
-            if not should_file_separately and ((income1 > 100000 and income2 < 10000) or 
-                                             (income2 > 100000 and income1 < 10000)):
-                should_file_separately = True
-                reason = f"medium MFS score ({mfs_score}) with high-low income pattern"
+            import hashlib
+            seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
+            import random
+            random.seed(seed)
+            
+            # File separately ~20% of the time for score 4 couples
+            should_file_separately = random.random() < 0.2
+            reason = f"medium MFS score ({mfs_score}), random: {should_file_separately}"
         
         if not should_file_separately:
             reason = f"low MFS score ({mfs_score}), filing jointly"
