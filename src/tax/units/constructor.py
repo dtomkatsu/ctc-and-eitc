@@ -640,12 +640,12 @@ class TaxUnitConstructor:
             adult = adults.loc[adult_id]
             deps = list(dependents.get(adult_id, set()) - claimed_dependents)
             
+            # Don't force 'single' status - let _create_single_filer determine HoH eligibility
             tax_unit = self._create_single_filer(
                 adult,
                 hh_group,
                 hh_data,
-                deps,
-                'single'
+                deps
             )
             
             if tax_unit:

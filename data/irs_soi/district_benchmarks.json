@@ -1,0 +1,592 @@
+{
+  "house_districts": {
+    "1": {
+      "total_returns": 2198460,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "2": {
+      "total_returns": 2198460,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "3": {
+      "total_returns": 2198460,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "5": {
+      "total_returns": 2198460,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "6": {
+      "total_returns": 2198460,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "7": {
+      "total_returns": 2198460,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "18": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "19": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "20": {
+      "total_returns": 25139700,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "21": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "22": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "23": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "24": {
+      "total_returns": 15083820,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "25": {
+      "total_returns": 20111760,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "26": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "27": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "28": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "30": {
+      "total_returns": 20111760,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "31": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "32": {
+      "total_returns": 15083820,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "35": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "36": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "39": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "41": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "43": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "46": {
+      "total_returns": 25139700,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "48": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "50": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "51": {
+      "total_returns": 5027940,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    }
+  },
+  "senate_districts": {
+    "1": {
+      "total_returns": 4396920,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "3": {
+      "total_returns": 4396920,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "4": {
+      "total_returns": 4396920,
+      "filing_status_targets": {
+        "single_pct": 50.062771212576074,
+        "joint_pct": 36.0102071450015,
+        "hoh_pct": 14.196664938184,
+        "mfs_pct": 99.27540187221965
+      },
+      "data_quality": {
+        "num_zip_codes": 38,
+        "confidence_score": 100
+      }
+    },
+    "9": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "10": {
+      "total_returns": 20111760,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "11": {
+      "total_returns": 30167640,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "13": {
+      "total_returns": 20111760,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "14": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "15": {
+      "total_returns": 30167640,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "16": {
+      "total_returns": 20111760,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "19": {
+      "total_returns": 20111760,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "21": {
+      "total_returns": 10055880,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "23": {
+      "total_returns": 30167640,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "24": {
+      "total_returns": 20111760,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    },
+    "25": {
+      "total_returns": 20111760,
+      "filing_status_targets": {
+        "single_pct": 52.639052971992506,
+        "joint_pct": 34.860201195718325,
+        "hoh_pct": 11.153235718803327,
+        "mfs_pct": 91.72573658396878
+      },
+      "data_quality": {
+        "num_zip_codes": 58,
+        "confidence_score": 100
+      }
+    }
+  },
+  "summary_stats": {
+    "total_districts_analyzed": 44,
+    "avg_filing_status_pct": {
+      "single": 52.1120862484755,
+      "joint": 35.09542968534442,
+      "hoh": 11.775755331858464,
+      "mfs": 93.2699863020201
+    },
+    "district_coverage": {
+      "high_confidence": 44,
+      "medium_confidence": 0,
+      "low_confidence": 0
+    }
+  }
+}

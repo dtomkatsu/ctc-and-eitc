@@ -1,76 +1,62 @@
-# CTC and EITC Analysis for Hawaii
+# Hawaii State-Wide Tax Estimation
 
-This project analyzes the Child Tax Credit (CTC) and Earned Income Tax Credit (EITC) using PUMS microdata for Hawaii at various geographic levels (state, county, and legislative district). The system includes robust tax unit construction with support for various filing statuses, Hawaii-specific rules, and machine learning-based validation.
+This project estimates state-wide tax liabilities and distributions using PUMS (Public Use Microdata Sample) data for Hawaii. The system includes:
 
-## ML-Based Validation
+- **Tax Unit Construction**: Robust construction of tax filing units from household survey data
+- **Hawaii Income Tax Calculation**: Complete implementation of Hawaii state income tax brackets and deductions (2017-2031)
+- **Filing Status Determination**: Support for Single, Joint, Head of Household, and Married Filing Separately
+- **SOI Calibration**: Income distribution alignment with IRS Statistics of Income benchmarks
+- **Scenario Analysis**: Compare tax impacts across different years and policy scenarios
 
-The project includes a machine learning-based validation system to identify potential misclassifications in tax unit filing statuses. The validator can detect:
+## SOI Income Calibration
 
-- Single filers who might qualify as Head of Household
-- High-income HoH filers that might need verification
-- Other potential filing status issues
+The project includes a sophisticated income calibration system that aligns PUMS income distributions with IRS SOI (Statistics of Income) benchmarks. This ensures more accurate tax liability estimates by:
 
-### Usage
+- Matching income percentiles to SOI distributions by filing status
+- Preserving PUMS dollar amounts while adjusting distributions
+- Handling year-to-year differences between PUMS and SOI data
+- Maintaining data integrity with original values preserved
 
-```python
-from src.tax.units.validation.ml_validator import validate_tax_units
+### Key Features
+- **Relative Distribution Matching**: Uses percentile-based matching rather than absolute dollar amounts
+- **Filing-Specific Adjustments**: Applies different calibration curves for each filing status
+- **Transparent Adjustments**: Original PUMS values are preserved with `_original` suffix
+- **Efficient Implementation**: Uses vectorized operations for performance
 
-# Get your tax units (list of dictionaries)
-tax_units = [...]
+## Validation System
 
-# Validate tax units
-validated_units = validate_tax_units(tax_units)
+The project includes comprehensive validation to ensure accurate tax unit construction:
 
-# Check validation flags
-for unit in validated_units:
-    if 'validation_flags' in unit:
-        print(f"Tax Unit {unit['id']} has {len(unit['validation_flags'])} issues:")
-        for flag in unit['validation_flags']:
-            print(f"  - {flag['message']} (Confidence: {flag['confidence']:.1f})")
-```
-
-### Running Tests
-
-Test the ML validator with sample data:
-
-```bash
-python scripts/test_ml_validation.py
-```
+- Validates filing status assignments
+- Checks income calculations
+- Verifies dependent relationships
+- Compares distributions to SOI benchmarks
 
 ## Project Structure
 
 ```
-ctc-and-eitc/
+hawaii-tax-estimation/
 ├── src/
-│   └── tax/
-│       └── units/
-│           └── validation/
-│               └── ml_validator.py  # ML-based validation
-├── scripts/
-│   └── test_ml_validation.py       # Test script for ML validation
-├── data/                           # Data storage
-│   ├── raw/                       # Raw data files (e.g., PUMS microdata)
-│   └── processed/                 # Processed and cleaned data
-├── notebooks/                     # Jupyter notebooks for analysis
-├── src/                           # Source code
 │   ├── tax/                       # Core tax calculation logic
-│   │   ├── units/                 # Tax unit construction
-│   │   │   ├── __init__.py        # Package initialization
-│   │   │   ├── base.py            # Base tax unit constructor
-│   │   │   ├── constructor.py     # Main tax unit constructor
-│   │   │   ├── dependencies.py    # Dependency determination
-│   │   │   ├── filers/            # Filer type implementations
-│   │   │   ├── income.py          # Income calculations
-│   │   │   ├── relationships.py   # Relationship mapping
-│   │   │   ├── status/            # Filing status determination
-│   │   │   └── utils.py           # Utility functions
-│   │   └── credits/               # Tax credit calculations
+│   │   └── units/                 # Tax unit construction
+│   │       ├── constructor.py     # Main tax unit constructor
+│   │       ├── dependencies.py    # Dependency determination
+│   │       ├── income.py          # Income calculations
+│   │       ├── relationships.py   # Relationship mapping
+│   │       ├── status/            # Filing status determination
+│   │       ├── calibration.py     # SOI income calibration
+│   │       └── validation/        # Validation logic
 │   ├── data/                      # Data processing scripts
 │   └── analysis/                  # Analysis scripts
+├── scripts/                       # Pipeline and analysis scripts
+│   ├── construct_tax_units.py     # Tax unit construction
+│   ├── validate_tax_units.py      # Validation
+│   └── compare_to_soi.py          # SOI comparison
+├── data/                          # Data storage
+│   ├── raw/                       # Raw PUMS data
+│   └── processed/                 # Processed tax units
 ├── tests/                         # Test suite
-│   ├── test_smoke.py              # Smoke tests for core functionality
-│   └── units/                     # Unit tests for tax unit construction
-├── config/                        # Configuration files
+├── archived/                      # Archived CTC/EITC/district files
 └── docs/                          # Documentation
 ```
 
@@ -113,50 +99,61 @@ ctc-and-eitc/
 
 The project includes several key pipeline scripts for different types of analysis:
 
-### Full Population Analysis
-- `scripts/full_population_simple.py`: Basic analysis of CTC for the full population
-- `scripts/full_population_ctc_analysis.py`: More detailed CTC analysis with parallel processing
-- `scripts/generate_district_ctc_estimates.py`: Generate CTC estimates by legislative district
-
-### Data Processing
+### State-Wide Tax Analysis
 - `scripts/construct_tax_units.py`: Core tax unit construction from PUMS data
 - `scripts/validate_tax_units.py`: Validation and quality checks for tax units
-- `scripts/calculate_weighted_totals.py`: Calculate weighted statistics
 
 ### Analysis Scripts
-- `scripts/analyze_pums_ctc.py`: Analyze CTC eligibility and amounts
 - `scripts/compare_to_soi.py`: Compare results to SOI statistics
 - `scripts/analyze_filing_status_gaps.py`: Analyze gaps in filing status determination
 
 ### Running the Pipeline
 
-To run the full analysis pipeline:
+To run the tax unit construction pipeline:
 
 ```bash
 # 1. Download the data (if not already done)
 python scripts/download_pums.py
 
-# 2. Run the full analysis (simplified version)
-python scripts/full_population_simple.py
+# 2. Construct tax units
+python scripts/construct_tax_units.py
 
-# Or for more detailed analysis with parallel processing
-python scripts/full_population_ctc_analysis.py
+# 3. Validate results
+python scripts/validate_tax_units.py
 ```
 
-The results will be saved in the `data/processed/` directory with timestamps.
+The results will be saved in the `data/processed/` directory.
 
 ## Key Features
 
 - **Tax Unit Construction**: Robust construction of tax units from PUMS data
 - **Multiple Filing Statuses**: Support for Single, Head of Household, Married Filing Jointly, and Married Filing Separately
+- **Hawaii Income Tax Calculator**: Full implementation of Hawaii state tax brackets (2017-2031)
+- **Tax Scenario Analysis**: Compare tax impacts across different years and bracket structures
 - **Hawaii-Specific Rules**: Custom logic for Hawaii's unique family structures
 - **Comprehensive Testing**: Extensive test suite including unit and smoke tests
 
+## Quick Start: Tax Calculations
+
+```python
+from src.tax.brackets import load_tax_data
+
+# Load Hawaii tax calculator
+calculator = load_tax_data()
+
+# Calculate tax for a single filer with $50,000 income in 2024
+result = calculator.calculate_tax(50000, 2024, 'single')
+
+print(f"Tax Liability: ${result['tax_liability']:,.2f}")
+print(f"Effective Rate: {result['effective_rate']:.2f}%")
+```
+
+See [Tax Calculation Guide](docs/TAX_CALCULATION_GUIDE.md) for detailed documentation.
+
 ## Data Sources
 
-- PUMS microdata from the U.S. Census Bureau
-- Geographic boundary files for Hawaii
-- American Community Survey (ACS) data for validation
+- PUMS microdata from the U.S. Census Bureau (2023 5-Year ACS)
+- IRS Statistics of Income (SOI) data for validation and calibration
 
 ## Running Tests
 

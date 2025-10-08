@@ -1,0 +1,5 @@
+NAME,state,geoid,total_households,ctc_households,ctc_households_adjusted,ctc_household_rate,ctc_benefit_annual_per_household,ctc_benefits_annual_total,median_income,renter_occupied,total_housing_units
+Hawaii County,15,15001,185685,43139,43139,23.23,3614.64,141242250,76277,,185685
+Maui County,15,15009,142989,42882,42882,29.99,3648.11,145639800,79205,,142989
+Honolulu County,15,15003,157833,44873,44873,28.43,3796.93,157883950,72716,,157833
+Kauai County,15,15007,41124,18626,18626,45.29,3885.09,69034200,105042,,41124

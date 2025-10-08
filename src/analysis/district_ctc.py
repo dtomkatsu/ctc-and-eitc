@@ -145,33 +145,76 @@ class DistrictCTCAnalyzer:
                 logger.info(f"All tax units have valid {district_col} assignments")
             return self.tax_units_df
         
-        # If district column doesn't exist, create mapping from PUMA to district
-        logger.info(f"Creating {district_col} mappings from PUMA codes")
-        puma_district_map = self._create_puma_district_mapping(district_type)
+        # If district column doesn't exist, create mapping from PUMA to district using official crosswalk
+        logger.info(f"Creating {district_col} mappings from official 2022 Census crosswalk")
         
-        # Create a DataFrame from the mapping
-        puma_df = pd.DataFrame({
-            'PUMA': list(puma_district_map.keys()),
-            district_col: list(puma_district_map.values())
-        })
-        
-        # Ensure PUMA is string type in both DataFrames
-        self.tax_units_df['PUMA'] = self.tax_units_df['PUMA'].astype(str)
-        puma_df['PUMA'] = puma_df['PUMA'].astype(str)
-        
-        # Merge with tax units
-        df_with_districts = self.tax_units_df.merge(
-            puma_df,
-            on='PUMA',
-            how='left'
-        )
-        
-        # Log unmapped PUMAs
-        unmapped = df_with_districts[df_with_districts[district_col].isna()]
-        if len(unmapped) > 0:
-            logger.warning(f"{len(unmapped)} tax units could not be mapped to {district_type} districts")
-        
-        return df_with_districts
+        # Load official crosswalk
+        try:
+            crosswalk_path = Path(__file__).parent.parent.parent / 'data' / 'crosswalks' / 'hawaii_puma_districts_official_2022.csv'
+            crosswalk_df = pd.read_csv(crosswalk_path)
+            logger.info(f"Loaded official crosswalk with {len(crosswalk_df)} PUMA-district combinations")
+            
+            # Select relevant columns based on district type
+            if district_type == 'county':
+                # Use county column directly for county analysis
+                puma_df = crosswalk_df[['PUMA', 'county']].drop_duplicates()
+                puma_df = puma_df.rename(columns={'county': district_col})
+            else:
+                district_col_name = f'{district_type}_district'
+                puma_df = crosswalk_df[['PUMA', district_col_name]].drop_duplicates()
+                puma_df = puma_df.rename(columns={district_col_name: district_col})
+            
+            # Ensure PUMA is string type and normalize PUMA codes
+            self.tax_units_df['PUMA'] = self.tax_units_df['PUMA'].astype(str)
+            puma_df['PUMA'] = puma_df['PUMA'].astype(str)
+            
+            # Remove leading zeros from tax units PUMA codes to match crosswalk format
+            self.tax_units_df['PUMA'] = self.tax_units_df['PUMA'].str.lstrip('0')
+            # Handle edge case where PUMA might be all zeros
+            self.tax_units_df['PUMA'] = self.tax_units_df['PUMA'].replace('', '0')
+            
+            # Merge with tax units - use left join to preserve all tax units
+            df_with_districts = self.tax_units_df.merge(
+                puma_df,
+                on='PUMA',
+                how='left'
+            )
+            
+            # Log mapping results
+            mapped = df_with_districts[df_with_districts[district_col].notna()]
+            unmapped = df_with_districts[df_with_districts[district_col].isna()]
+            
+            logger.info(f"Successfully mapped {len(mapped)} tax units to {district_type} districts")
+            if len(unmapped) > 0:
+                logger.warning(f"{len(unmapped)} tax units could not be mapped to {district_type} districts")
+                logger.warning(f"Unmapped PUMAs: {unmapped['PUMA'].unique()}")
+            
+            return df_with_districts
+            
+        except Exception as e:
+            logger.error(f"Error loading official crosswalk: {e}")
+            # Fallback to old method
+            puma_district_map = self._create_puma_district_mapping(district_type)
+            
+            puma_df = pd.DataFrame({
+                'PUMA': list(puma_district_map.keys()),
+                district_col: list(puma_district_map.values())
+            })
+            
+            self.tax_units_df['PUMA'] = self.tax_units_df['PUMA'].astype(str)
+            puma_df['PUMA'] = puma_df['PUMA'].astype(str)
+            
+            df_with_districts = self.tax_units_df.merge(
+                puma_df,
+                on='PUMA',
+                how='left'
+            )
+            
+            unmapped = df_with_districts[df_with_districts[district_col].isna()]
+            if len(unmapped) > 0:
+                logger.warning(f"{len(unmapped)} tax units could not be mapped to {district_type} districts")
+            
+            return df_with_districts
     
     def _create_puma_district_mapping(self, district_type: str) -> Dict[str, str]:
         """Create PUMA to district mapping for Hawaii."""
