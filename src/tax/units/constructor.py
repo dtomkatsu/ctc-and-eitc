@@ -728,6 +728,8 @@ class TaxUnitConstructor:
         """
         Identify potential joint filers and married filing separately couples within a household.
         
+        Uses strict RELSHIPP validation to identify actual married couples (householder + spouse).
+        
         Args:
             adults: DataFrame of adult household members
             hh_members: All members of the household
@@ -735,46 +737,16 @@ class TaxUnitConstructor:
         Returns:
             Tuple of (joint_filers, mfs_filers) where each is a list of (person_id1, person_id2) tuples
         """
+        from src.tax.units.status.mfj import _are_married
+        
         joint_filers = []
         mfs_filers = []
         processed = set()
         
-        # Get all adult IDs
+        # Create a list of all adult IDs
         adult_ids = list(adults.index)
         
-        # First pass: Find all married couples (householder + spouse)
-        for id1 in adult_ids:
-            if id1 in processed:
-                continue
-                
-            person1 = adults.loc[id1]
-            
-            # Look for householders who are married
-            if person1.get('RELSHIPP') == 20 and person1.get('MAR') == 1:  # Married householder
-                logger.debug(f"Found married householder: {id1}")
-                
-                # Look for their spouse (RELSHIPP == 21)
-                for id2 in adult_ids:
-                    if id2 == id1 or id2 in processed:
-                        continue
-                        
-                    person2 = adults.loc[id2]
-                    if person2.get('RELSHIPP') == 21 and person2.get('MAR') == 1:  # Married spouse
-                        logger.debug(f"Found spouse pair: {id1} (householder) + {id2} (spouse)")
-                        
-                        # Check if they should file separately
-                        if self._should_file_separately(person1, person2, hh_members):
-                            mfs_filers.append((id1, id2))
-                            logger.debug(f"  Identified MFS filers: {id1} and {id2}")
-                        else:
-                            joint_filers.append((id1, id2))
-                            logger.debug(f"  Identified joint filers: {id1} and {id2}")
-                        
-                        processed.update([id1, id2])
-                        break  # Found the spouse for this householder, move to next
-        
-        # Second pass: Find other married couples not marked as householder/spouse
-        # This catches cases where both adults are listed as 'other relatives' but are married to each other
+        # Find all married couples using strict RELSHIPP validation
         for i in range(len(adult_ids)):
             id1 = adult_ids[i]
             if id1 in processed:
@@ -782,11 +754,11 @@ class TaxUnitConstructor:
                 
             person1 = adults.loc[id1]
             
-            # Only consider married adults not already processed
+            # Only consider married adults
             if person1.get('MAR') != 1:
                 continue
                 
-            # Look for potential spouses among remaining adults
+            # Look for spouse among remaining adults
             for j in range(i+1, len(adult_ids)):
                 id2 = adult_ids[j]
                 if id2 in processed:
@@ -794,28 +766,23 @@ class TaxUnitConstructor:
                     
                 person2 = adults.loc[id2]
                 
-                # If both are married and not already processed, they might be a couple
-                if person2.get('MAR') == 1:
-                    # Additional check: similar age and opposite sex increases likelihood
-                    age_diff = abs(person1.get('AGEP', 0) - person2.get('AGEP', 0))
-                    opposite_sex = person1.get('SEX', 1) != person2.get('SEX', 1)
+                # Use strict validation: must be householder + spouse
+                if _are_married(person1, person2):
+                    logger.debug(f"Found married couple: {id1} (relshipp {person1.get('RELSHIPP')}) and "
+                                f"{id2} (relshipp {person2.get('RELSHIPP')})")
                     
-                    # If they appear to be a couple (similar age, opposite sex)
-                    if age_diff < 15 and opposite_sex:
-                        logger.debug(f"Found potential married couple: {id1} and {id2} (both MAR=1, age_diff={age_diff}, opposite_sex={opposite_sex})")
-                        
-                        # Default to joint filing for married couples
-                        # Only file separately if there are strong indicators
-                        if self._should_file_separately(person1, person2, hh_members):
-                            mfs_filers.append((id1, id2))
-                            logger.debug(f"  Identified MFS filers: {id1} and {id2}")
-                        else:
-                            joint_filers.append((id1, id2))
-                            logger.debug(f"  Identified joint filers: {id1} and {id2}")
-                        
-                        processed.update([id1, id2])
-                        break
+                    # Check if they should file separately
+                    if self._should_file_separately(person1, person2, hh_members):
+                        mfs_filers.append((id1, id2))
+                        logger.debug(f"  Identified MFS filers: {id1} and {id2}")
+                    else:
+                        joint_filers.append((id1, id2))
+                        logger.debug(f"  Identified joint filers: {id1} and {id2}")
+                    
+                    processed.update([id1, id2])
+                    break  # Move to next person after finding a match
         
+        logger.info(f"Identified {len(joint_filers)} joint filer pairs and {len(mfs_filers)} MFS pairs in household {hh_members['SERIALNO'].iloc[0] if not hh_members.empty else 'unknown'}")
         return joint_filers, mfs_filers
 
     def _should_file_separately(self, adult1: pd.Series, adult2: pd.Series, 
