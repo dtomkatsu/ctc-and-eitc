@@ -35,28 +35,17 @@ def is_head_of_household(
     if not _is_unmarried(person, person_data):
         logger.debug(f"Person {person_id} failed HoH: not unmarried (MAR={person.get('MAR', 'N/A')})")
         return False
+    
+    # STRICT: Must actually have dependents in their tax unit
+    # HoH requires claiming a qualifying person as a dependent
+    if not has_dependents:
+        logger.debug(f"Person {person_id} failed HoH: no dependents in tax unit")
+        return False
         
     # Must have a qualifying person (usually a child) living with them
-    # BALANCED: Allow qualifying persons even if not claimed as dependents
     if not _has_qualifying_person(person, person_data):
-        logger.debug(f"Person {person_id} failed HoH: no qualifying person")
+        logger.debug(f"Person {person_id} failed HoH: no qualifying person in household")
         return False
-    
-    # BALANCED: Prefer people with dependents, but allow qualifying persons
-    if has_dependents:
-        # If they have dependents, they likely qualify
-        logger.debug(f"Person {person_id} has dependents, checking other criteria")
-    else:
-        # If no dependents, require stronger qualifying person criteria
-        if not _has_qualifying_person(person, person_data):
-            logger.debug(f"Person {person_id} failed HoH: no dependents and no qualifying person")
-            return False
-        
-        # BALANCED: Allow non-householders with qualifying persons
-        # but be slightly more restrictive for very young filers without dependents
-        if person_age < 22 and person_rel != 20:
-            logger.debug(f"Person {person_id} failed HoH: very young non-householder without dependents")
-            return False
         
     # Must have paid more than half the cost of keeping up a home
     if not _paid_half_home_cost(person, person_data):
@@ -76,16 +65,22 @@ def _is_unmarried(person: pd.Series, person_data: pd.DataFrame) -> bool:
     
     # If married (1), check if spouse is present in household
     if marital_status == 1:
+        household_id = person.get('SERIALNO')
+        if not household_id:
+            return False
+            
+        # Filter to same household only
+        household = person_data[person_data['SERIALNO'] == household_id]
         person_rel = person.get('RELSHIPP', 0)
         
-        # If person is householder (20), look for spouse (21)
+        # If person is householder (20), look for spouse (21) in same household
         if person_rel == 20:
-            spouse_present = any(person_data['RELSHIPP'] == 21)
+            spouse_present = any(household['RELSHIPP'] == 21)
             return not spouse_present
         
-        # If person is spouse (21), look for householder (20)  
+        # If person is spouse (21), look for householder (20) in same household
         if person_rel == 21:
-            householder_present = any(person_data['RELSHIPP'] == 20)
+            householder_present = any(household['RELSHIPP'] == 20)
             return not householder_present
     
     return False

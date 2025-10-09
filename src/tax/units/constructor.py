@@ -1273,27 +1273,21 @@ class TaxUnitConstructor:
             income = 0.0
         
         if filing_status is None:
+            # Determine filing status based on marital status and household role
+            # Note: Married adults (MAR=1) who are NOT householder/spouse (RELSHIPP 20/21)
+            # are living separately from their spouse and can be "considered unmarried"
+            # for tax purposes, allowing them to file as Single or HoH
             filing_status = 'single'
             
-            # Check if this person is married but filing separately
-            is_married_separate = False
-            for _, other_adult in hh_members.iterrows():
-                if other_adult.name != adult.name and other_adult.get('AGEP', 0) >= 18:
-                    if is_married_filing_separately(adult, other_adult, hh_members):
-                        filing_status = 'married_filing_separate'
-                        break
+            person_data = hh_members.copy()
+            person_data['SERIALNO'] = hh_data.get('SERIALNO', '')
             
-                # Check for Head of Household status if not married filing separately
-            if filing_status != 'married_filing_separate':
-                person_data = hh_members.copy()
-                person_data['SERIALNO'] = hh_data.get('SERIALNO', '')
-                
-                # Check if this person has dependents in their tax unit
-                has_dependents = len(valid_dependents) > 0
-                
-                if is_head_of_household(adult, person_data, has_dependents=has_dependents):
-                    filing_status = 'head_of_household'
-                    logger.debug(f"Person {adult.name} qualifies as Head of Household with {len(valid_dependents)} dependents")
+            # Check if this person has dependents in their tax unit
+            has_dependents = len(valid_dependents) > 0
+            
+            if is_head_of_household(adult, person_data, has_dependents=has_dependents):
+                filing_status = 'head_of_household'
+                logger.debug(f"Person {adult.name} qualifies as Head of Household with {len(valid_dependents)} dependents")
         
         # Calculate hybrid weight
         hh_weight = float(hh_data.get('WGTP', 1.0))
