@@ -686,17 +686,19 @@ class TaxUnitConstructor:
         
         # Enforce maximum tax units per household
         if len(tax_units) > self.MAX_TAX_UNITS_PER_HOUSEHOLD:
-            # Sort tax units by priority: joint > head_of_household > single > married_filing_separately
+            # Sort tax units by priority: couples (joint/MFS) > head_of_household > single
+            # CRITICAL: Prioritize keeping couple units to avoid losing legitimate married couples
             def get_priority(tax_unit):
                 status = tax_unit.get('filing_status', '')
-                if status == 'joint':
+                # Priority 0: Married couples (joint or MFS) - must keep these!
+                if status in ['married_filing_jointly', 'married_filing_separate']:
                     return 0
+                # Priority 1: Head of household (has dependents)
                 elif status == 'head_of_household':
                     return 1
-                elif status == 'single':
+                # Priority 2: Single filers (lowest priority)
+                else:
                     return 2
-                else:  # married_filing_separately and others
-                    return 3
             
             # Sort by priority and then by number of dependents (descending)
             tax_units.sort(key=lambda x: (get_priority(x), -x.get('num_dependents', 0)))
