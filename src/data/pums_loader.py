@@ -15,9 +15,10 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Default values
-DEFAULT_PUMS_YEAR = 2022  # Most recent year available
+DEFAULT_PUMS_YEAR = 2022  # Most recent 5-year data available (2018-2022)
 DEFAULT_STATE = '15'  # Hawaii FIPS code
 DEFAULT_DATA_DIR = Path(__file__).parent.parent.parent / 'data' / 'raw' / 'pums'
+DEFAULT_PUMS_TYPE = '5yr'  # 5-year data
 
 class PUMSDataLoader:
     """Handles loading and processing of PUMS data for tax benefit analysis."""
@@ -60,40 +61,48 @@ class PUMSDataLoader:
             'YBL': int
         }
     
-    def get_total_households(self, state: str = DEFAULT_STATE) -> int:
+    def get_total_households(self, state: str = DEFAULT_STATE, pums_type: str = DEFAULT_PUMS_TYPE) -> int:
         """Get the total number of households in the dataset.
         
         Args:
             state: State FIPS code (default: '15' for Hawaii)
+            pums_type: '1yr' or '5yr' for 1-year or 5-year PUMS data
             
         Returns:
             Total number of households
         """
-        hh_file = self.data_dir / f'psam_h{state}.csv'
+        hh_file = self.data_dir / f'psam_h{state}.parquet' if pums_type == '5yr' else self.data_dir / f'psam_h{state}.csv'
         if not hh_file.exists():
             raise FileNotFoundError(f"Household PUMS file not found: {hh_file}")
             
-        # Use wc -l to quickly count lines (subtract 1 for header)
-        import subprocess
-        result = subprocess.run(['wc', '-l', str(hh_file)], capture_output=True, text=True)
-        num_lines = int(result.stdout.strip().split()[0])
-        return max(0, num_lines - 1)  # Subtract header row
+        if hh_file.suffix == '.parquet':
+            # For parquet files, read just the first row to get the count
+            import pyarrow.parquet as pq
+            return pq.read_metadata(hh_file).num_rows
+        else:
+            # For CSV files, use wc -l to quickly count lines (subtract 1 for header)
+            import subprocess
+            result = subprocess.run(['wc', '-l', str(hh_file)], capture_output=True, text=True)
+            num_lines = int(result.stdout.strip().split()[0])
+            return max(0, num_lines - 1)  # Subtract header row
     
     def load_households_batch(
         self, 
         batch_size: int = 1000, 
-        state: str = DEFAULT_STATE
+        state: str = DEFAULT_STATE,
+        pums_type: str = DEFAULT_PUMS_TYPE
     ) -> pd.DataFrame:
         """Load a batch of household records using internal state management.
         
         Args:
             batch_size: Number of records to load
             state: State FIPS code (default: '15' for Hawaii)
+            pums_type: '1yr' or '5yr' for 1-year or 5-year PUMS data
             
         Returns:
             DataFrame with household data
         """
-        hh_file = self.data_dir / f'psam_h{state}.csv'
+        hh_file = self.data_dir / (f'psam_h{state}.parquet' if pums_type == '5yr' else f'psam_h{state}.csv')
         if not hh_file.exists():
             raise FileNotFoundError(f"Household PUMS file not found: {hh_file}")
         
@@ -157,7 +166,7 @@ class PUMSDataLoader:
         if serialnos is None or (hasattr(serialnos, '__len__') and len(serialnos) == 0):
             return pd.DataFrame()
             
-        person_file = self.data_dir / f'psam_p{state}.csv'
+        person_file = self.data_dir / (f'psam_p{state}.parquet' if pums_type == '5yr' else f'psam_p{state}.csv')
         if not person_file.exists():
             raise FileNotFoundError(f"Person PUMS file not found: {person_file}")
         
@@ -192,7 +201,8 @@ class PUMSDataLoader:
         self, 
         year: int = DEFAULT_PUMS_YEAR,
         state: str = DEFAULT_STATE,
-        sample_size: Optional[int] = None
+        sample_size: Optional[int] = None,
+        pums_type: str = DEFAULT_PUMS_TYPE
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Load and process PUMS data for the specified year and state.
         

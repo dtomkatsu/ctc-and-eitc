@@ -97,3 +97,58 @@ KeyError: 'ADJINC'
 2025-06-25 18:04:37,833 - INFO - Saved processed person data to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_person_processed.parquet
 2025-06-25 18:04:37,841 - INFO - Saved processed household data to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_household_processed.parquet
 2025-06-25 18:04:37,841 - INFO - Data processing completed successfully!
+2025-10-14 09:58:17,083 - INFO - Starting PUMS 5yr data processing for 2022...
+2025-10-14 09:58:17,083 - INFO - Loading PUMS 5yr data...
+2025-10-14 09:58:17,097 - ERROR - Error processing PUMS 5yr data: Integer column has NA values in column 66
+Traceback (most recent call last):
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/process_pums.py", line 280, in main
+    person_df, hh_df = load_pums_data(pums_type)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/process_pums.py", line 90, in load_pums_data
+    person_df = pd.read_csv(person_file, dtype=DTYPES)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/venv/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/venv/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 626, in _read
+    return parser.read(nrows)
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/venv/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 1923, in read
+    ) = self._engine.read(  # type: ignore[attr-defined]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/venv/lib/python3.12/site-packages/pandas/io/parsers/c_parser_wrapper.py", line 234, in read
+    chunks = self._reader.read_low_memory(nrows)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pandas/_libs/parsers.pyx", line 838, in pandas._libs.parsers.TextReader.read_low_memory
+  File "pandas/_libs/parsers.pyx", line 921, in pandas._libs.parsers.TextReader._read_rows
+  File "pandas/_libs/parsers.pyx", line 1066, in pandas._libs.parsers.TextReader._convert_column_data
+  File "pandas/_libs/parsers.pyx", line 1105, in pandas._libs.parsers.TextReader._convert_tokens
+  File "pandas/_libs/parsers.pyx", line 1226, in pandas._libs.parsers.TextReader._convert_with_dtype
+ValueError: Integer column has NA values in column 66
+2025-10-14 09:58:49,326 - INFO - Starting PUMS 5yr data processing for 2022...
+2025-10-14 09:58:49,326 - INFO - Loading PUMS 5yr data...
+2025-10-14 09:58:50,282 - INFO - Loaded 73352 person records from /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/raw/pums/psam_p15.csv
+2025-10-14 09:58:50,515 - INFO - Loaded 31970 household records from /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/raw/pums/psam_h15.csv
+2025-10-14 09:58:50,515 - INFO - Cleaning person data...
+2025-10-14 09:58:50,546 - INFO - Cleaning household data...
+2025-10-14 09:58:50,548 - INFO - Merging person and household data...
+2025-10-14 09:58:50,656 - ERROR - Error processing PUMS 5yr data: save_processed_data() takes 2 positional arguments but 3 were given
+Traceback (most recent call last):
+  File "/Users/dtomkatsu/CascadeProjects/ctc-and-eitc/src/data/process_pums.py", line 307, in main
+    save_processed_data(person_df, hh_df, merged_df)
+TypeError: save_processed_data() takes 2 positional arguments but 3 were given
+2025-10-14 09:59:33,880 - INFO - Starting PUMS 5yr data processing for 2022...
+2025-10-14 09:59:33,881 - INFO - Loading PUMS 5yr data...
+2025-10-14 09:59:34,686 - INFO - Loaded 73352 person records from /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/raw/pums/psam_p15.csv
+2025-10-14 09:59:34,852 - INFO - Loaded 31970 household records from /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/raw/pums/psam_h15.csv
+2025-10-14 09:59:34,852 - INFO - Cleaning person data...
+2025-10-14 09:59:34,879 - INFO - Cleaning household data...
+2025-10-14 09:59:34,880 - INFO - Merging person and household data...
+2025-10-14 09:59:34,962 - INFO - Saving processed data...
+2025-10-14 09:59:35,200 - INFO - Saved processed person data to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_5yr_2022/pums_person_processed.parquet
+2025-10-14 09:59:35,281 - INFO - Saved processed household data to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_5yr_2022/pums_household_processed.parquet
+2025-10-14 09:59:35,494 - INFO - Saved merged data to /Users/dtomkatsu/CascadeProjects/ctc-and-eitc/data/processed/pums_5yr_2022/pums_merged_processed.parquet
+2025-10-14 09:59:35,968 - INFO - PUMS 5yr data processing completed successfully!
+2025-10-14 09:59:35,968 - INFO - - Processed 73,352 person records
+2025-10-14 09:59:35,968 - INFO - - Processed 31,970 household records
+2025-10-14 09:59:35,968 - INFO - - Merged data contains 73,352 records

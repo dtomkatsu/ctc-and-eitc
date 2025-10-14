@@ -8,12 +8,13 @@ and saves the processed data for further analysis.
 
 import os
 import pandas as pd
-import numpy as np
-from pathlib import Path
-from typing import Tuple, Dict, Any
 import logging
-
-# Set up logging
+import os
+from pathlib import Path
+from typing import Tuple, List, Dict, Any, Optional
+import pandas as pd
+import numpy as np
+logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -31,63 +32,98 @@ DATA_DIR = PROJECT_ROOT / "data"
 RAW_DIR = DATA_DIR / "raw/pums"
 PROCESSED_DIR = DATA_DIR / "processed"
 
+# Data type (1-year or 5-year)
+PUMS_TYPE = '5yr'  # Using 5-year data (2018-2022)
+
 # Create directories if they don't exist
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
 # Define data types for columns to ensure proper loading
+# Using 'Int64' (capital I) for nullable integer types to handle NA values
 DTYPES = {
     # Person-level data types
     'SERIALNO': str,
-    'SPORDER': 'int8',
+    'SPORDER': 'Int64',
     'PUMA': str,
-    'AGEP': 'int8',
-    'SEX': 'int8',
-    'HISP': 'int16',
-    'RAC1P': 'int8',
-    'SCHL': 'int8',
-    'DIS': 'int8',
-    'WAGP': 'float32',
-    'SSIP': 'float32',
-    'RETP': 'float32',
-    'SSP': 'float32',
-    'INTP': 'float32',
-    'PAP': 'float32',
-    'OIP': 'float32',
-    'PWGTP': 'int32',
-    'NP': 'int8',
-    'MAR': 'int8',
-    'NOC': 'int8',
-    'PINCP': 'float32',
-    'RELSHIPP': 'int8',
-    'SEMP': 'float32',
-    'ADJINC': 'float32'
+    'AGEP': 'Int64',
+    'SEX': 'Int64',
+    'HISP': 'Int64',
+    'RAC1P': 'Int64',
+    'SCHL': 'Int64',
+    'DIS': 'Int64',
+    'WAGP': 'float64',  # Using float64 for better precision with monetary values
+    'SSIP': 'float64',
+    'RETP': 'float64',
+    'SSP': 'float64',
+    'INTP': 'float64',
+    'PAP': 'float64',
+    'OIP': 'float64',
+    'PWGTP': 'Int64',
+    'NP': 'Int64',
+    'MAR': 'Int64',
+    'NOC': 'Int64',
+    'PINCP': 'float64',
+    'RELSHIPP': 'Int64',
+    'SEMP': 'float64',
+    'ADJINC': 'float64',
+    # Additional columns that might be in the 5-year data
+    'MIL': 'Int64',
+    'MIG': 'Int64',
+    'MILITARY': 'Int64',
+    'MSP': 'Int64',
+    'HICOV': 'Int64',
+    'HINS1': 'Int64',
+    'HINS2': 'Int64',
+    'HINS3': 'Int64',
+    'HINS4': 'Int64'
 }
 
-def load_pums_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
+def load_pums_data(pums_type: str = PUMS_TYPE) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Load the raw PUMS person and household data.
     
+    Args:
+        pums_type: '1yr' or '5yr' for 1-year or 5-year PUMS data
+        
     Returns:
         Tuple containing person and household DataFrames
     """
-    logger.info("Loading PUMS data...")
+    logger.info(f"Loading PUMS {pums_type} data...")
     
-    # Load person data
-    person_file = RAW_DIR / 'psam_p15.csv'
-    person_df = pd.read_csv(person_file, dtype=DTYPES)
-    logger.info(f"Loaded {len(person_df)} person records")
+    # For 5-year data, we'll use the existing CSV files
+    ext = 'csv'
     
-    # Load household data
-    hh_file = RAW_DIR / 'psam_h15.csv'
-    hh_df = pd.read_csv(hh_file, dtype={
-        'SERIALNO': str,
-        'PUMA': str,
-        'HINCP': 'float32',
-        'WGTP': 'int32',
-        'NP': 'int8',
-        'ADJINC': 'float32'  # Add ADJINC to household data
-    })
-    logger.info(f"Loaded {len(hh_df)} household records")
+    try:
+        # Load person data
+        person_file = RAW_DIR / f'psam_p15.{ext}'
+        if ext == 'parquet':
+            person_df = pd.read_parquet(person_file)
+        else:
+            person_df = pd.read_csv(person_file, dtype=DTYPES)
+        logger.info(f"Loaded {len(person_df)} person records from {person_file}")
+        
+        # Load household data
+        hh_file = RAW_DIR / f'psam_h15.{ext}'
+        if ext == 'parquet':
+            hh_df = pd.read_parquet(hh_file)
+        else:
+            hh_df = pd.read_csv(hh_file, dtype={
+                'SERIALNO': str,
+                'PUMA': str,
+                'HINCP': 'float32',
+                'WGTP': 'int32',
+                'NP': 'int8',
+                'ADJINC': 'float32'
+            })
+        logger.info(f"Loaded {len(hh_df)} household records from {hh_file}")
+        
+        return person_df, hh_df
+        
+    except FileNotFoundError as e:
+        logger.error(f"Error loading PUMS data: {e}")
+        raise FileNotFoundError(
+            f"Could not find PUMS data files. Expected CSV files: {person_file}, {hh_file}"
+        )
     
     return person_df, hh_df
 
@@ -227,41 +263,111 @@ def merge_person_household(person_df: pd.DataFrame, hh_df: pd.DataFrame) -> pd.D
     
     return merged_df
 
-def save_processed_data(person_df: pd.DataFrame, hh_df: pd.DataFrame) -> None:
-    """Save processed data to parquet files."""
+def save_processed_data(
+    person_df: pd.DataFrame, 
+    hh_df: pd.DataFrame, 
+    merged_df: Optional[pd.DataFrame] = None,
+    pums_type: str = '5yr',
+    data_year: int = 2022
+) -> None:
+    """
+    Save processed data to parquet files.
+    
+    Args:
+        person_df: Processed person-level data
+        hh_df: Processed household-level data
+        merged_df: Optional merged person-household data
+        pums_type: Type of PUMS data ('1yr' or '5yr')
+        data_year: Reference year for the data
+    """
     logger.info("Saving processed data...")
     
+    # Create a subdirectory for the data year and type
+    output_dir = PROCESSED_DIR / f"pums_{pums_type}_{data_year}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
     # Save person data
-    person_file = PROCESSED_DIR / 'pums_person_processed.parquet'
+    person_file = output_dir / 'pums_person_processed.parquet'
     person_df.to_parquet(person_file, index=False)
     logger.info(f"Saved processed person data to {person_file}")
     
     # Save household data
-    hh_file = PROCESSED_DIR / 'pums_household_processed.parquet'
+    hh_file = output_dir / 'pums_household_processed.parquet'
     hh_df.to_parquet(hh_file, index=False)
     logger.info(f"Saved processed household data to {hh_file}")
+    
+    # Save merged data if provided
+    if merged_df is not None:
+        merged_file = output_dir / 'pums_merged_processed.parquet'
+        merged_df.to_parquet(merged_file, index=False)
+        logger.info(f"Saved merged data to {merged_file}")
+    
+    # Also save a copy with a fixed name for backward compatibility
+    if pums_type == '5yr' and data_year == 2022:
+        for df, name in [(person_df, 'pums_person_processed.parquet'),
+                        (hh_df, 'pums_household_processed.parquet'),
+                        (merged_df, 'pums_merged_processed.parquet')]:
+            if df is not None:
+                df.to_parquet(PROCESSED_DIR / name, index=False)
 
-def main():
-    """Main function to process PUMS data."""
+def main(pums_type: str = '5yr', data_year: int = 2022) -> None:
+    """
+    Main function to process PUMS data.
+    
+    Args:
+        pums_type: '1yr' or '5yr' for 1-year or 5-year PUMS data
+        data_year: Reference year for the PUMS data
+    """
     try:
-        # Load data
-        person_df, hh_df = load_pums_data()
+        logger.info(f"Starting PUMS {pums_type} data processing for {data_year}...")
         
-        # Clean data
-        person_clean = clean_person_data(person_df)
-        hh_clean = clean_household_data(hh_df, person_df)  # Pass person_df to access ADJINC
+        # Load the data
+        person_df, hh_df = load_pums_data(pums_type)
+        
+        # Clean and process the data
+        person_df = clean_person_data(person_df)
+        hh_df = clean_household_data(hh_df, person_df)
         
         # Merge person and household data
-        merged_df = merge_person_household(person_clean, hh_clean)
+        merged_df = merge_person_household(person_df, hh_df)
         
-        # Save processed data
-        save_processed_data(merged_df, hh_clean)
+        # Add year and pums_type information to the data
+        for df in [person_df, hh_df, merged_df]:
+            if df is not None:
+                df['pums_year'] = data_year
+                df['pums_type'] = pums_type
+    
+        # Save the processed data with metadata
+        save_processed_data(
+            person_df=person_df,
+            hh_df=hh_df,
+            merged_df=merged_df,
+            pums_type=pums_type,
+            data_year=data_year
+        )
         
-        logger.info("Data processing completed successfully!")
+        logger.info(f"PUMS {pums_type} data processing completed successfully!")
+        logger.info(f"- Processed {len(person_df):,} person records")
+        logger.info(f"- Processed {len(hh_df):,} household records")
+        logger.info(f"- Merged data contains {len(merged_df):,} records")
         
     except Exception as e:
-        logger.error(f"Error processing PUMS data: {str(e)}", exc_info=True)
+        logger.error(f"Error processing PUMS {pums_type} data: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Process PUMS data')
+    parser.add_argument('--pums-type', 
+                      type=str, 
+                      default=PUMS_TYPE,
+                      choices=['1yr', '5yr'],
+                      help='Type of PUMS data to process (1yr or 5yr)')
+    parser.add_argument('--data-year',
+                      type=int,
+                      default=2022,
+                      help='Reference year for the PUMS data')
+    args = parser.parse_args()
+    
+    main(pums_type=args.pums_type, data_year=args.data_year)
