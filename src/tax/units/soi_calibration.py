@@ -55,7 +55,7 @@ class SOICalibrator:
         
         Args:
             tax_units: DataFrame of tax units from PUMS
-            method: Calibration method ('overall', 'filing_status', 'income_bracket')
+            method: Calibration method ('overall', 'filing_status', 'income_bracket', 'ipf')
             preserve_demographics: Whether to preserve demographic distributions
             
         Returns:
@@ -82,6 +82,8 @@ class SOICalibrator:
             tax_units = self._calibrate_by_filing_status(tax_units)
         elif method == 'income_bracket':
             tax_units = self._calibrate_by_income_bracket(tax_units)
+        elif method == 'ipf':
+            tax_units = self._calibrate_with_ipf(tax_units)
         else:
             raise ValueError(f"Unknown calibration method: {method}")
         
@@ -173,6 +175,46 @@ class SOICalibrator:
         
         return tax_units
     
+    def _calibrate_with_ipf(self, tax_units: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply Iterative Proportional Fitting (IPF) calibration.
+        
+        This method uses IPF to adjust weights across multiple dimensions
+        simultaneously (filing status × income brackets).
+        """
+        logger.info("Applying IPF calibration")
+        
+        try:
+            from ..calibration.ipf_calibration import IPFCalibrator, create_benchmarks_from_dotax
+        except ImportError:
+            logger.error("IPF calibration module not found. Falling back to filing_status method.")
+            return self._calibrate_by_filing_status(tax_units)
+        
+        # Create benchmarks from DOTAX if not already available
+        if not self.dotax_benchmarks:
+            logger.info("Loading DOTAX benchmarks for IPF...")
+            benchmarks = create_benchmarks_from_dotax()
+        else:
+            # Convert existing benchmarks to IPF format
+            benchmarks = {
+                'total_returns': self.dotax_benchmarks.get('total_returns', 634956),
+                'filing_status_distribution': self.dotax_benchmarks.get('filing_status_distribution', {}),
+                'income_bracket_distribution': self.dotax_benchmarks.get('income_bracket_distribution', {})
+            }
+        
+        # Initialize IPF calibrator
+        ipf_calibrator = IPFCalibrator(
+            benchmarks=benchmarks,
+            max_iterations=100,
+            tolerance=0.001,
+            damping_factor=0.7
+        )
+        
+        # Run IPF calibration
+        calibrated = ipf_calibrator.calibrate(tax_units)
+        
+        return calibrated
+    
     def _log_calibration_results(self, tax_units: pd.DataFrame):
         """Log calibration results for validation."""
         
@@ -250,7 +292,7 @@ class SOICalibrator:
 def calibrate_to_soi_benchmarks(tax_units: pd.DataFrame,
                                 dotax_benchmarks: Optional[Dict] = None,
                                 irs_benchmarks: Optional[Dict] = None,
-                                method: str = 'filing_status') -> pd.DataFrame:
+                                method: str = 'ipf') -> pd.DataFrame:
     """
     Convenience function to calibrate tax units to SOI benchmarks.
     
@@ -258,7 +300,8 @@ def calibrate_to_soi_benchmarks(tax_units: pd.DataFrame,
         tax_units: DataFrame of tax units from PUMS
         dotax_benchmarks: DOTAX SOI benchmark data
         irs_benchmarks: IRS SOI benchmark data
-        method: Calibration method ('overall', 'filing_status', 'income_bracket')
+        method: Calibration method ('overall', 'filing_status', 'income_bracket', 'ipf')
+                Default is 'ipf' for best accuracy across multiple dimensions
         
     Returns:
         DataFrame with calibrated weights
