@@ -50,24 +50,93 @@ PUMS (Survey Sample)   ⭐⭐      →  Demographics and geography only
    - Correct income distributions including high earners
    - Rich demographic detail for policy analysis
 
-### Calibration Methods
+### Three-Stage Calibration Process
 
-The system supports three calibration approaches:
+The system implements a comprehensive three-stage calibration pipeline:
 
-1. **Overall Adjustment** (0.6061 factor)
-   - Simplest method
-   - Multiply all PUMS weights by 0.6061
-   - Aligns total to DOTAX count
+#### **Stage 1: Tax Unit Construction**
+- Construct tax units from PUMS household data
+- Identify filing status (Single, Joint, HoH, MFS)
+- Calculate income from PUMS fields
+- Determine dependents and family structure
 
-2. **Filing Status-Specific** (Recommended)
-   - Different factors by filing status
-   - Single: 0.6634, Joint: 0.5009, HoH: 1.1932, MFS: 0.6094
-   - Better matches DOTAX distribution
+#### **Stage 2: DOTAX Calibration**
+- Calibrate to DOTAX resident totals (634,956 returns)
+- Apply filing status-specific weight adjustments
+- Use Iterative Proportional Fitting (IPF) for multi-dimensional calibration
+- Validate against DOTAX filing status distribution
 
-3. **Income Bracket-Specific**
-   - Addresses high-income undercount
-   - Lower factors for high-income brackets
-   - Most accurate for revenue estimation
+**Key Adjustments:**
+- Single: 0.6634, Joint: 0.5009, HoH: 1.1932, MFS: 0.6094
+- Ensures exact match to DOTAX resident counts
+- Preserves demographic/geographic detail from PUMS
+
+#### **Stage 3: IRS SOI Bracket Calibration**
+- Match IRS SOI income bracket **counts** (scaled to DOTAX total)
+- Adjust **average income** within each bracket to match IRS targets
+- Bounded adjustments to prevent extreme distortions
+
+**IRS Brackets:**
+- $0-25k: 130,000 returns, avg $12,692
+- $25-50k: 180,000 returns, avg $35,000
+- $50-75k: 140,000 returns, avg $60,000
+- $75-100k: 85,000 returns, avg $84,706
+- $100-200k: 60,000 returns, avg $140,000
+- $200k+: 15,000 returns, avg $400,000
+
+**Process:**
+1. Adjust weights to match bracket counts (max 3x adjustment)
+2. Re-normalize to maintain DOTAX total
+3. Adjust incomes within brackets (max ±30% adjustment)
+4. Validate against IRS benchmarks
+
+#### **Stage 4: High-Income Enhancement**
+- Generate synthetic high-income records to fill PUMS gap
+- Use Pareto distribution fitted to IRS targets
+- Match IRS $200k+ bracket count and average income
+- Match IRS percentile floors (top 1% starts at $650k)
+
+**The Problem:**
+- PUMS undersamples high-income households by 19%
+- Survey response bias (wealthy less likely to respond)
+- Top-coding and small sample size issues
+
+**The Solution:**
+1. Calculate gap between PUMS and IRS high-income counts
+2. Generate synthetic records using Pareto distribution
+3. Fit to match: avg=$400k, top 1% floor=$650k
+4. Re-calibrate to maintain DOTAX total
+
+**Why This Matters:**
+- High earners account for 60-70% of tax revenue
+- A $500k household pays ~30x more tax than $50k household
+- Missing 19% of high earners → 40-60% error in revenue estimates
+
+#### **Stage 5: Income Source Split** ⭐ **NEW**
+- Split total AGI into component sources by income bracket
+- Use IRS SOI Table 2 income source distributions
+- Maintain total income consistency
+
+**Income Sources:**
+- Wages and salaries
+- Dividends
+- Interest
+- Business income
+- Capital gains
+- Pensions
+- Other income
+
+**Process:**
+1. Assign each tax unit to income bracket
+2. Apply IRS source percentages for that bracket
+3. Split total income proportionally
+4. Validate sum equals total AGI
+
+**Why This Matters:**
+- Different income sources have different tax treatment
+- Capital gains taxed at lower rates than wages
+- Investment income affects tax liability calculations
+- Essential for accurate revenue estimates
 
 ## Statistical Matching with Multiple Public Data Sources
 
@@ -240,8 +309,11 @@ The project is now organized into functional subdirectories for better maintaina
 ### Production Pipeline (`scripts/pipeline/`)
 Core production scripts numbered for execution order:
 1. **01_construct_tax_units.py** - Construct tax units from PUMS data
-2. **02_apply_soi_calibration.py** - Apply SOI weight calibration
+2. **02_apply_soi_calibration.py** - Apply DOTAX SOI weight calibration (Stage 2)
 3. **03_validate_results.py** - Validate results against benchmarks
+4. **04_apply_irs_bracket_calibration.py** - Apply IRS SOI bracket calibration (Stage 3)
+5. **05_apply_high_income_enhancement.py** - Apply high-income enhancement (Stage 4)
+6. **06_apply_income_source_split.py** - Apply income source split (Stage 5)
 
 ### Analysis Scripts (`scripts/analysis/`)
 Organized by topic:
@@ -252,6 +324,8 @@ Organized by topic:
 ### Calibration Scripts (`scripts/calibration/`)
 - **demo_ipf_calibration.py** - IPF calibration demonstration
 - **test_ipf_calibration.py** - IPF testing on real data
+- **demo_irs_bracket_calibration.py** - IRS bracket calibration demonstration
+- **demo_high_income_enhancement.py** - High-income enhancement demonstration
 
 ### Data Preparation (`scripts/data_prep/`)
 - **download_pums.py** - Download PUMS data from Census Bureau
@@ -265,13 +339,22 @@ To run the tax unit construction pipeline:
 # 1. Download the data (if not already done)
 python scripts/data_prep/download_pums.py
 
-# 2. Construct tax units
+# 2. Construct tax units (Stage 1)
 python scripts/pipeline/01_construct_tax_units.py
 
-# 3. Apply SOI calibration (optional)
+# 3. Apply DOTAX SOI calibration (Stage 2)
 python scripts/pipeline/02_apply_soi_calibration.py
 
-# 4. Validate results
+# 4. Apply IRS bracket calibration (Stage 3)
+python scripts/pipeline/04_apply_irs_bracket_calibration.py
+
+# 5. Apply high-income enhancement (Stage 4)
+python scripts/pipeline/05_apply_high_income_enhancement.py
+
+# 6. Apply income source split (Stage 5)
+python scripts/pipeline/06_apply_income_source_split.py
+
+# 7. Validate results
 python scripts/pipeline/03_validate_results.py
 ```
 
@@ -289,6 +372,12 @@ python scripts/analysis/income/analyze_income_distribution.py
 
 # Test IPF calibration
 python scripts/calibration/demo_ipf_calibration.py
+
+# Demo IRS bracket calibration
+python scripts/calibration/demo_irs_bracket_calibration.py
+
+# Demo high-income enhancement
+python scripts/calibration/demo_high_income_enhancement.py
 ```
 
 The results will be saved in the `data/processed/` directory.
