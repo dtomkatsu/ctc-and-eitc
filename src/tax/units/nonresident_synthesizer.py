@@ -1,7 +1,10 @@
 """
-Synthesize nonresident tax units for Hawaii based on DOTAX SOI Table 17A.
+[NOT CURRENTLY USED] Synthesize nonresident tax units for Hawaii based on DOTAX SOI Table 17A.
 
-Since PUMS only captures Hawaii residents, this module creates synthetic
+This module is not currently used in the main tax unit construction pipeline.
+It's kept for future reference when non-resident analysis is needed.
+
+Since PUMS only captures Hawaii residents, this module can create synthetic
 nonresident tax units to match the observed distribution in DOTAX data.
 
 Approach:

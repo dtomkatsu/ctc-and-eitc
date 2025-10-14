@@ -151,37 +151,51 @@ The project includes comprehensive validation to ensure accurate tax unit constr
 hawaii-tax-estimation/
 ├── src/
 │   ├── tax/                       # Core tax calculation logic
-│   │   └── units/                 # Tax unit construction
-│   │       ├── constructor.py     # Main tax unit constructor
-│   │       ├── dependencies.py    # Dependency determination
-│   │       ├── income.py          # Income calculations
-│   │       ├── relationships.py   # Relationship mapping
-│   │       ├── status/            # Filing status determination
-│   │       ├── soi_calibration.py # SOI weight calibration
-│   │       ├── income_enhancement.py # Statistical matching integration (NEW)
-│   │       └── validation/        # Validation logic
+│   │   ├── units/                 # Tax unit construction
+│   │   │   ├── constructor.py     # Main tax unit constructor
+│   │   │   ├── dependencies.py    # Dependency determination
+│   │   │   ├── income.py          # Income calculations
+│   │   │   ├── relationships.py   # Relationship mapping
+│   │   │   ├── status/            # Filing status determination
+│   │   │   ├── soi_calibration.py # SOI weight calibration
+│   │   │   ├── income_enhancement.py # Statistical matching
+│   │   │   └── validation/        # Validation logic
+│   │   ├── calibration/           # IPF and weight calibration
+│   │   ├── brackets/              # Tax bracket definitions
+│   │   └── adjustments/           # Tax adjustments
 │   ├── data/                      # Data processing and loaders
 │   │   ├── pums_loader.py         # PUMS data loader
-│   │   ├── statistical_matching.py # Statistical matching framework (NEW)
-│   │   ├── bls_oes_loader.py      # BLS OES wage data (NEW)
-│   │   ├── cex_loader.py          # Consumer Expenditure Survey (NEW)
-│   │   └── national_soi_puf_loader.py # National SOI PUF (NEW)
-│   └── analysis/                  # Analysis scripts
-├── scripts/                       # Pipeline and analysis scripts
-│   ├── construct_tax_units.py     # Tax unit construction
-│   ├── validate_tax_units.py      # Validation
-│   ├── test_statistical_matching.py # Test statistical matching (NEW)
-│   └── compare_to_soi.py          # SOI comparison
+│   │   └── dotax_soi_parser.py    # DOTAX SOI parser
+│   └── analysis/                  # Analysis modules
+├── scripts/                       # Organized by function
+│   ├── pipeline/                  # Production pipeline (numbered)
+│   │   ├── 01_construct_tax_units.py
+│   │   ├── 02_apply_soi_calibration.py
+│   │   └── 03_validate_results.py
+│   ├── analysis/                  # Analysis scripts
+│   │   ├── filing_status/         # Filing status analysis
+│   │   ├── income/                # Income distribution analysis
+│   │   └── validation/            # SOI comparison and validation
+│   ├── calibration/               # Calibration testing
+│   │   ├── demo_ipf_calibration.py
+│   │   └── test_ipf_calibration.py
+│   ├── data_prep/                 # Data preparation
+│   │   └── download_pums.py
+│   └── archived/                  # Old exploratory scripts
 ├── data/                          # Data storage
-│   ├── raw/                       # Raw PUMS data
+│   ├── raw/                       # Raw PUMS and SOI data
 │   ├── processed/                 # Processed tax units
-│   └── external/                  # External data sources (NEW)
-│       ├── bls_oes/               # BLS wage data
-│       ├── cex/                   # CEX income data
-│       └── soi_puf/               # National SOI PUF
+│   └── irs_soi/                   # IRS SOI benchmarks
 ├── tests/                         # Test suite
+│   ├── unit/                      # Unit tests
+│   ├── integration/               # Integration tests
+│   └── validation/                # Validation tests
 ├── archived/                      # Archived CTC/EITC/district files
-└── docs/                          # Documentation
+├── docs/                          # Documentation
+│   ├── IPF_CALIBRATION_GUIDE.md
+│   └── PROJECT_REORGANIZATION_PLAN.md
+└── config/                        # Configuration files
+    └── income_growth.py
 ```
 
 ## Setup
@@ -210,26 +224,38 @@ hawaii-tax-estimation/
 
 4. Download PUMS data:
    ```bash
-   python scripts/download_pums.py
+   python scripts/data_prep/download_pums.py
    ```
    This will download the data to `data/raw/pums/`.
 
    Alternatively, you can specify options:
    ```bash
-   python scripts/download_pums.py --year 2022 --state 15 --data-dir data/raw/pums
+   python scripts/data_prep/download_pums.py --year 2022 --state 15 --data-dir data/raw/pums
    ```
 
 ## Main Pipeline Scripts
 
-The project includes several key pipeline scripts for different types of analysis:
+The project is now organized into functional subdirectories for better maintainability:
 
-### State-Wide Tax Analysis
-- `scripts/construct_tax_units.py`: Core tax unit construction from PUMS data
-- `scripts/validate_tax_units.py`: Validation and quality checks for tax units
+### Production Pipeline (`scripts/pipeline/`)
+Core production scripts numbered for execution order:
+1. **01_construct_tax_units.py** - Construct tax units from PUMS data
+2. **02_apply_soi_calibration.py** - Apply SOI weight calibration
+3. **03_validate_results.py** - Validate results against benchmarks
 
-### Analysis Scripts
-- `scripts/compare_to_soi.py`: Compare results to SOI statistics
-- `scripts/analyze_filing_status_gaps.py`: Analyze gaps in filing status determination
+### Analysis Scripts (`scripts/analysis/`)
+Organized by topic:
+- **filing_status/** - Filing status analysis and validation
+- **income/** - Income distribution and high-income analysis
+- **validation/** - SOI comparison and validation scripts
+
+### Calibration Scripts (`scripts/calibration/`)
+- **demo_ipf_calibration.py** - IPF calibration demonstration
+- **test_ipf_calibration.py** - IPF testing on real data
+
+### Data Preparation (`scripts/data_prep/`)
+- **download_pums.py** - Download PUMS data from Census Bureau
+- **create_official_crosswalk.py** - Create geographic crosswalks
 
 ### Running the Pipeline
 
@@ -237,13 +263,32 @@ To run the tax unit construction pipeline:
 
 ```bash
 # 1. Download the data (if not already done)
-python scripts/download_pums.py
+python scripts/data_prep/download_pums.py
 
 # 2. Construct tax units
-python scripts/construct_tax_units.py
+python scripts/pipeline/01_construct_tax_units.py
 
-# 3. Validate results
-python scripts/validate_tax_units.py
+# 3. Apply SOI calibration (optional)
+python scripts/pipeline/02_apply_soi_calibration.py
+
+# 4. Validate results
+python scripts/pipeline/03_validate_results.py
+```
+
+### Running Analysis Scripts
+
+```bash
+# Compare to SOI benchmarks
+python scripts/analysis/validation/compare_to_soi.py
+
+# Analyze filing status distribution
+python scripts/analysis/filing_status/analyze_filing_status_gaps.py
+
+# Analyze income distribution
+python scripts/analysis/income/analyze_income_distribution.py
+
+# Test IPF calibration
+python scripts/calibration/demo_ipf_calibration.py
 ```
 
 The results will be saved in the `data/processed/` directory.
