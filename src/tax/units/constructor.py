@@ -60,7 +60,11 @@ class TaxUnitConstructor:
     
     def __init__(self, person_df: pd.DataFrame, hh_df: pd.DataFrame, 
                  batch_size: int = None, num_processes: int = None,
-                 progress_bar: bool = True, ml_model_path: str = None):
+                 progress_bar: bool = True, ml_model_path: str = None,
+                 use_soi_calibration: bool = True,
+                 soi_calibration_method: str = 'filing_status',
+                 dotax_benchmarks: Optional[Dict] = None,
+                 irs_benchmarks: Optional[Dict] = None):
         """
         Initialize the TaxUnitConstructor.
         
@@ -71,6 +75,10 @@ class TaxUnitConstructor:
             num_processes: Number of processes to use for parallel processing
             progress_bar: Whether to show a progress bar during processing
             ml_model_path: Path to trained ML model for validation (optional)
+            use_soi_calibration: Whether to apply SOI calibration to weights (default: True)
+            soi_calibration_method: Method for SOI calibration ('overall', 'filing_status', 'income_bracket')
+            dotax_benchmarks: DOTAX SOI benchmark data (optional, will load if not provided)
+            irs_benchmarks: IRS SOI benchmark data (optional, will load if not provided)
         """
         self.person_df = person_df.copy()
         self.hh_df = hh_df.copy()
@@ -80,6 +88,12 @@ class TaxUnitConstructor:
         self.batch_size = batch_size or DEFAULT_BATCH_SIZE
         self.num_processes = num_processes or DEFAULT_NUM_PROCESSES
         self.progress_bar = progress_bar and (len(person_df) > 1000)  # Only show for large datasets
+        
+        # SOI calibration settings
+        self.use_soi_calibration = use_soi_calibration
+        self.soi_calibration_method = soi_calibration_method
+        self.dotax_benchmarks = dotax_benchmarks
+        self.irs_benchmarks = irs_benchmarks
         
         # Initialize validator
         self.validator = TaxUnitValidator()
@@ -93,7 +107,8 @@ class TaxUnitConstructor:
         setup_logging()
         logger.info(f"Initialized TaxUnitConstructor with batch_size={self.batch_size}, "
                    f"num_processes={self.num_processes}, "
-                   f"max_tax_units_per_household={self.MAX_TAX_UNITS_PER_HOUSEHOLD}")
+                   f"max_tax_units_per_household={self.MAX_TAX_UNITS_PER_HOUSEHOLD}, "
+                   f"use_soi_calibration={use_soi_calibration}")
         
         # Validate inputs
         is_valid, error_msg = validate_input_data(self.person_df, self.hh_df)
@@ -333,24 +348,50 @@ class TaxUnitConstructor:
             
             # Update the tax_units DataFrame with fixed data
             if fixed_tax_units:
-                # DISABLE SOI calibration - it creates unrealistic distributions
-                logger.info("SOI calibration disabled - using natural filing status distribution")
-                calibrated_tax_units = fixed_tax_units  # No artificial adjustment
+                # Apply SOI calibration if enabled
+                if self.use_soi_calibration:
+                    logger.info(f"Applying SOI calibration using method: {self.soi_calibration_method}")
+                    
+                    # Import SOI calibration module
+                    from .soi_calibration import calibrate_to_soi_benchmarks
+                    
+                    # Convert to DataFrame for calibration
+                    fixed_df = pd.DataFrame(fixed_tax_units)
+                    
+                    # Apply calibration
+                    calibrated_df = calibrate_to_soi_benchmarks(
+                        fixed_df,
+                        dotax_benchmarks=self.dotax_benchmarks,
+                        irs_benchmarks=self.irs_benchmarks,
+                        method=self.soi_calibration_method
+                    )
+                    
+                    # Use calibrated weights
+                    if 'weight_calibrated' in calibrated_df.columns:
+                        calibrated_df['weight'] = calibrated_df['weight_calibrated']
+                    
+                    self.tax_units = calibrated_df
+                    calibrated_count = len(calibrated_df)
+                    soi_calibration_applied = True
+                else:
+                    logger.info("SOI calibration disabled - using natural PUMS weights")
+                    self.tax_units = pd.DataFrame(fixed_tax_units)
+                    calibrated_count = 0
+                    soi_calibration_applied = False
                 
-                self.tax_units = pd.DataFrame(calibrated_tax_units)
                 self._optimize_dataframe_dtypes()
                 
                 # Update validation summary with fix and calibration results
-                calibrated_count = sum(1 for u in calibrated_tax_units if u.get('calibrated', False))
                 self.validation_summary.update({
                     'overcounting_fixes_applied': True,
                     'fixes_validation': fix_validation,
-                    'soi_calibration_applied': True,
+                    'soi_calibration_applied': soi_calibration_applied,
+                    'soi_calibration_method': self.soi_calibration_method if soi_calibration_applied else None,
                     'calibrated_units': calibrated_count,
-                    'final_tax_units': len(calibrated_tax_units)
+                    'final_tax_units': len(self.tax_units)
                 })
                 
-                logger.info(f"Processing complete: {len(tax_units):,} -> {len(fixed_tax_units):,} -> {len(calibrated_tax_units):,} tax units (after fixes and calibration)")
+                logger.info(f"Processing complete: {len(tax_units):,} -> {len(fixed_tax_units):,} -> {len(self.tax_units):,} tax units (after fixes and calibration)")
             else:
                 logger.warning("No tax units after applying fixes")
         else:

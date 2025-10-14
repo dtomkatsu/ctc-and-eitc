@@ -2,26 +2,39 @@
 Income calculation utilities.
 
 This module provides functions for calculating different types of income
-for tax purposes.
+for tax purposes, including adjustments for inflation and wage growth
+to project to 2026.
 """
 
 from typing import Dict, List, Optional, Union
 import pandas as pd
 import numpy as np
+from config.income_growth import apply_income_growth
 
-def calculate_person_income(person: pd.Series) -> float:
+def calculate_person_income(
+    person: pd.Series, 
+    apply_2026_growth: bool = True,
+    is_resident: bool = True
+) -> float:
     """
     Calculate total income for a single person.
     
     Args:
         person: Series containing person data
+        apply_2026_growth: If True, apply income growth to project to 2026
+        is_resident: True for Hawaii residents (2023→2026), False for nonresidents (2022→2026)
         
     Returns:
-        float: Total income
+        float: Total income (optionally projected to 2026)
         
     Note:
         This function uses individual income components (WAGP, SEMP, etc.)
         rather than PINCP to avoid potential double-counting issues.
+        
+        PUMS 2023 data is already adjusted to 2023 dollars via ADJINC.
+        If apply_2026_growth=True, we further adjust to 2026 using:
+        - Residents: 5.6% real growth (2023→2026)
+        - Nonresidents: 5.3% real growth (2022→2026)
     """
     # Initialize total income
     total_income = 0.0
@@ -43,23 +56,37 @@ def calculate_person_income(person: pd.Series) -> float:
     
     # Apply ADJINC (adjustment factor for income)
     # ADJINC values in PUMS data are already the adjustment factors (around 1.0-1.2)
+    # This adjusts income to the PUMS survey year (2023 for 2023 PUMS)
     adjinc = float(person.get('ADJINC', 1.0) or 1.0)
     total_income *= adjinc
     
+    # Apply 2026 growth projection if requested
+    if apply_2026_growth:
+        total_income = apply_income_growth(total_income, is_resident)
+    
     return total_income
 
-def calculate_tax_unit_income(tax_unit: pd.DataFrame) -> float:
+def calculate_tax_unit_income(
+    tax_unit: pd.DataFrame,
+    apply_2026_growth: bool = True,
+    is_resident: bool = True
+) -> float:
     """
     Calculate total income for a tax filing unit.
     
     Args:
         tax_unit: DataFrame containing persons in a tax filing unit
+        apply_2026_growth: If True, apply income growth to project to 2026
+        is_resident: True for Hawaii residents, False for nonresidents
         
     Returns:
-        float: Total tax unit income
+        float: Total tax unit income (optionally projected to 2026)
     """
     if tax_unit.empty:
         return 0.0
         
     # Calculate income for each person and sum
-    return tax_unit.apply(calculate_person_income, axis=1).sum()
+    return tax_unit.apply(
+        lambda person: calculate_person_income(person, apply_2026_growth, is_resident),
+        axis=1
+    ).sum()

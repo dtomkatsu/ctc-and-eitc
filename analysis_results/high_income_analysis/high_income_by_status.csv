@@ -1,0 +1,5 @@
+filing_status,total_units,total_weighted,high_income_units,high_income_weighted,pct_of_total,pct_of_high_income,pct_weighted
+married_filing_jointly,12424,431953.5,10,258.5,0.08048937540244687,86.45485,0.0598444
+married_filing_separately,1362,29818.0,2,40.5,0.14684287812041116,13.545151,0.13582401
+head_of_household,1582,56480.27,0,0.0,0.0,0.0,0.0
+single,30698,529405.94,0,0.0,0.0,0.0,0.0

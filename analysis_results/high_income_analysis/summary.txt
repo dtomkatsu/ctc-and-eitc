@@ -1,0 +1,6 @@
+Total tax units: 46,066
+Total weighted tax units: 1,047,658
+High-income tax units (>$1,000,000): 12
+High-income weighted count: 299
+Percentage of high-income units: 0.0260%
+Weighted percentage of high-income units: 0.0285%

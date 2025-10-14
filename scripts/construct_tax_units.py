@@ -31,7 +31,9 @@ def process_batch(
     pums_loader: PUMSDataLoader,
     batch_size: int = 1000,
     batch_num: Optional[int] = None,
-    total_households: Optional[int] = None
+    total_households: Optional[int] = None,
+    dotax_benchmarks: Optional[dict] = None,
+    irs_benchmarks: Optional[dict] = None
 ) -> Tuple[pd.DataFrame, int]:
     """Process a batch of households and return tax units.
     
@@ -40,6 +42,8 @@ def process_batch(
         batch_size: Number of households to process in this batch
         batch_num: Current batch number (for logging)
         total_households: Total number of households (for progress tracking)
+        dotax_benchmarks: DOTAX SOI benchmark data
+        irs_benchmarks: IRS SOI benchmark data
         
     Returns:
         Tuple of (tax_units_df, num_households_processed)
@@ -52,8 +56,15 @@ def process_batch(
     # Get person data for these households
     person_batch = pums_loader.load_persons_for_households(hh_batch['SERIALNO'].unique())
     
-    # Initialize constructor with this batch
-    constructor = TaxUnitConstructor(person_batch, hh_batch)
+    # Initialize constructor with this batch and SOI calibration
+    constructor = TaxUnitConstructor(
+        person_batch, 
+        hh_batch,
+        use_soi_calibration=True,
+        soi_calibration_method='filing_status',
+        dotax_benchmarks=dotax_benchmarks,
+        irs_benchmarks=irs_benchmarks
+    )
     
     # Process this batch
     tax_units = constructor.create_rule_based_units()
@@ -72,9 +83,24 @@ def main():
     """Main function to construct tax units from PUMS data in batches."""
     try:
         logger.info("Starting batch processing of tax unit construction...")
+        logger.info("Using SOI-calibrated hybrid approach (DOTAX/IRS SOI primary, PUMS for demographics)")
         
         # Initialize data loader
         pums_loader = PUMSDataLoader()
+        
+        # Load SOI benchmarks for calibration
+        logger.info("Loading DOTAX and IRS SOI benchmarks...")
+        try:
+            from src.tax.units.soi_calibration import load_dotax_benchmarks, load_irs_benchmarks
+            dotax_benchmarks = load_dotax_benchmarks()
+            irs_benchmarks = load_irs_benchmarks()
+            logger.info(f"  DOTAX: {dotax_benchmarks.get('total_returns', 'N/A'):,} returns")
+            logger.info(f"  IRS SOI: {irs_benchmarks.get('total_returns', 'N/A'):,} returns")
+        except Exception as e:
+            logger.warning(f"Could not load SOI benchmarks: {e}")
+            logger.warning("Proceeding without SOI calibration")
+            dotax_benchmarks = None
+            irs_benchmarks = None
         
         # Get total number of households for progress tracking
         total_households = pums_loader.get_total_households()
@@ -95,7 +121,9 @@ def main():
                 pums_loader=pums_loader,
                 batch_size=batch_size,
                 batch_num=batch_num,
-                total_households=total_households
+                total_households=total_households,
+                dotax_benchmarks=dotax_benchmarks,
+                irs_benchmarks=irs_benchmarks
             )
             
             if batch_processed == 0:
