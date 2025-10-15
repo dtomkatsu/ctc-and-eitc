@@ -55,9 +55,11 @@ def calculate_person_income(
     total_income += float(person.get('OIP', 0) or 0)
     
     # Apply ADJINC (adjustment factor for income)
-    # ADJINC values in PUMS data are already the adjustment factors (around 1.0-1.2)
+    # CRITICAL: ADJINC in PUMS is stored as integer (e.g., 1184371 = 1.184371)
+    # Must divide by 1,000,000 to get the actual adjustment factor
     # This adjusts income to the PUMS survey year (2023 for 2023 PUMS)
-    adjinc = float(person.get('ADJINC', 1.0) or 1.0)
+    adjinc_raw = float(person.get('ADJINC', 1000000) or 1000000)
+    adjinc = adjinc_raw / 1000000.0  # Convert from integer to decimal factor
     total_income *= adjinc
     
     # Apply 2026 growth projection if requested

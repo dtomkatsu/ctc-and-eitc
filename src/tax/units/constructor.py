@@ -1008,34 +1008,33 @@ class TaxUnitConstructor:
     def _calculate_hybrid_weight(self, hh_weight: float, person_weights: List[float], 
                                filing_status: str) -> float:
         """
-        Calculate hybrid weight using both household and person weights.
+        Calculate hybrid weight using person weights only (not household weight).
         
         Args:
-            hh_weight: Household weight (WGTP)
+            hh_weight: Household weight (WGTP) - not used, kept for compatibility
             person_weights: List of person weights (PWGTP) for tax unit members
             filing_status: Tax filing status
             
         Returns:
-            float: Hybrid weight for the tax unit
+            float: Weight for the tax unit
         """
-        # Base weight is average of household weight and sum of person weights
-        person_weight_sum = sum(person_weights) if person_weights else 0
-        hybrid_weight = (hh_weight + person_weight_sum) / 2
+        # FIXED: Use person weights only
+        # The old formula (hh_weight + sum(person_weights))/2 was inflating weights
+        # Person weight (PWGTP) already represents population extrapolation
         
-        # Apply filing status adjustment factors to better match SOI benchmarks
-        # These factors were derived from analysis of current vs. target distributions
-        status_factors = {
-            'single': 0.96,
-            'joint': 1.00,
-            'head_of_household': 0.77,
-            'married_filing_separately': 0.73
-        }
+        if len(person_weights) == 0:
+            # Fallback to household weight if no person weights
+            hybrid_weight = hh_weight
+        elif len(person_weights) == 1:
+            # Single person: use their person weight
+            hybrid_weight = person_weights[0]
+        else:
+            # Multiple people in tax unit (joint/MFS): use average person weight
+            # This avoids double-counting the couple
+            hybrid_weight = sum(person_weights) / len(person_weights)
         
-        # Apply adjustment factor for this filing status
-        adjustment_factor = status_factors.get(filing_status, 1.0)
-        adjusted_weight = hybrid_weight * adjustment_factor
-        
-        return max(adjusted_weight, 0.1)  # Ensure weight is never zero or negative
+        # No adjustment factors - let natural weights prevail
+        return max(hybrid_weight, 0.1)  # Ensure weight is never zero or negative
 
     def _create_joint_filer(self, adult1: pd.Series, adult2: pd.Series, 
                            hh_members: pd.DataFrame, hh_data: pd.Series, 
@@ -1126,34 +1125,33 @@ class TaxUnitConstructor:
     def _calculate_hybrid_weight(self, hh_weight: float, person_weights: List[float], 
                                filing_status: str) -> float:
         """
-        Calculate hybrid weight using both household and person weights.
+        Calculate hybrid weight using person weights only (not household weight).
         
         Args:
-            hh_weight: Household weight (WGTP)
+            hh_weight: Household weight (WGTP) - not used, kept for compatibility
             person_weights: List of person weights (PWGTP) for tax unit members
             filing_status: Tax filing status
             
         Returns:
-            float: Hybrid weight for the tax unit
+            float: Weight for the tax unit
         """
-        # Base weight is average of household weight and sum of person weights
-        person_weight_sum = sum(person_weights) if person_weights else 0
-        hybrid_weight = (hh_weight + person_weight_sum) / 2
+        # FIXED: Use person weights only
+        # The old formula (hh_weight + sum(person_weights))/2 was inflating weights
+        # Person weight (PWGTP) already represents population extrapolation
         
-        # Apply filing status adjustment factors to better match SOI benchmarks
-        # These factors were derived from analysis of current vs. target distributions
-        status_factors = {
-            'single': 0.96,
-            'joint': 1.00,
-            'head_of_household': 0.77,
-            'married_filing_separately': 0.73
-        }
+        if len(person_weights) == 0:
+            # Fallback to household weight if no person weights
+            hybrid_weight = hh_weight
+        elif len(person_weights) == 1:
+            # Single person: use their person weight
+            hybrid_weight = person_weights[0]
+        else:
+            # Multiple people in tax unit (joint/MFS): use average person weight
+            # This avoids double-counting the couple
+            hybrid_weight = sum(person_weights) / len(person_weights)
         
-        # Apply adjustment factor for this filing status
-        adjustment_factor = status_factors.get(filing_status, 1.0)
-        adjusted_weight = hybrid_weight * adjustment_factor
-        
-        return max(adjusted_weight, 0.1)  # Ensure weight is never zero or negative
+        # No adjustment factors - let natural weights prevail
+        return max(hybrid_weight, 0.1)  # Ensure weight is never zero or negative
 
     def _create_joint_filer(self, adult1: pd.Series, adult2: pd.Series, 
                            hh_members: pd.DataFrame, hh_data: pd.Series, 
