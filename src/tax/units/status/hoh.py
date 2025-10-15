@@ -56,14 +56,23 @@ def is_head_of_household(
     return True
 
 def _is_unmarried(person: pd.Series, person_data: pd.DataFrame) -> bool:
-    """Check if person is unmarried for HOH purposes."""
+    """Check if person is unmarried for HOH purposes.
+    
+    This includes:
+    1. Never married, divorced, separated, widowed
+    2. Married but "considered unmarried" (spouse not in household for last 6 months)
+    """
     marital_status = person.get('MAR', 0)
     
-    # Unmarried includes: never married (5), divorced (3), separated (4), widowed (2)
+    # Unmarried includes: widowed (2), divorced (3), separated (4), never married (5)
     if marital_status in [2, 3, 4, 5]:
         return True
     
-    # If married (1), check if spouse is present in household
+    # If married (1), check if "considered unmarried"
+    # A married person is considered unmarried for HoH if:
+    # - Spouse did not live in home during last 6 months of year
+    # - They paid more than half the cost of keeping up the home
+    # - Home was the main home of their child/stepchild for more than half the year
     if marital_status == 1:
         household_id = person.get('SERIALNO')
         if not household_id:
@@ -73,15 +82,19 @@ def _is_unmarried(person: pd.Series, person_data: pd.DataFrame) -> bool:
         household = person_data[person_data['SERIALNO'] == household_id]
         person_rel = person.get('RELSHIPP', 0)
         
-        # If person is householder (20), look for spouse (21) in same household
+        # If person is householder (20), check if spouse (21) is in same household
         if person_rel == 20:
             spouse_present = any(household['RELSHIPP'] == 21)
-            return not spouse_present
+            # If spouse is NOT present, can be "considered unmarried"
+            if not spouse_present:
+                return True
         
-        # If person is spouse (21), look for householder (20) in same household
+        # If person is spouse (21) but no householder (20) present
+        # This is rare but can happen in PUMS data
         if person_rel == 21:
             householder_present = any(household['RELSHIPP'] == 20)
-            return not householder_present
+            if not householder_present:
+                return True
     
     return False
 
@@ -464,10 +477,11 @@ def _calculate_income(person: pd.Series) -> float:
     pincp = person.get('PINCP', 0)
     if pincp and pincp > 0:
         # Apply adjustment factor
-        adjinc = person.get('ADJINC', 1.0)
-        if adjinc and adjinc > 0:
-            return float(pincp) * float(adjinc)
-        return float(pincp)
+        # CRITICAL: ADJINC in PUMS is stored as integer (e.g., 1184371 = 1.184371)
+        # Must divide by 1,000,000 to get the actual adjustment factor
+        adjinc_raw = person.get('ADJINC', 1000000)
+        adjinc = float(adjinc_raw) / 1000000.0 if adjinc_raw and adjinc_raw > 0 else 1.0
+        return float(pincp) * adjinc
     
     # Fallback to summing individual components
     income = 0.0
@@ -477,8 +491,9 @@ def _calculate_income(person: pd.Series) -> float:
             income += float(value)
     
     # Apply adjustment factor
-    adjinc = person.get('ADJINC', 1.0)
-    if adjinc and adjinc > 0:
-        income *= float(adjinc)
+    # CRITICAL: ADJINC in PUMS is stored as integer (e.g., 1184371 = 1.184371)
+    adjinc_raw = person.get('ADJINC', 1000000)
+    adjinc = float(adjinc_raw) / 1000000.0 if adjinc_raw and adjinc_raw > 0 else 1.0
+    income *= adjinc
     
     return income
