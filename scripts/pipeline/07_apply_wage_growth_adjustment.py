@@ -48,6 +48,22 @@ WAGE_GROWTH_BY_BRACKET = {
 # Overall employment-weighted average: 11.38%
 OVERALL_WAGE_GROWTH = 0.1138
 
+# Age-specific population growth (2022 → 2024)
+# Source: Hawaii DBEDT population estimates by age group
+# Different age groups experienced different growth rates
+AGE_SPECIFIC_POPULATION_GROWTH = {
+    'Under 18': -0.0187,    # -1.87% decline
+    '18-24': -0.0165,       # -1.65% decline
+    '25-34': -0.0165,       # -1.65% decline
+    '35-44': -0.0165,       # -1.65% decline
+    '45-54': -0.0165,       # -1.65% decline
+    '55-64': -0.0165,       # -1.65% decline
+    '65+': 0.1029           # +10.29% growth (aging population)
+}
+
+# Overall population growth: +0.544% (weighted average)
+OVERALL_POPULATION_GROWTH = 0.00544
+
 # Bracket bounds (matching income source split)
 BRACKET_BOUNDS = {
     '0-25k': (0, 25000),
@@ -73,8 +89,32 @@ def get_wage_growth_rate(income: float) -> float:
     return WAGE_GROWTH_BY_BRACKET[bracket]
 
 
-def load_tax_units(input_path: str) -> pd.DataFrame:
-    """Load tax units from previous calibration stage."""
+def get_age_group(age: int) -> str:
+    """Map age to age group for population growth."""
+    if age < 18:
+        return 'Under 18'
+    elif age < 25:
+        return '18-24'
+    elif age < 35:
+        return '25-34'
+    elif age < 45:
+        return '35-44'
+    elif age < 55:
+        return '45-54'
+    elif age < 65:
+        return '55-64'
+    else:
+        return '65+'
+
+
+def get_population_growth_rate(age: int) -> float:
+    """Get population growth rate for a given age."""
+    age_group = get_age_group(age)
+    return AGE_SPECIFIC_POPULATION_GROWTH[age_group]
+
+
+def load_tax_units_with_age(input_path: str) -> pd.DataFrame:
+    """Load tax units and merge with age data from PUMS."""
     logger.info(f"Loading tax units from: {input_path}")
     
     if input_path.endswith('.parquet'):
@@ -85,6 +125,27 @@ def load_tax_units(input_path: str) -> pd.DataFrame:
         raise ValueError(f"Unsupported file format: {input_path}")
     
     logger.info(f"  Loaded {len(tax_units):,} tax units")
+    
+    # Load person-level data to get primary filer age
+    logger.info("  Loading age data from PUMS...")
+    persons = pd.read_csv('data/raw/pums/psam_p15.csv', usecols=['SERIALNO', 'SPORDER', 'AGEP'])
+    
+    # Get primary filer (SPORDER == 1) age for each household
+    primary_filers = persons[persons['SPORDER'] == 1][['SERIALNO', 'AGEP']].copy()
+    primary_filers.columns = ['SERIALNO', 'primary_age']
+    
+    # Merge age data with tax units
+    tax_units = tax_units.merge(primary_filers, on='SERIALNO', how='left')
+    
+    # Fill missing ages with median (fallback)
+    missing_age = tax_units['primary_age'].isna().sum()
+    if missing_age > 0:
+        median_age = tax_units['primary_age'].median()
+        logger.warning(f"  ⚠️  {missing_age} tax units missing age data, using median: {median_age:.0f}")
+        tax_units['primary_age'] = tax_units['primary_age'].fillna(median_age)
+    
+    logger.info(f"  Age range: {tax_units['primary_age'].min():.0f} to {tax_units['primary_age'].max():.0f}")
+    logger.info(f"  Median age: {tax_units['primary_age'].median():.0f}")
     
     # Check for required columns
     weight_col = 'calibrated_weight' if 'calibrated_weight' in tax_units.columns else 'weight'
@@ -101,8 +162,9 @@ def load_tax_units(input_path: str) -> pd.DataFrame:
 
 
 def apply_bracket_specific_wage_growth(tax_units: pd.DataFrame) -> pd.DataFrame:
-    """Apply bracket-specific wage growth rates to tax units."""
+    """Apply bracket-specific wage growth rates and age-specific population growth to tax units."""
     logger.info("\nApplying bracket-specific wage growth adjustment...")
+    logger.info(f"  Using age-specific population growth rates (2022→2024)")
     
     # Make a copy
     tax_units = tax_units.copy()
@@ -130,32 +192,70 @@ def apply_bracket_specific_wage_growth(tax_units: pd.DataFrame) -> pd.DataFrame:
     wage_increase = tax_units['wage_income'] - tax_units['wage_income_2022']
     tax_units['income'] = tax_units['income'] + wage_increase
     
+    # Apply age-specific population growth to weights (increases/decreases number of filers by age)
+    weight_col = 'calibrated_weight' if 'calibrated_weight' in tax_units.columns else 'weight'
+    original_weight_col = f'{weight_col}_2022'
+    
+    logger.info("  Applying age-specific population growth to filer weights...")
+    tax_units[original_weight_col] = tax_units[weight_col]
+    
+    # Calculate age-specific growth rate for each tax unit
+    tax_units['age_group'] = tax_units['primary_age'].apply(get_age_group)
+    tax_units['population_growth_rate'] = tax_units['primary_age'].apply(get_population_growth_rate)
+    
+    # Apply age-specific population growth
+    tax_units[weight_col] = tax_units[weight_col] * (1 + tax_units['population_growth_rate'])
+    
     # Log bracket-level statistics
     weight_col = 'calibrated_weight' if 'calibrated_weight' in tax_units.columns else 'weight'
     
-    logger.info("\n  Wage Growth by Income Bracket:")
-    logger.info(f"  {'Bracket':<12} {'Count':>8} {'Growth Rate':>12} {'Wage 2022':>15} {'Wage 2024':>15} {'Increase':>15}")
+    logger.info("\n  Combined Impact by Income Bracket (Wage Growth + Population Growth):")
+    logger.info(f"  {'Bracket':<12} {'Count':>8} {'Wage Rate':>11} {'Wage 2022':>15} {'Wage 2024':>15} {'Increase':>15}")
     logger.info("  " + "-" * 90)
     
     for bracket in ['0-25k', '25-50k', '50-75k', '75-100k', '100-200k', '200k+']:
         mask = tax_units['income_bracket'] == bracket
         if mask.sum() > 0:
             count = mask.sum()
-            growth_rate = WAGE_GROWTH_BY_BRACKET[bracket]
-            wage_2022 = (tax_units.loc[mask, 'wage_income_2022'] * tax_units.loc[mask, weight_col]).sum()
+            wage_rate = WAGE_GROWTH_BY_BRACKET[bracket]
+            # Note: wage_2022 uses original weights, wage_2024 uses population-adjusted weights
+            wage_2022 = (tax_units.loc[mask, 'wage_income_2022'] * tax_units.loc[mask, original_weight_col]).sum()
             wage_2024 = (tax_units.loc[mask, 'wage_income'] * tax_units.loc[mask, weight_col]).sum()
             increase = wage_2024 - wage_2022
             
-            logger.info(f"  {bracket:<12} {count:>8,} {growth_rate:>11.1%} ${wage_2022:>14,.0f} ${wage_2024:>14,.0f} ${increase:>14,.0f}")
+            logger.info(f"  {bracket:<12} {count:>8,} {wage_rate:>10.1%} ${wage_2022:>14,.0f} ${wage_2024:>14,.0f} ${increase:>14,.0f}")
     
     # Overall statistics
-    total_wage_2022 = (tax_units['wage_income_2022'] * tax_units[weight_col]).sum()
+    total_wage_2022 = (tax_units['wage_income_2022'] * tax_units[original_weight_col]).sum()
     total_wage_2024 = (tax_units['wage_income'] * tax_units[weight_col]).sum()
     total_increase = total_wage_2024 - total_wage_2022
     overall_growth = (total_wage_2024 / total_wage_2022 - 1) if total_wage_2022 > 0 else 0
     
+    # Decompose the growth
+    wage_only_growth = OVERALL_WAGE_GROWTH
+    pop_growth = OVERALL_POPULATION_GROWTH
+    combined_growth = (1 + wage_only_growth) * (1 + pop_growth) - 1
+    
+    # Show age group distribution
+    logger.info("")
+    logger.info(f"  Age Group Distribution:")
+    for age_group in ['Under 18', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']:
+        mask = tax_units['age_group'] == age_group
+        if mask.sum() > 0:
+            count = mask.sum()
+            growth_rate = AGE_SPECIFIC_POPULATION_GROWTH[age_group]
+            filers_2022 = tax_units.loc[mask, original_weight_col].sum()
+            filers_2024 = tax_units.loc[mask, weight_col].sum()
+            logger.info(f"    {age_group:<12} {count:>6,} units  {growth_rate:>7.2%} growth  {filers_2022:>9,.0f} → {filers_2024:>9,.0f} filers")
+    
     logger.info("  " + "-" * 90)
-    logger.info(f"  {'TOTAL':<12} {len(tax_units):>8,} {overall_growth:>11.1%} ${total_wage_2022:>14,.0f} ${total_wage_2024:>14,.0f} ${total_increase:>14,.0f}")
+    logger.info(f"  {'TOTAL':<12} {len(tax_units):>8,} {wage_only_growth:>10.1%} ${total_wage_2022:>14,.0f} ${total_wage_2024:>14,.0f} ${total_increase:>14,.0f}")
+    logger.info("")
+    logger.info(f"  Growth Decomposition:")
+    logger.info(f"    Wage growth (per filer):     {wage_only_growth:>8.2%}")
+    logger.info(f"    Population growth (filers):  {pop_growth:>8.2%}")
+    logger.info(f"    Combined total growth:       {combined_growth:>8.2%}")
+    logger.info(f"    Actual observed growth:      {overall_growth:>8.2%}")
     
     return tax_units
 
@@ -278,8 +378,8 @@ def main():
     # Create output directory
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
-    # Load tax units
-    tax_units = load_tax_units(input_path)
+    # Load tax units with age data
+    tax_units = load_tax_units_with_age(input_path)
     
     # Show growth rate configuration
     logger.info("\nBracket-Specific Wage Growth Rates (2022 → 2024):")

@@ -56,7 +56,9 @@ class TaxUnitConstructor:
     """
     
     # Maximum number of tax units allowed per household
-    MAX_TAX_UNITS_PER_HOUSEHOLD = 4
+    # Reduced from 4 to 2 to fix overcounting issue
+    # Most households should have 1-2 units (single person, couple, or couple + adult child)
+    MAX_TAX_UNITS_PER_HOUSEHOLD = 2
     
     def __init__(self, person_df: pd.DataFrame, hh_df: pd.DataFrame, 
                  batch_size: int = None, num_processes: int = None,
@@ -902,9 +904,8 @@ class TaxUnitConstructor:
             mfs_score += 1
         
         # Determine MFS threshold based on analysis
-        # Target: ~3.4% of all returns should file MFS (SOI benchmark)
-        # Current: 1.9% MFS, need to increase to 3.4%
-        # Adjust thresholds to increase MFS rate while maintaining joint filers
+        # Target: 2.5% of all returns should file MFS (DOTAX 2022 benchmark)
+        # Adjusted thresholds to hit 2.5% target (was producing 2.21%)
         
         should_file_separately = False
         
@@ -924,11 +925,11 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~70% of the time for score 6 couples
-            should_file_separately = random.random() < 0.7
+            # File separately ~75% of the time for score 6 couples (increased from 70%)
+            should_file_separately = random.random() < 0.75
             reason = f"high MFS score ({mfs_score}), random: {should_file_separately}"
         elif mfs_score == 5:
-            # Medium-high score: file separately half the time
+            # Medium-high score: file separately more often
             serialno = str(adult1.get('SERIALNO', '0'))
             sporder1 = str(adult1.get('SPORDER', 0))
             sporder2 = str(adult2.get('SPORDER', 1))
@@ -939,8 +940,8 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~50% of the time for score 5 couples
-            should_file_separately = random.random() < 0.5
+            # File separately ~60% of the time for score 5 couples (increased from 50%)
+            should_file_separately = random.random() < 0.6
             reason = f"medium-high MFS score ({mfs_score}), random: {should_file_separately}"
         elif mfs_score == 4:
             # Medium score: file separately sometimes
@@ -954,9 +955,24 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~20% of the time for score 4 couples
-            should_file_separately = random.random() < 0.2
+            # File separately ~30% of the time for score 4 couples (increased from 20%)
+            should_file_separately = random.random() < 0.3
             reason = f"medium MFS score ({mfs_score}), random: {should_file_separately}"
+        elif mfs_score == 3:
+            # Low-medium score: file separately occasionally
+            serialno = str(adult1.get('SERIALNO', '0'))
+            sporder1 = str(adult1.get('SPORDER', 0))
+            sporder2 = str(adult2.get('SPORDER', 1))
+            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score3"
+            
+            import hashlib
+            seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
+            import random
+            random.seed(seed)
+            
+            # File separately ~5% of the time for score 3 couples (NEW)
+            should_file_separately = random.random() < 0.05
+            reason = f"low-medium MFS score ({mfs_score}), random: {should_file_separately}"
         
         if not should_file_separately:
             reason = f"low MFS score ({mfs_score}), filing jointly"
@@ -975,8 +991,10 @@ class TaxUnitConstructor:
             float: Total income adjusted by ADJINC factor
         """
         # Get ADJINC factor (default to 1.0 if not present)
-        # ADJINC values in PUMS data are already the adjustment factors (around 1.0-1.2)
-        adjinc = float(person.get('ADJINC', 1.0))
+        # CRITICAL: ADJINC in PUMS is stored as integer (e.g., 1184371 = 1.184371)
+        # Must divide by 1,000,000 to get the actual adjustment factor
+        adjinc_raw = float(person.get('ADJINC', 1000000))
+        adjinc = adjinc_raw / 1000000.0  # Convert from integer to decimal factor
         
         # Use PINCP (total person income) which already includes all income sources
         # This avoids double-counting that would occur if we summed individual components
@@ -1314,6 +1332,22 @@ class TaxUnitConstructor:
         except Exception as e:
             logger.error(f"Error calculating income for tax unit: {e}")
             income = 0.0
+        
+        # Apply filing threshold - don't create tax units for those who don't need to file
+        # 2022 filing thresholds:
+        # - Single: $12,950
+        # - Married filing separately: $5
+        # - Head of household: $19,400
+        # Use conservative threshold of $5,000 to avoid filtering out legitimate filers
+        # Exception: Self-employment income > $400 requires filing
+        FILING_THRESHOLD = 5000
+        SELF_EMPLOYMENT_THRESHOLD = 400
+        
+        has_self_employment = adult.get('SEMP', 0) > SELF_EMPLOYMENT_THRESHOLD
+        
+        if income < FILING_THRESHOLD and not has_self_employment:
+            logger.debug(f"Adult {adult.name} has income ${income:.0f} below filing threshold, not creating tax unit")
+            return None
         
         if filing_status is None:
             # Determine filing status based on marital status and household role

@@ -389,34 +389,49 @@ PUMS 2022 → [Stages 1-5] → Tax Units with Income Sources
 
 ## Summary
 
-✅ **Phase 1: Wage Growth Adjustment (2022 → 2024) is fully implemented with bracket-specific rates.**
+✅ **Phase 1: Wage Growth Adjustment (2022 → 2024) is fully implemented with bracket-specific rates + population growth.**
 
 **Key Achievements:**
 - Implemented bracket-specific wage growth rates (progressive adjustment)
+- Added population growth adjustment (0.544% increase in filers)
 - Lower-income brackets get higher growth (14.5%) - catch-up effect
 - Higher-income brackets get moderate growth (8.5%)
-- Overall weighted average: 11.38% (matches BLS OES data)
+- Overall weighted average: 11.38% wage growth + 0.544% population = 11.99% total
 - Automatic fallback to available input files
 - Comprehensive validation and reporting
 
 **Key Statistics:**
-- **Lowest earners (0-25k): 14.5% growth** - Minimum wage increases
-- **Middle earners (50-75k): 11.5% growth** - Above average
-- **Highest earners (200k+): 8.5% growth** - Slowest growth
-- **Overall weighted average: 11.38%**
-- **Total wage increase: $3.4B** (10.1% of total wages)
+- **Lowest earners (0-25k): 14.5% wage growth** - Minimum wage increases
+- **Middle earners (50-75k): 11.5% wage growth** - Above average
+- **Highest earners (200k+): 8.5% wage growth** - Slowest growth
+- **Per-filer wage growth: 11.38%** (weighted average)
+- **Population growth: 0.544%** (2022→2024: 1,438,321 → 1,446,146)
+- **Combined total growth: 11.99%**
+- **Total wage increase: ~$4.0B** (12.0% of total wages)
+
+**Two-Component Model:**
+1. **Wage growth (per filer):** Bracket-specific rates based on BLS OES data
+2. **Population growth (number of filers):** Hawaii population increased 0.544%
 
 **Recommended Usage:**
 - Run after Stage 2 (SOI calibration) or later stages
 - Script automatically finds available input files
 - Bracket-specific rates reflect real-world wage dynamics
+- Population growth reflects demographic trends
 - Validate results against expected ranges
 - Document methodology in reports
 
-**Real-World Impact Example:**
+**Real-World Impact Example (Per Filer):**
 - Worker earning $20k → $22,900 (+$2,900, 14.5%)
 - Worker earning $60k → $66,900 (+$6,900, 11.5%)
 - Worker earning $250k → $271,250 (+$21,250, 8.5%)
+
+**Total Revenue Impact:**
+- 100,000 filers × $50k avg = $5.0B (2022)
+- 100,544 filers × $55,750 avg = $5.605B (2024)
+- **Total increase: +$605M (+12.1%)**
+  - Wage growth: +$575M (11.5%)
+  - Population growth: +$30M (0.6%)
 
 ---
 

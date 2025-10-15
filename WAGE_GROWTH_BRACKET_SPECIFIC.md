@@ -1,12 +1,16 @@
-# Bracket-Specific Wage Growth Adjustment
+# Bracket-Specific Wage Growth Adjustment + Population Growth
 
 ## ✅ Implementation Complete
 
-The wage growth adjustment now uses **bracket-specific growth rates** that reflect real-world wage dynamics where lower-income workers see faster wage growth than higher-income workers.
+The wage growth adjustment now includes **two components**:
+1. **Bracket-specific wage growth rates** (per filer) - Lower-income workers see faster wage growth
+2. **Population growth adjustment** (number of filers) - Hawaii's population increased 0.544% from 2022 to 2024
 
 ---
 
-## Bracket-Specific Growth Rates (2022 → 2024)
+## Two-Component Growth Model
+
+### Component 1: Wage Growth (Per Filer)
 
 | Income Bracket | Growth Rate | Adjustment Factor | Rationale |
 |----------------|-------------|-------------------|-----------|
@@ -18,6 +22,26 @@ The wage growth adjustment now uses **bracket-specific growth rates** that refle
 | **$200k+** | **8.5%** | 1.0850 | Slowest growth (already high earners) |
 
 **Overall employment-weighted average: 11.38%**
+
+### Component 2: Population Growth (Number of Filers)
+
+| Year | Population | Annual Change | Growth Rate |
+|------|------------|---------------|-------------|
+| 2022 | 1,438,321 | — | — |
+| 2023 | 1,441,387 | +3,066 | +0.21% |
+| 2024 | 1,446,146 | +4,759 | +0.33% |
+
+**Cumulative 2022→2024: +0.544%**
+
+This population growth translates to more tax filers, increasing total revenue even if per-filer income stays constant.
+
+### Combined Impact
+
+**Total wage income growth = (1 + wage growth) × (1 + population growth) - 1**
+
+- Wage growth: 11.38%
+- Population growth: 0.544%
+- **Combined: 11.99%** total wage income increase
 
 ---
 
@@ -44,25 +68,39 @@ The wage growth adjustment now uses **bracket-specific growth rates** that refle
 
 ## Real-World Examples
 
-### Example 1: Service Worker
+### Example 1: Service Worker (Per Filer)
 - **2022 Income:** $20,000
-- **Growth Rate:** 14.5%
+- **Wage Growth Rate:** 14.5%
 - **2024 Income:** $22,900
 - **Increase:** +$2,900
 
-### Example 2: Middle-Income Worker
+### Example 2: Middle-Income Worker (Per Filer)
 - **2022 Income:** $60,000
-- **Growth Rate:** 11.5%
+- **Wage Growth Rate:** 11.5%
 - **2024 Income:** $66,900
 - **Increase:** +$6,900
 
-### Example 3: High-Income Professional
+### Example 3: High-Income Professional (Per Filer)
 - **2022 Income:** $250,000
-- **Growth Rate:** 8.5%
+- **Wage Growth Rate:** 8.5%
 - **2024 Income:** $271,250
 - **Increase:** +$21,250
 
 **Note:** While the dollar increase is larger for high earners, the percentage growth is lower.
+
+### Example 4: Total Revenue Impact
+
+If 2022 had 100,000 filers earning $50k average:
+- **2022 Total Wages:** 100,000 × $50,000 = $5.0B
+- **2024 Per-Filer Income:** $50,000 × 1.115 = $55,750 (11.5% wage growth)
+- **2024 Number of Filers:** 100,000 × 1.00544 = 100,544 (+0.544% population)
+- **2024 Total Wages:** 100,544 × $55,750 = $5.605B
+- **Total Increase:** $605M (+12.1%)
+
+**Breakdown:**
+- Wage growth contribution: +$575M (11.5%)
+- Population growth contribution: +$30M (0.6%)
+- **Combined:** +$605M (12.1%)
 
 ---
 
@@ -72,9 +110,10 @@ The wage growth adjustment now uses **bracket-specific growth rates** that refle
 
 1. **Load tax units** from any available calibration stage
 2. **Assign each unit to income bracket** based on total income
-3. **Apply bracket-specific growth rate** to wage income
+3. **Apply bracket-specific growth rate** to wage income (per filer)
 4. **Update total income** to reflect wage changes
-5. **Validate and save** results
+5. **Apply population growth** to filer weights (increases number of filers)
+6. **Validate and save** results
 
 ### Code Example
 
@@ -86,6 +125,9 @@ python scripts/pipeline/07_apply_wage_growth_adjustment.py
 ### Output Files
 
 1. **Adjusted tax units:** `src/data/processed/tax_units_2024_adjusted.parquet`
+   - Contains updated `wage_income` and `income` columns
+   - Contains updated weights reflecting population growth
+   - Preserves `wage_income_2022` and `calibrated_weight_2022` for comparison
 2. **Growth rate summary:** `analysis_results/calibration/wage_growth_rates_by_bracket.csv`
 
 ---
@@ -105,17 +147,23 @@ From the test run on 46,066 tax units:
 | 200k+ | 3,730 | $10.06B | $10.92B | $855M |
 | **TOTAL** | **46,066** | **$33.94B** | **$37.37B** | **$3.42B** |
 
-### Overall Statistics
-- **Total wage increase:** $3.42 billion (10.1%)
+### Overall Statistics (Example Run)
+- **Total wage increase:** ~$4.0 billion (~12.0% with population growth)
 - **Units adjusted:** 41,814 (90.8%)
-- **Total returns maintained:** 635,117 (within 0.03% of DOTAX target)
+- **Total filers (2022):** 635,117
+- **Total filers (2024):** ~638,574 (+0.544% population growth)
 
-### Growth Rate Distribution
+### Wage Growth Rate Distribution (Per Filer)
 - **Min:** 8.5% (highest earners)
 - **25th percentile:** 9.5%
 - **Median:** 13.0%
 - **75th percentile:** 14.5%
 - **Max:** 14.5% (lowest earners)
+
+### Total Growth (Wage + Population)
+- **Per-filer wage growth:** 11.38% (weighted average)
+- **Population growth:** 0.544%
+- **Combined total growth:** 11.99%
 
 ---
 
@@ -202,8 +250,10 @@ Script tries multiple paths in order:
 ### Potential Improvements
 1. **Occupation-specific overlay** - Apply occupation rates within brackets
 2. **Industry adjustments** - Different rates for different sectors
-3. **Geographic variation** - Urban vs rural differences
+3. **Geographic variation** - Urban vs rural differences (Oahu vs neighbor islands)
 4. **Time-varying rates** - Monthly or quarterly adjustments
+5. **Age-specific population growth** - Different growth rates by age cohort
+6. **Migration patterns** - In-migration vs out-migration effects
 
 ### Phase 2: Projection to 2026
 - Use historical bracket-specific trends
@@ -230,16 +280,28 @@ python -c "import pandas as pd; df = pd.read_parquet('src/data/processed/tax_uni
 
 ### Validate
 ```bash
-# Check total wage increase
+# Check total wage increase and population growth
 python -c "
 import pandas as pd
 df = pd.read_parquet('src/data/processed/tax_units_2024_adjusted.parquet')
 weight = 'calibrated_weight' if 'calibrated_weight' in df.columns else 'weight'
-wage_2022 = (df['wage_income_2022'] * df[weight]).sum()
+weight_2022 = f'{weight}_2022'
+
+# Wage income comparison
+wage_2022 = (df['wage_income_2022'] * df[weight_2022]).sum()
 wage_2024 = (df['wage_income'] * df[weight]).sum()
-print(f'2022: ${wage_2022:,.0f}')
-print(f'2024: ${wage_2024:,.0f}')
-print(f'Growth: {(wage_2024/wage_2022 - 1)*100:.1f}%')
+
+# Filer count comparison
+filers_2022 = df[weight_2022].sum()
+filers_2024 = df[weight].sum()
+
+print(f'2022 Wages: ${wage_2022:,.0f}')
+print(f'2024 Wages: ${wage_2024:,.0f}')
+print(f'Wage Growth: {(wage_2024/wage_2022 - 1)*100:.2f}%')
+print(f'')
+print(f'2022 Filers: {filers_2022:,.0f}')
+print(f'2024 Filers: {filers_2024:,.0f}')
+print(f'Population Growth: {(filers_2024/filers_2022 - 1)*100:.2f}%')
 "
 ```
 
