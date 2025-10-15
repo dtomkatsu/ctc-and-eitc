@@ -5,6 +5,7 @@ from .ipf_calibration import IPFCalibrator, create_benchmarks_from_dotax, calibr
 from .irs_bracket_calibration import IRSBracketCalibrator, calibrate_with_irs_brackets
 from .high_income_enhancement import HighIncomeEnhancer, enhance_high_income
 from .income_source_split import IncomeSourceSplitter, split_income_sources
+from .wage_growth_adjustment import WageGrowthAdjuster, generate_growth_rate_report
 from .soi_calibration import SOICalibrator
 
 __all__ = [
@@ -18,5 +19,7 @@ __all__ = [
     'enhance_high_income',
     'IncomeSourceSplitter',
     'split_income_sources',
+    'WageGrowthAdjuster',
+    'generate_growth_rate_report',
     'SOICalibrator'
 ]

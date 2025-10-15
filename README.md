@@ -112,7 +112,7 @@ The system implements a comprehensive three-stage calibration pipeline:
 - A $500k household pays ~30x more tax than $50k household
 - Missing 19% of high earners → 40-60% error in revenue estimates
 
-#### **Stage 5: Income Source Split** ⭐ **NEW**
+#### **Stage 5: Income Source Split**
 - Split total AGI into component sources by income bracket
 - Use IRS SOI Table 2 income source distributions
 - Maintain total income consistency
@@ -137,6 +137,36 @@ The system implements a comprehensive three-stage calibration pipeline:
 - Capital gains taxed at lower rates than wages
 - Investment income affects tax liability calculations
 - Essential for accurate revenue estimates
+
+#### **Stage 6: Wage Growth Adjustment (Phase 1)** ⭐ **NEW**
+- Adjust 2022 PUMS wage data to 2024 using BLS OES growth rates
+- Apply occupation-specific adjustments where available
+- Update total income to reflect wage changes
+
+**BLS OES Data Available:**
+- 2022, 2023, 2024 Hawaii wage data
+- 577 occupation-level records
+- Covers 594,880 workers
+
+**Growth Rates (2022 → 2024):**
+- Overall: 11.38% (employment-weighted)
+- Food service: 25.3%
+- Healthcare support: 22.7%
+- Arts & entertainment: 49.0%
+- Range: -36% to +115% (occupation-specific)
+
+**Process:**
+1. Load BLS OES data for 2022 and 2024
+2. Calculate occupation-specific growth rates
+3. Match PUMS occupation codes to BLS SOC codes
+4. Apply adjustments with fallbacks
+5. Update total income
+
+**Why This Matters:**
+- PUMS data is from 2022, need 2024 values
+- Wages grew significantly 2022-2024
+- Occupation-specific trends vary widely
+- Critical for accurate 2024 tax calculations
 
 ## Statistical Matching with Multiple Public Data Sources
 
@@ -314,6 +344,7 @@ Core production scripts numbered for execution order:
 4. **04_apply_irs_bracket_calibration.py** - Apply IRS SOI bracket calibration (Stage 3)
 5. **05_apply_high_income_enhancement.py** - Apply high-income enhancement (Stage 4)
 6. **06_apply_income_source_split.py** - Apply income source split (Stage 5)
+7. **07_apply_wage_growth_adjustment.py** - Apply wage growth adjustment (Stage 6)
 
 ### Analysis Scripts (`scripts/analysis/`)
 Organized by topic:
@@ -326,6 +357,7 @@ Organized by topic:
 - **test_ipf_calibration.py** - IPF testing on real data
 - **demo_irs_bracket_calibration.py** - IRS bracket calibration demonstration
 - **demo_high_income_enhancement.py** - High-income enhancement demonstration
+- **demo_wage_growth_options.py** - Wage growth adjustment options demonstration
 
 ### Data Preparation (`scripts/data_prep/`)
 - **download_pums.py** - Download PUMS data from Census Bureau
@@ -354,7 +386,10 @@ python scripts/pipeline/05_apply_high_income_enhancement.py
 # 6. Apply income source split (Stage 5)
 python scripts/pipeline/06_apply_income_source_split.py
 
-# 7. Validate results
+# 7. Apply wage growth adjustment (Stage 6)
+python scripts/pipeline/07_apply_wage_growth_adjustment.py
+
+# 8. Validate results
 python scripts/pipeline/03_validate_results.py
 ```
 
