@@ -8,6 +8,7 @@ documentation and empirical patterns observed in official tax data.
 import random
 import hashlib
 import logging
+import pandas as pd
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
@@ -206,68 +207,184 @@ def should_file_jointly_irs_method(adult1: Dict[str, Any], adult2: Optional[Dict
     return result
 
 
-def calibrate_to_soi_totals(tax_units: List[Dict[str, Any]], target_joint_pct: float = 0.36) -> List[Dict[str, Any]]:
+def calibrate_to_soi_totals(tax_units: pd.DataFrame, 
+                           target_distributions: Optional[Dict[str, float]] = None,
+                           weight_col: str = 'weight') -> pd.DataFrame:
     """
-    Adjust final distribution to match SOI targets using post-processing calibration.
+    Adjust filing status distribution to match SOI targets using weighted post-processing calibration.
+    
+    This function calibrates the filing status distribution to match DOTAX SOI benchmarks
+    by converting tax units between filing statuses based on income and likelihood scores.
     
     Args:
-        tax_units: List of tax unit dictionaries
-        target_joint_pct: Target percentage of joint filers (default 36% for Hawaii)
+        tax_units: DataFrame of tax units
+        target_distributions: Dict mapping filing_status -> target percentage
+                            Default: Hawaii DOTAX 2022 benchmarks
+        weight_col: Column name for weights (default: 'weight')
         
     Returns:
-        List[Dict[str, Any]]: Adjusted tax units
+        pd.DataFrame: Calibrated tax units with 'calibrated' flag
     """
-    if not tax_units:
+    import pandas as pd
+    
+    # Default to Hawaii DOTAX 2022 benchmarks
+    if target_distributions is None:
+        target_distributions = {
+            'single': 0.5276,  # 335,198 / 635,117
+            'married_filing_jointly': 0.3407,  # 216,358 / 635,117
+            'head_of_household': 0.1061,  # 67,393 / 635,117
+            'married_filing_separately': 0.0252  # 16,007 / 635,117
+        }
+    
+    if tax_units.empty:
         return tax_units
-        
-    current_joint = sum(1 for u in tax_units if u.get('filing_status') == 'joint')
-    current_total = len(tax_units)
-    current_pct = current_joint / current_total if current_total > 0 else 0
     
-    logger.info(f"SOI Calibration: Current joint rate = {current_pct:.1%}, Target = {target_joint_pct:.1%}")
+    # Make a copy to avoid modifying original
+    df = tax_units.copy()
     
-    if abs(current_pct - target_joint_pct) < 0.01:  # Within 1%
-        logger.info("Already within target range, no calibration needed")
-        return tax_units
+    # Add calibrated flag if not present
+    if 'calibrated' not in df.columns:
+        df['calibrated'] = False
     
-    if current_pct < target_joint_pct:
-        # Need to convert some single filers to joint
-        single_units = [u for u in tax_units if u.get('filing_status') == 'single']
-        num_to_convert = int((target_joint_pct * current_total) - current_joint)
-        num_to_convert = min(num_to_convert, len(single_units))
-        
-        logger.info(f"Converting {num_to_convert} single filers to joint filers")
-        
-        # Prefer to convert single filers who are likely married but misclassified
-        # Sort by income (higher income more likely to be joint)
-        single_units.sort(key=lambda x: x.get('income', 0), reverse=True)
-        
-        for i, unit in enumerate(single_units[:num_to_convert]):
-            unit['filing_status'] = 'joint'
-            unit['calibrated'] = True  # Mark as adjusted
-            logger.debug(f"Converted single filer {unit.get('filer_id')} to joint (income: ${unit.get('income', 0):,.0f})")
+    # Calculate current distribution (weighted)
+    total_weight = df[weight_col].sum()
+    current_dist = df.groupby('filing_status')[weight_col].sum() / total_weight
     
-    elif current_pct > target_joint_pct:
-        # Need to convert some joint filers to single
-        joint_units = [u for u in tax_units if u.get('filing_status') == 'joint']
-        num_to_convert = int(current_joint - (target_joint_pct * current_total))
-        num_to_convert = min(num_to_convert, len(joint_units))
-        
-        logger.info(f"Converting {num_to_convert} joint filers to single filers")
-        
-        # Prefer to convert joint filers with lower income (less likely to be joint)
-        joint_units.sort(key=lambda x: x.get('income', 0))
-        
-        for unit in joint_units[:num_to_convert]:
-            unit['filing_status'] = 'single'
-            unit['calibrated'] = True  # Mark as adjusted
-            logger.debug(f"Converted joint filer {unit.get('filer_id')} to single (income: ${unit.get('income', 0):,.0f})")
+    logger.info("="*80)
+    logger.info("SOI CALIBRATION - Adjusting Filing Status Distribution")
+    logger.info("="*80)
+    logger.info(f"\nTotal weighted tax units: {total_weight:,.0f}")
+    logger.info(f"\nCurrent vs Target Distribution:")
+    logger.info(f"{'Status':<30} {'Current':>10} {'Target':>10} {'Gap':>10}")
+    logger.info("-"*80)
     
-    # Log final results
-    final_joint = sum(1 for u in tax_units if u.get('filing_status') == 'joint')
-    final_pct = final_joint / current_total if current_total > 0 else 0
-    calibrated_count = sum(1 for u in tax_units if u.get('calibrated', False))
+    for status in ['single', 'married_filing_jointly', 'head_of_household', 'married_filing_separately']:
+        current = current_dist.get(status, 0)
+        target = target_distributions.get(status, 0)
+        gap = current - target
+        logger.info(f"{status:<30} {current:>9.1%} {target:>9.1%} {gap:>+9.1%}")
     
-    logger.info(f"SOI Calibration complete: {current_pct:.1%} -> {final_pct:.1%} ({calibrated_count} units adjusted)")
+    # Iterative calibration approach
+    max_iterations = 10
+    tolerance = 0.001  # 0.1% tolerance
     
-    return tax_units
+    for iteration in range(max_iterations):
+        logger.info(f"\n--- Iteration {iteration + 1} ---")
+        
+        # Recalculate current distribution
+        total_weight = df[weight_col].sum()
+        current_dist = df.groupby('filing_status')[weight_col].sum() / total_weight
+        
+        # Find largest gap
+        max_gap = 0
+        max_gap_status = None
+        for status, target in target_distributions.items():
+            current = current_dist.get(status, 0)
+            gap = abs(current - target)
+            if gap > max_gap:
+                max_gap = gap
+                max_gap_status = status
+        
+        if max_gap < tolerance:
+            logger.info(f"✅ Converged! Max gap: {max_gap:.3%}")
+            break
+        
+        # Adjust the status with the largest gap
+        current = current_dist.get(max_gap_status, 0)
+        target = target_distributions.get(max_gap_status, 0)
+        
+        if current < target:
+            # Need to convert TO this status
+            deficit = (target - current) * total_weight
+            logger.info(f"Need to add {deficit:,.0f} weighted units to {max_gap_status}")
+            
+            # Determine source statuses to convert from
+            # ONLY allow legally valid conversions
+            if max_gap_status == 'married_filing_jointly':
+                # Can only convert from MFS (both are married couples)
+                df = _convert_to_status(df, 'married_filing_separately', max_gap_status, deficit, weight_col)
+            elif max_gap_status == 'single':
+                # Can only convert from HoH (both are unmarried)
+                df = _convert_to_status(df, 'head_of_household', max_gap_status, deficit, weight_col)
+            elif max_gap_status == 'head_of_household':
+                # Can only convert from single (both are unmarried)
+                df = _convert_to_status(df, 'single', max_gap_status, deficit, weight_col)
+            elif max_gap_status == 'married_filing_separately':
+                # Can only convert from MFJ (both are married couples)
+                df = _convert_to_status(df, 'married_filing_jointly', max_gap_status, deficit, weight_col)
+        
+        else:
+            # Need to convert FROM this status
+            surplus = (current - target) * total_weight
+            logger.info(f"Need to remove {surplus:,.0f} weighted units from {max_gap_status}")
+            
+            # Determine target statuses to convert to
+            # ONLY allow legally valid conversions
+            if max_gap_status == 'married_filing_jointly':
+                # Can only convert to MFS (both are married couples)
+                df = _convert_from_status(df, max_gap_status, 'married_filing_separately', surplus, weight_col)
+            elif max_gap_status == 'single':
+                # Can only convert to HoH (both are unmarried)
+                df = _convert_from_status(df, max_gap_status, 'head_of_household', surplus, weight_col)
+            elif max_gap_status == 'head_of_household':
+                # Can only convert to single (both are unmarried)
+                df = _convert_from_status(df, max_gap_status, 'single', surplus, weight_col)
+            elif max_gap_status == 'married_filing_separately':
+                # Can only convert to MFJ (both are married couples)
+                df = _convert_from_status(df, max_gap_status, 'married_filing_jointly', surplus, weight_col)
+    
+    # Final statistics
+    total_weight = df[weight_col].sum()
+    final_dist = df.groupby('filing_status')[weight_col].sum() / total_weight
+    calibrated_count = df['calibrated'].sum()
+    calibrated_weight = df[df['calibrated']][weight_col].sum()
+    
+    logger.info("\n" + "="*80)
+    logger.info("CALIBRATION COMPLETE")
+    logger.info("="*80)
+    logger.info(f"\nFinal Distribution:")
+    logger.info(f"{'Status':<30} {'Current':>10} {'Target':>10} {'Gap':>10}")
+    logger.info("-"*80)
+    
+    for status in ['single', 'married_filing_jointly', 'head_of_household', 'married_filing_separately']:
+        current = final_dist.get(status, 0)
+        target = target_distributions.get(status, 0)
+        gap = current - target
+        logger.info(f"{status:<30} {current:>9.1%} {target:>9.1%} {gap:>+9.1%}")
+    
+    logger.info(f"\nCalibrated units: {calibrated_count:,} ({calibrated_weight:,.0f} weighted, {calibrated_weight/total_weight:.1%})")
+    
+    return df
+
+
+def _convert_to_status(df: pd.DataFrame, from_status: str, to_status: str, 
+                      target_weight: float, weight_col: str) -> pd.DataFrame:
+    """Helper function to convert units FROM one status TO another."""
+    # Get candidates
+    candidates = df[df['filing_status'] == from_status].copy()
+    
+    if candidates.empty or target_weight <= 0:
+        return df
+    
+    # Sort by income (higher income more likely for joint, lower for others)
+    if to_status == 'married_filing_jointly':
+        candidates = candidates.sort_values('income', ascending=False)
+    else:
+        candidates = candidates.sort_values('income', ascending=True)
+    
+    # Select units to convert
+    cumsum = candidates[weight_col].cumsum()
+    to_convert = candidates[cumsum <= target_weight]
+    
+    if len(to_convert) > 0:
+        df.loc[to_convert.index, 'filing_status'] = to_status
+        df.loc[to_convert.index, 'calibrated'] = True
+        logger.info(f"  Converted {len(to_convert):,} units ({to_convert[weight_col].sum():,.0f} weighted) from {from_status} to {to_status}")
+    
+    return df
+
+
+def _convert_from_status(df: pd.DataFrame, from_status: str, to_status: str,
+                        target_weight: float, weight_col: str) -> pd.DataFrame:
+    """Helper function to convert units FROM one status TO another (same as _convert_to_status)."""
+    return _convert_to_status(df, from_status, to_status, target_weight, weight_col)

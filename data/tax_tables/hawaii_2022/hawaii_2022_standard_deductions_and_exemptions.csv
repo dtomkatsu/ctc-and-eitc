@@ -1,0 +1,8 @@
+Filing_Status,Standard_Deduction,Personal_Exemption,Notes
+Single,2200,1144,Regular personal exemption per person
+Married Filing Jointly,4400,1144,Regular personal exemption per person
+Married Filing Separately,2200,1144,Regular personal exemption per person
+Head of Household,3212,1144,Regular personal exemption per person
+Qualifying Widow(er),4400,1144,Regular personal exemption per person
+All Filing Statuses,N/A,1144,Additional exemption for age 65 or older (per qualifying person)
+All Filing Statuses,N/A,7000,"Disability exemption for blind, deaf, or totally disabled (in lieu of regular $1,144 exemption)"

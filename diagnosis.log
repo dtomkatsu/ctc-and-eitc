@@ -1,0 +1,192 @@
+================================================================================
+DIAGNOSING REMAINING 12.4% COVERAGE GAP
+================================================================================
+
+Current: 556,643 tax units (87.6%)
+Target:  635,117 tax units (100%)
+Gap:     78,474 missing filers (12.4%)
+
+================================================================================
+1. UNASSIGNED ADULTS ANALYSIS
+================================================================================
+
+Using: tax_units_calibrated_20251015_101934.parquet
+
+Adult Assignment:
+  Total adults in PUMS:             1,145,448
+  Adults in tax units:                760,295
+  Unassigned adults:                  385,153
+  Assignment rate:                     66.4%
+
+Potential if all adults assigned:
+  Current tax units:                  556,643
+  Potential additional:               385,153
+  Potential total:                    941,796
+  SOI target:                         635,117
+  Would be:                           148.3% of target
+
+  Assigned adult IDs in tax units: 46,757
+
+================================================================================
+2. HOUSEHOLD SIZE ANALYSIS
+================================================================================
+
+Tax Unit Creation by Household Size:
+ Adults   Households    Avg Units   Max Possible       Actual   % of Max
+--------------------------------------------------------------------------------
+      1      134,876         0.90              1      121,963      90.4%
+      2      227,229         0.81              2      185,064      40.7%
+      3       65,153         1.58              3      102,806      52.6%
+      4       32,010         2.09              4       66,760      52.1%
+      5       13,127         2.88              5       37,775      57.6%
+      6        5,278         3.57              6       18,841      59.5%
+      7        2,909         3.77              6       10,981      62.9%
+      8        1,447         3.79              6        5,479      63.1%
+      9          747         3.84              6        2,869      64.0%
+     10          589         3.74              6        2,206      62.4%
+     11          266         3.49              6          929      58.2%
+     12          132         3.94              6          520      65.7%
+     13           43         3.71              6          159      61.8%
+     14           20         3.69              6           74      61.4%
+     15            8         5.92              6           47      98.7%
+     16           22         3.88              6           85      64.6%
+     17           27         3.08              6           83      51.4%
+
+
+Households Hitting Cap (6 tax units):
+  Households with 6+ adults: 672
+  Weighted count: 11,488
+  Tax units created: 42,274
+  Average per household: 3.68
+
+================================================================================
+3. RELATIONSHIP CODE ANALYSIS
+================================================================================
+
+Adults by Relationship to Householder:
+Relationship                          Count  % of Adults
+--------------------------------------------------------------------------------
+Householder                         483,951        42.2%
+Spouse                              241,001        21.0%
+Other relative                      145,121        12.7%
+Unknown (34)                         32,209         2.8%
+Unknown (36)                         31,666         2.8%
+Parent                               30,714         2.7%
+Unknown (33)                         30,014         2.6%
+Unknown (38)                         28,919         2.5%
+Institutionalized                    27,157         2.4%
+Other nonrelative                    22,214         1.9%
+Unknown (32)                         21,727         1.9%
+Noninstitutionalized                 17,477         1.5%
+Unknown (37)                          9,629         0.8%
+Unknown (31)                          7,957         0.7%
+In-law                                5,723         0.5%
+Grandchild                            4,043         0.4%
+Child                                 3,229         0.3%
+Sibling                               2,670         0.2%
+Unknown (35)                             27         0.0%
+
+
+Potentially Excluded Relationship Codes:
+
+  Other relatives (25): 145,121
+    These should file separately!
+
+  Noninstitutionalized (30): 17,477
+    These might be group quarters - may not all file
+
+  Adult children (23): 3,229
+    These should file separately!
+
+  Unknown codes (>30): 162,148
+    Codes: [np.int64(31), np.int64(32), np.int64(33), np.int64(34), np.int64(35), np.int64(36), np.int64(37), np.int64(38)]
+
+================================================================================
+4. INCOME DISTRIBUTION ANALYSIS
+================================================================================
+
+Adults by Income Level:
+Income Range                Count  % of Adults
+--------------------------------------------------------------------------------
+Negative                    1,434         0.1%
+$0                         98,127         8.6%
+$1-$5K                     66,414         5.8%
+$5K-$10K                   73,936         6.5%
+$10K-$15K                  75,417         6.6%
+$15K-$20K                  64,589         5.6%
+$20K-$30K                 136,815        11.9%
+$30K-$50K                 229,868        20.1%
+$50K-$75K                 182,538        15.9%
+$75K-$100K                 92,357         8.1%
+$100K+                    123,953        10.8%
+
+
+Zero Income Adults: 98,127 (8.6%)
+  These might be:
+    - Dependents (students, stay-at-home spouses)
+    - Unemployed
+    - Retired with only SS income (not in PINCP)
+
+  Zero-income adults by relationship:
+    Spouse: 23,408
+    Other relative: 21,651
+    Householder: 19,418
+    Code 38: 4,127
+    Code 33: 3,865
+
+================================================================================
+5. PROPOSED SOLUTIONS
+================================================================================
+
+Current Gap: 78,474 filers (12.4%)
+
+Potential Solutions:
+
+1. Solution 1: Remove household cap entirely
+   Description: Allow unlimited tax units per household
+   Expected gain: 50,000-100,000 units
+   Risk: May over-count if not careful
+   Effort: Low (1 line change)
+   Recommendation: ⭐⭐⭐ Try this first
+
+2. Solution 2: Ensure all adults create tax units
+   Description: Review logic to ensure every adult (except spouses) creates a tax unit
+   Expected gain: 80,000-150,000 units
+   Risk: May over-count dependents
+   Effort: Medium (logic review)
+   Recommendation: ⭐⭐⭐ High impact
+
+3. Solution 3: Include "other relatives" (RELSHIPP=25)
+   Description: Ensure other relatives in household create separate tax units
+   Expected gain: 30,000-50,000 units
+   Risk: Low
+   Effort: Low (check if already included)
+   Recommendation: ⭐⭐ Good addition
+
+4. Solution 4: Apply scaling factor
+   Description: Multiply all weights by 1.141 (635117/556643)
+   Expected gain: 78,474 units (exact)
+   Risk: None (just scaling)
+   Effort: Very low (post-processing)
+   Recommendation: ⭐ Fallback option
+
+5. Solution 5: Lower income threshold for tax unit creation
+   Description: Create tax units for very low-income adults
+   Expected gain: 20,000-40,000 units
+   Risk: May include non-filers
+   Effort: Low (already removed threshold)
+   Recommendation: ⭐ Already done
+
+
+================================================================================
+DIAGNOSIS COMPLETE
+================================================================================
+
+
+KEY FINDINGS:
+  1. Unassigned adults: 385,153
+  2. If all assigned: 941,796 units (148.3% of target)
+  3. Primary issue: Not all adults creating tax units
+
+  RECOMMENDATION: Remove household cap entirely and ensure all adults
+                  (except spouses) create their own tax units.
