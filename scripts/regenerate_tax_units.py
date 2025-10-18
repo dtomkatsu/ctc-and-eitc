@@ -177,6 +177,22 @@ def main():
     total_pct_diff = (total_diff / dotax_tax_benchmarks['total'] * 100)
     print(f"\nTOTAL                     | ${total_tax:>9.1f} | ${dotax_tax_benchmarks['total']:>9.0f} | ${total_diff:>+9.1f} | {total_pct_diff:>+6.1f}%")
     
+    # Validate against DOTAX Table 12A (tax liability by AGI bracket)
+    from src.tax.validation.dotax_table_12a import validate_against_table_12a
+    
+    logger.info("\n")
+    table_12a_results = validate_against_table_12a(
+        tax_units,
+        weight_col='weight',
+        agi_col='agi',
+        tax_col='hi_state_tax'
+    )
+    
+    # Save Table 12A validation results
+    validation_output = output_file.replace('tax_units_calibrated', 'validation_table_12a').replace('.parquet', '.csv')
+    table_12a_results.to_csv(validation_output, index=False)
+    logger.info(f"\n💾 Table 12A validation saved to: {validation_output}")
+    
     logger.info(f"\nOutput file: {output_file}")
 
 
