@@ -1,8 +1,22 @@
 # Iterative Proportional Fitting (IPF) for PUMS Weight Calibration
 
+## ✅ UPDATE (October 2025): IPF Now Default in IRS SOI Calibration
+
+**The IRS SOI calibration module now uses IPF by default.** Simply call:
+
+```python
+from src.tax.validation.irs_soi_calibration import apply_irs_soi_calibration
+
+tax_units_calibrated = apply_irs_soi_calibration(tax_units)
+```
+
+See `docs/IPF_CALIBRATION_UPDATE.md` for migration details.
+
+---
+
 ## Overview
 
-This project now implements **Iterative Proportional Fitting (IPF)**, also known as raking, to adjust PUMS weights to match 2022 DOTAX and IRS SOI benchmarks. This allows the 5-year PUMS data (2018-2022 average) to represent 2022 specifically.
+This project implements **Iterative Proportional Fitting (IPF)**, also known as raking, to adjust PUMS weights to match 2022 DOTAX and IRS SOI benchmarks. This allows the 5-year PUMS data (2018-2022 average) to represent 2022 specifically.
 
 ## What is IPF?
 

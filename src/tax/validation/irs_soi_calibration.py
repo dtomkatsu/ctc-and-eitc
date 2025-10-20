@@ -100,6 +100,15 @@ def apply_irs_soi_calibration(
     # Initialize working weight
     df[output_col] = df[weight_col].copy()
     
+    # Estimate AGI if not present (use income/total_income as proxy)
+    if 'agi' not in df.columns:
+        if 'total_income' in df.columns:
+            df['agi'] = df['total_income'] * 0.99  # Rough estimate: AGI ≈ 99% of total income
+        elif 'income' in df.columns:
+            df['agi'] = df['income'] * 0.99  # Rough estimate: AGI ≈ 99% of income
+        else:
+            raise ValueError("DataFrame must have 'agi', 'total_income', or 'income' column")
+    
     # Assign AGI brackets
     df['agi_bracket'] = df['agi'].apply(assign_agi_bracket)
     

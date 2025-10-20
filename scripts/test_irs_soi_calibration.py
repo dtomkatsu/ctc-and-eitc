@@ -14,12 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.tax.validation.irs_soi_calibration import (
-    apply_irs_soi_calibration, 
-    validate_irs_soi_calibration,
-    DOTAX_FILING_STATUS,
-    DOTAX_AGI_BRACKETS
-)
+from src.tax.validation.irs_soi_calibration import apply_irs_soi_calibration, validate_irs_soi_calibration
 from src.tax.validation.ipf_calibration import apply_ipf_calibration, validate_ipf_calibration
 
 logging.basicConfig(
