@@ -18,6 +18,7 @@ from src.tax.validation.irs_soi_calibration import (
     DOTAX_FILING_STATUS,
     DOTAX_AGI_BRACKETS
 )
+from src.tax.income import apply_capital_gains_separation, get_capital_gains_summary
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,8 +63,34 @@ def main():
     
     logger.info("✅ Calibration complete")
     
-    # Step 3: Validate results
-    logger.info("\nStep 3: Validating results...")
+    # Step 3: Apply capital gains separation
+    logger.info("\nStep 3: Applying capital gains separation...")
+    
+    tax_units_calibrated = apply_capital_gains_separation(
+        tax_units_calibrated,
+        agi_col='agi',
+        income_col='income'
+    )
+    
+    logger.info("✅ Capital gains separation complete")
+    
+    # Show capital gains summary
+    logger.info("\nCapital Gains Summary by AGI Bracket:")
+    cap_gains_summary = get_capital_gains_summary(
+        tax_units_calibrated,
+        weight_col='weight_irs_calibrated'
+    )
+    
+    # Format for display
+    cap_gains_summary['returns'] = cap_gains_summary['returns'].astype(int)
+    cap_gains_summary['total_income'] = cap_gains_summary['total_income'] / 1e6  # Convert to millions
+    cap_gains_summary['capital_gains'] = cap_gains_summary['capital_gains'] / 1e6
+    cap_gains_summary = cap_gains_summary.round(1)
+    
+    logger.info(f"\n{cap_gains_summary.to_string()}")
+    
+    # Step 4: Validate results
+    logger.info("\nStep 4: Validating results...")
     
     validation_results = validate_irs_soi_calibration(
         tax_units_calibrated,
@@ -123,8 +150,8 @@ def main():
         symbol = '✅' if error < 0.1 else '⚠️' if error < 1 else '❌'
         logger.info(f"{label:<20} {actual:>12,.0f} {target:>12,.0f} {error:>9.2f}% {symbol}")
     
-    # Step 4: Save calibrated results
-    logger.info("\nStep 4: Saving calibrated results...")
+    # Step 5: Save calibrated results
+    logger.info("\nStep 5: Saving results with capital gains separation...")
     
     output_file = 'data/processed/tax_units_ipf_calibrated.parquet'
     
@@ -140,10 +167,15 @@ def main():
     logger.info("PIPELINE TEST COMPLETE")
     logger.info("="*80)
     logger.info("\n✅ All steps completed successfully!")
+    logger.info("\nKey columns added:")
+    logger.info("  • weight_irs_calibrated - IPF calibrated weights")
+    logger.info("  • regular_income - Income from wages, business, etc.")
+    logger.info("  • capital_gains_income - Capital gains component")
     logger.info("\nNext steps:")
-    logger.info("  1. Use 'weight_irs_calibrated' column for all weighted calculations")
-    logger.info("  2. Calculate Hawaii state taxes on calibrated data")
-    logger.info("  3. Run downstream analysis with improved accuracy")
+    logger.info("  1. Use 'weight_irs_calibrated' for all weighted calculations")
+    logger.info("  2. Use 'regular_income' for tax calculations (excludes cap gains)")
+    logger.info("  3. Apply preferential cap gains tax rates to 'capital_gains_income'")
+    logger.info("  4. Run downstream analysis with improved accuracy")
     logger.info(f"\n📁 Output: {output_file}")
 
 

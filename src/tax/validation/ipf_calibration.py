@@ -284,3 +284,53 @@ def validate_ipf_calibration(
     }
     
     return validation
+
+
+def iterative_proportional_fitting(
+    df: pd.DataFrame,
+    weight_col: str,
+    category_col: str,
+    targets: Dict[str, float],
+    max_iterations: int = 100,
+    tolerance: float = 0.001
+) -> pd.Series:
+    """
+    Generic IPF function for calibrating weights to target totals.
+    
+    Args:
+        df: DataFrame with records to calibrate
+        weight_col: Column name for input weights
+        category_col: Column name for categories
+        targets: Dictionary mapping category values to target totals
+        max_iterations: Maximum iterations
+        tolerance: Convergence tolerance (as fraction, e.g., 0.001 = 0.1%)
+        
+    Returns:
+        Series with calibrated weights
+    """
+    weights = df[weight_col].copy()
+    
+    for iteration in range(max_iterations):
+        max_error = 0
+        
+        # Adjust weights for each category
+        for category, target in targets.items():
+            mask = df[category_col] == category
+            current = weights[mask].sum()
+            
+            if current > 0 and target > 0:
+                factor = target / current
+                weights[mask] *= factor
+                
+                # Track maximum error
+                error = abs(factor - 1.0)
+                max_error = max(max_error, error)
+        
+        # Check convergence
+        if max_error < tolerance:
+            logger.debug(f"IPF converged after {iteration + 1} iterations (max error: {max_error:.4f})")
+            break
+    else:
+        logger.warning(f"IPF did not converge after {max_iterations} iterations (max error: {max_error:.4f})")
+    
+    return weights

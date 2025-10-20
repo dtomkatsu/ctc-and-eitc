@@ -21,7 +21,24 @@ total_returns = tax_units_calibrated['weight_irs_calibrated'].sum()
 print(f"Total returns: {total_returns:,.0f}")
 ```
 
-### 2. Calculate Hawaii State Taxes
+### 2. Separate Capital Gains Income
+
+```python
+from src.tax.income import apply_capital_gains_separation
+
+# Separate income into regular income and capital gains
+tax_units_calibrated = apply_capital_gains_separation(
+    tax_units_calibrated,
+    agi_col='agi',
+    income_col='income'
+)
+
+# Now you have:
+# - regular_income (wages, business, etc.)
+# - capital_gains_income (preferential tax treatment)
+```
+
+### 3. Calculate Hawaii State Taxes
 
 ```python
 from src.tax.hawaii_calculator import HawaiiTaxCalculator
@@ -44,7 +61,7 @@ total_revenue = (
 print(f"Total state revenue: ${total_revenue/1e9:.2f}B")
 ```
 
-### 3. Validate Results
+### 4. Validate Results
 
 ```python
 from src.tax.validation.irs_soi_calibration import validate_irs_soi_calibration
@@ -64,21 +81,26 @@ print(validation)
 ```python
 import pandas as pd
 from src.tax.validation.irs_soi_calibration import apply_irs_soi_calibration
+from src.tax.income import apply_capital_gains_separation
 from src.tax.hawaii_calculator import HawaiiTaxCalculator
 
 # Step 1: Load tax units
 tax_units = pd.read_parquet('data/processed/tax_units.parquet')
 print(f"Loaded {len(tax_units):,} tax units")
 
-# Step 2: Apply calibration
+# Step 2: Apply IPF calibration
 tax_units = apply_irs_soi_calibration(tax_units)
 print(f"Total returns: {tax_units['weight_irs_calibrated'].sum():,.0f}")
 
-# Step 3: Calculate taxes
+# Step 3: Separate capital gains from regular income
+tax_units = apply_capital_gains_separation(tax_units)
+print(f"Capital gains: {(tax_units['capital_gains_income'] * tax_units['weight_irs_calibrated']).sum()/1e9:.2f}B")
+
+# Step 4: Calculate taxes
 calculator = HawaiiTaxCalculator()
 tax_units = calculator.calculate_tax_units_batch(tax_units, year=2024)
 
-# Step 4: Analyze by filing status
+# Step 5: Analyze by filing status
 analysis = tax_units.groupby('filing_status').agg({
     'weight_irs_calibrated': 'sum',
     'hi_tax_tax_liability': lambda x: (x * tax_units.loc[x.index, 'weight_irs_calibrated']).sum()
@@ -90,7 +112,7 @@ analysis['Avg Tax'] = analysis['Total Tax'] / analysis['Returns']
 print("\nAnalysis by Filing Status:")
 print(analysis)
 
-# Step 5: Save results
+# Step 6: Save results
 tax_units.to_parquet('data/processed/tax_units_final.parquet')
 print("\n✅ Complete! Results saved.")
 ```
@@ -102,6 +124,12 @@ print("\n✅ Complete! Results saved.")
 - **Method**: Iterative Proportional Fitting (industry standard)
 - **Speed**: Converges in ~30-50 iterations
 - **Automatic**: No manual tuning required
+
+### Capital Gains Separation
+- **Data Source**: DOTAX SOI 2022 Table 21
+- **Method**: AGI bracket-specific percentages
+- **Output**: Separate regular_income and capital_gains_income columns
+- **Use Case**: Apply preferential tax rates to capital gains
 
 ### Hawaii Tax Calculator
 - **Years**: 2017-2031 tax brackets supported
