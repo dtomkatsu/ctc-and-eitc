@@ -1,0 +1,26 @@
+{
+  "year": 2022,
+  "standard_deduction": {
+    "single": 2200,
+    "joint": 4400,
+    "hoh": 3212,
+    "mfs": 2200
+  },
+  "standard_deduction_additional_age": {
+    "single": 1300,
+    "joint": 1050,
+    "hoh": 1300,
+    "mfs": 1300
+  },
+  "personal_exemption": 1144,
+  "itemized_deduction_limits": {
+    "medical_agi_threshold": 0.075,
+    "charitable_agi_limit": 0.5,
+    "misc_agi_threshold": 0.02
+  },
+  "itemized_deduction_cap": null,
+  "itemized_deduction_cap_threshold": null,
+  "exemption_phaseout_start": null,
+  "exemption_phaseout_rate": null,
+  "modifications": []
+}
