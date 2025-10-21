@@ -143,7 +143,7 @@ def apply_hybrid_tax_calibration(
     Returns:
         DataFrame with calibrated weights
     """
-    from src.tax.validation.ipf_calibration import iterative_proportional_fitting
+    from src.tax.validation.ipf_calibration import iterative_proportional_fitting_2d
     
     # Load hybrid benchmarks
     benchmarks = load_hybrid_benchmarks()
@@ -190,31 +190,38 @@ def apply_hybrid_tax_calibration(
         axis=1
     )
     
-    # Build target totals for IPF
-    targets = {}
+    # Build target totals for IPF (both returns and AGI)
+    targets_returns = {}
+    targets_agi = {}
     for _, row in benchmarks.iterrows():
         status = row['filing_status']
         bracket = (row['agi_min'], row['agi_max'])
         category = f"{status}_{bracket}"
-        targets[category] = row['returns']
+        targets_returns[category] = row['returns']
+        # Convert AGI from millions to actual dollars
+        targets_agi[category] = row['total_agi_millions'] * 1_000_000
     
     # Count brackets by source
-    a9_count = len([k for k in targets.keys() if '150000.0)' not in k or k.endswith('150000.0)')])
-    a2_count = len([k for k in targets.keys() if '150000.0,' in k])
+    a9_count = len([k for k in targets_returns.keys() if '150000.0)' not in k or k.endswith('150000.0)')])
+    a2_count = len([k for k in targets_returns.keys() if '150000.0,' in k])
     
-    logger.info(f"Calibrating {len(df_calibrate):,} tax units to {len(targets)} hybrid brackets...")
-    logger.info(f"Target total: {sum(targets.values()):,.0f} returns")
+    logger.info(f"Calibrating {len(df_calibrate):,} tax units to {len(targets_returns)} hybrid brackets...")
+    logger.info(f"Target total returns: {sum(targets_returns.values()):,.0f}")
+    logger.info(f"Target total AGI: ${sum(targets_agi.values())/1e9:.2f}B")
     logger.info(f"  • A-9 brackets (< $150k): {a9_count} brackets")
     logger.info(f"  • A-2 brackets (≥ $150k): {a2_count} brackets")
     
-    # Apply IPF calibration
-    df_calibrate[output_weight_col] = iterative_proportional_fitting(
+    # Apply two-dimensional IPF calibration (returns + AGI)
+    # Use more iterations for better convergence on difficult brackets
+    df_calibrate[output_weight_col] = iterative_proportional_fitting_2d(
         df_calibrate,
         weight_col=weight_col,
         category_col='_ipf_category',
-        targets=targets,
-        max_iterations=max_iterations,
-        tolerance=tolerance
+        value_col=agi_col,
+        targets_count=targets_returns,
+        targets_total=targets_agi,
+        max_iterations=500,  # Increased from default 100
+        tolerance=0.0005     # Tightened from default 0.001
     )
     
     # For unassigned records (if any), use original weights

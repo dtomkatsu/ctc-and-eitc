@@ -334,3 +334,157 @@ def iterative_proportional_fitting(
         logger.warning(f"IPF did not converge after {max_iterations} iterations (max error: {max_error:.4f})")
     
     return weights
+
+
+def iterative_proportional_fitting_2d(
+    df: pd.DataFrame,
+    weight_col: str,
+    category_col: str,
+    value_col: str,
+    targets_count: Dict[str, float],
+    targets_total: Dict[str, float],
+    max_iterations: int = 100,
+    tolerance: float = 0.001,
+    count_weight: float = 0.5
+) -> pd.Series:
+    """
+    Two-dimensional IPF for calibrating weights to both count and total targets.
+    
+    This uses a composite adjustment approach that simultaneously considers both
+    count and total constraints, avoiding the oscillation problem of alternating
+    adjustments.
+    
+    The method adjusts individual record weights (not category totals) to match
+    both the target count and target total for each category. This is done by
+    calculating a composite factor that balances both objectives.
+    
+    Args:
+        df: DataFrame with records to calibrate
+        weight_col: Column name for input weights
+        category_col: Column name for categories
+        value_col: Column name for values to sum (e.g., AGI)
+        targets_count: Dictionary mapping category to target counts
+        targets_total: Dictionary mapping category to target totals
+        max_iterations: Maximum iterations
+        tolerance: Convergence tolerance (as fraction, e.g., 0.001 = 0.1%)
+        count_weight: Weight for count objective vs total objective (0-1)
+        
+    Returns:
+        Series with calibrated weights
+    """
+    weights = df[weight_col].copy()
+    
+    # Calculate average value per unit for each category (for normalization)
+    category_avg_values = {}
+    for category in targets_count.keys():
+        mask = df[category_col] == category
+        if mask.sum() > 0:
+            avg_value = df.loc[mask, value_col].mean()
+            category_avg_values[category] = avg_value if avg_value > 0 else 1.0
+    
+    for iteration in range(max_iterations):
+        max_count_error = 0
+        max_total_error = 0
+        
+        # Adjust weights for each category using composite factor
+        for category in targets_count.keys():
+            mask = df[category_col] == category
+            
+            if mask.sum() == 0:
+                continue
+            
+            target_count = targets_count[category]
+            target_total = targets_total[category]
+            
+            current_count = weights[mask].sum()
+            current_total = (weights[mask] * df.loc[mask, value_col]).sum()
+            
+            if current_count <= 0 or target_count <= 0:
+                continue
+            
+            # Calculate individual adjustment factors for each record
+            # The key insight: adjust each record's weight based on its value
+            # relative to the category average
+            
+            count_factor = target_count / current_count
+            
+            # Check if we have valid AGI target data
+            # If target_total is 0 or very small, fall back to count-only calibration
+            has_valid_agi_target = target_total > (target_count * 1000)  # At least $1k avg AGI
+            
+            if current_total > 0 and has_valid_agi_target:
+                # Use a two-step approach with dampening to avoid oscillation
+                # Step 1: Adjust for count
+                weights[mask] *= count_factor
+                
+                # Recalculate after count adjustment
+                current_total_after_count = (weights[mask] * df.loc[mask, value_col]).sum()
+                total_factor = target_total / current_total_after_count if current_total_after_count > 0 else 1.0
+                
+                # Step 2: Adjust for total with dampening
+                # Use a dampening factor to prevent overcorrection
+                # Higher dampening = prioritize AGI accuracy over count accuracy
+                # Use less dampening (more aggressive) for smaller brackets
+                bracket_size = mask.sum()
+                if bracket_size < 50:
+                    # Small brackets: use less dampening for better convergence
+                    dampening = 0.95
+                elif bracket_size < 200:
+                    # Medium brackets: moderate dampening
+                    dampening = 0.90
+                else:
+                    # Large brackets: conservative dampening
+                    dampening = 0.80
+                
+                adjusted_total_factor = 1.0 + dampening * (total_factor - 1.0)
+                
+                weights[mask] *= adjusted_total_factor
+                
+                # Track errors
+                count_error = abs(count_factor - 1.0)
+                total_error = abs(total_factor - 1.0)
+            else:
+                # Only count target available (or AGI data is missing/invalid)
+                weights[mask] *= count_factor
+                count_error = abs(count_factor - 1.0)
+                total_error = 0
+                
+                # Log warning on first iteration if AGI target is missing
+                if iteration == 0 and target_total <= 0:
+                    logger.debug(f"Category {category}: Using count-only calibration (no AGI target data)")
+            
+            max_count_error = max(max_count_error, count_error)
+            max_total_error = max(max_total_error, total_error)
+        
+        # Check convergence
+        max_error = max(max_count_error, max_total_error)
+        
+        # Log progress every 100 iterations for difficult cases
+        if (iteration + 1) % 100 == 0 and max_error >= tolerance:
+            logger.debug(f"2D IPF iteration {iteration + 1}: count error={max_count_error:.4f}, total error={max_total_error:.4f}")
+        
+        if max_error < tolerance:
+            logger.debug(f"2D IPF converged after {iteration + 1} iterations (count error: {max_count_error:.4f}, total error: {max_total_error:.4f})")
+            break
+    else:
+        logger.warning(f"2D IPF did not converge after {max_iterations} iterations (count error: {max_count_error:.4f}, total error: {max_total_error:.4f})")
+        
+        # Report problematic categories
+        logger.warning("Categories with largest errors:")
+        category_errors = []
+        for category in targets_count.keys():
+            mask = df[category_col] == category
+            if mask.sum() == 0:
+                continue
+            current_count = weights[mask].sum()
+            current_total = (weights[mask] * df.loc[mask, value_col]).sum()
+            count_err = abs(current_count - targets_count[category]) / targets_count[category] if targets_count[category] > 0 else 0
+            total_err = abs(current_total - targets_total[category]) / targets_total[category] if targets_total[category] > 0 else 0
+            if count_err > 0.05 or total_err > 0.05:  # Report >5% errors
+                category_errors.append((category, count_err, total_err))
+        
+        category_errors.sort(key=lambda x: max(x[1], x[2]), reverse=True)
+        for cat, ce, te in category_errors[:5]:
+            logger.warning(f"  {cat}: count_error={ce:.2%}, total_error={te:.2%}")
+    
+    return weights

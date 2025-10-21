@@ -60,25 +60,28 @@ def parse_a2_table():
     records = []
     
     # Define brackets from the table
+    # NOTE: Row index 19 is "TOTAL RESIDENT TAXABLE" - do NOT include it
+    # Row indices are 0-based, so file row 8 = index 7, etc.
     brackets = [
-        # TAXABLE RETURNS
-        (0, 10000, 8),
-        (10000, 20000, 9),
-        (20000, 30000, 10),
-        (30000, 40000, 11),
-        (40000, 50000, 12),
-        (50000, 75000, 13),
-        (75000, 100000, 14),
-        (100000, 150000, 15),
-        (150000, 200000, 16),
-        (200000, 300000, 17),
-        (300000, 400000, 18),
-        (400000, 999999999, 19),  # $400k and over
-        # NONTAXABLE RETURNS
-        (-999999999, 0, 23),  # Loss
-        (0, 5000, 24),  # $0 to under $5k (nontaxable)
-        (5000, 10000, 25),  # $5k to under $10k (nontaxable)
-        (10000, 999999999, 26),  # $10k and over (nontaxable)
+        # TAXABLE RETURNS (file rows 8-19, indices 7-18)
+        (0, 10000, 7),       # File row 8: $0 to under $10k
+        (10000, 20000, 8),   # File row 9: $10k to under $20k
+        (20000, 30000, 9),   # File row 10: $20k to under $30k
+        (30000, 40000, 10),  # File row 11: $30k to under $40k
+        (40000, 50000, 11),  # File row 12: $40k to under $50k
+        (50000, 75000, 12),  # File row 13: $50k to under $75k
+        (75000, 100000, 13), # File row 14: $75k to under $100k
+        (100000, 150000, 14),# File row 15: $100k to under $150k
+        (150000, 200000, 15),# File row 16: $150k to under $200k
+        (200000, 300000, 16),# File row 17: $200k to under $300k
+        (300000, 400000, 17),# File row 18: $300k to under $400k
+        (400000, 999999999, 18),  # File row 19: $400k and over
+        # Row index 19 is TOTAL - SKIP IT
+        # NONTAXABLE RETURNS (file rows 23-26, indices 22-25)
+        (-999999999, 0, 22), # File row 23: Loss
+        (0, 5000, 23),       # File row 24: $0 to under $5k (nontaxable)
+        (5000, 10000, 24),   # File row 25: $5k to under $10k (nontaxable)
+        (10000, 999999999, 25),  # File row 26: $10k and over (nontaxable)
     ]
     
     for agi_min, agi_max, row_idx in brackets:
@@ -89,12 +92,13 @@ def parse_a2_table():
             single_returns = clean_currency(df1.iloc[row_idx, 8])
             hoh_returns = clean_currency(df1.iloc[row_idx, 12])
             
+            # AGI columns: Joint=16, Single=18, HoH=20
             joint_agi = clean_currency(df1.iloc[row_idx, 16])
-            single_agi = clean_currency(df1.iloc[row_idx, 17])
-            hoh_agi = clean_currency(df1.iloc[row_idx, 18])
+            single_agi = clean_currency(df1.iloc[row_idx, 18])
+            hoh_agi = clean_currency(df1.iloc[row_idx, 20])
             
             # From A2-2: Tax liability
-            if row_idx <= 19:  # Taxable returns
+            if row_idx <= 18:  # Taxable returns (indices 7-18, not including 19 which is TOTAL)
                 joint_tax_before = clean_currency(df2.iloc[row_idx, 8])
                 single_tax_before = clean_currency(df2.iloc[row_idx, 9])
                 hoh_tax_before = clean_currency(df2.iloc[row_idx, 10])
@@ -102,7 +106,7 @@ def parse_a2_table():
                 joint_tax_after = clean_currency(df2.iloc[row_idx, 12])
                 single_tax_after = clean_currency(df2.iloc[row_idx, 13])
                 hoh_tax_after = clean_currency(df2.iloc[row_idx, 14])
-            else:  # Nontaxable returns - only tax after credits available
+            else:  # Nontaxable returns (indices 22-25) - only tax after credits available
                 joint_tax_before = 0
                 single_tax_before = 0
                 hoh_tax_before = 0
