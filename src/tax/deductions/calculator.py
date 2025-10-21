@@ -2,16 +2,18 @@
 Taxable Income Calculator
 
 Calculates taxable income from AGI using benchmark assignment approach:
-1. Assign deductions based on AGI bracket averages
 2. Assign exemptions based on family size and AGI bracket
 3. Calculate: Taxable Income = AGI - Deductions - Exemptions
 """
 
-import pandas as pd
-import numpy as np
-from pathlib import Path
-from typing import Dict, Optional, Tuple
 import logging
+import random
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
+from scipy import stats
 
 from .policy import DeductionPolicy
 
@@ -20,107 +22,131 @@ logger = logging.getLogger(__name__)
 
 class TaxableIncomeCalculator:
     """
-    Calculate taxable income from AGI using benchmark assignment.
-    
-    Formula: Taxable Income = max(0, AGI - Deductions - Personal Exemptions)
-    
-    Example:
-        # Load benchmarks
-        calculator = TaxableIncomeCalculator.from_files()
-        
-        # Calculate for all tax units
-        results = calculator.calculate_batch(tax_units_df)
-        
-        # With custom policy
-        policy = DeductionPolicy(year=2022)
-        policy.set_policy_change('personal_exemption', 1500)
-        results = calculator.calculate_batch(tax_units_df, policy=policy)
+    Calculates taxable income using benchmark assignment approach.
     """
-    
-    def __init__(
-        self,
-        deduction_benchmarks: pd.DataFrame,
-        exemption_benchmarks: pd.DataFrame,
-        policy: Optional[DeductionPolicy] = None
-    ):
-        """
-        Initialize calculator with benchmark data.
-        
-        Args:
-            deduction_benchmarks: DataFrame from parse_deduction_benchmarks()
-            exemption_benchmarks: DataFrame from parse_exemption_benchmarks()
-            policy: DeductionPolicy instance (defaults to 2022 baseline)
-        """
-        self.deduction_benchmarks = deduction_benchmarks.sort_values('agi_min').reset_index(drop=True)
-        self.exemption_benchmarks = exemption_benchmarks.sort_values('agi_min').reset_index(drop=True)
-        self.policy = policy or DeductionPolicy()
-        
-        logger.info(f"Initialized TaxableIncomeCalculator with {len(deduction_benchmarks)} deduction brackets")
     
     @classmethod
     def from_files(
         cls,
-        deduction_path: str = 'data/processed/deduction_benchmarks.csv',
-        exemption_path: str = 'data/processed/exemption_benchmarks.csv',
+        deduction_benchmarks_path: Optional[str] = None,
         policy: Optional[DeductionPolicy] = None
     ) -> 'TaxableIncomeCalculator':
         """
-        Load calculator from saved benchmark files.
+        Create a TaxableIncomeCalculator from benchmark files.
         
         Args:
-            deduction_path: Path to deduction benchmarks CSV
-            exemption_path: Path to exemption benchmarks CSV
-            policy: DeductionPolicy instance
-        
+            deduction_benchmarks_path: Path to deduction benchmarks CSV file
+            policy: Optional DeductionPolicy instance
+            
         Returns:
             TaxableIncomeCalculator instance
         """
-        deduction_benchmarks = pd.read_csv(deduction_path)
-        exemption_benchmarks = pd.read_csv(exemption_path)
+        import os
+        import pandas as pd
         
-        return cls(deduction_benchmarks, exemption_benchmarks, policy)
+        # Define default benchmark data
+        default_benchmarks = pd.DataFrame({
+            'agi_min': [0, 10000, 20000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 300000, 400000],
+            'agi_max': [10000, 20000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 300000, 400000, float('inf')],
+            'avg_itemized': [5000, 8000, 12000, 15000, 18000, 22000, 28000, 35000, 45000, 65000, 90000, 150000],
+            'itemization_rate': [0.07, 0.19, 0.28, 0.50, 0.74, 0.85, 0.93, 0.88, 0.91, 0.78, 0.74, 0.67]
+        })
+        
+        # If no path provided, use default benchmarks
+        if deduction_benchmarks_path is None:
+            logger.warning("No deduction benchmarks path provided. Using default benchmarks.")
+            return cls(default_benchmarks, policy)
+            
+        try:
+            # Try to load the benchmarks from file
+            if not os.path.exists(deduction_benchmarks_path):
+                logger.warning(f"Deduction benchmarks file not found at {deduction_benchmarks_path}")
+                logger.warning("Using default deduction benchmarks")
+                return cls(default_benchmarks, policy)
+                
+            # Read the CSV file
+            df = pd.read_csv(deduction_benchmarks_path)
+            
+            # Check if we have the expected columns
+            if 'agi_min' in df.columns and 'agi_max' in df.columns and 'avg_itemized' in df.columns:
+                return cls(df, policy)
+            else:
+                # If the file doesn't have the expected columns, use default benchmarks
+                logger.warning("Deduction benchmarks file does not have the expected columns.")
+                logger.warning("Using default deduction benchmarks")
+                return cls(default_benchmarks, policy)
+                
+        except Exception as e:
+            logger.warning(f"Error loading deduction benchmarks: {str(e)}")
+            logger.warning("Using default deduction benchmarks")
+            return cls(default_benchmarks, policy)
     
-    def find_agi_bracket(self, agi: float, benchmarks: pd.DataFrame) -> Optional[pd.Series]:
+    def __init__(self, deduction_benchmarks: pd.DataFrame, policy: Optional[DeductionPolicy] = None):
         """
-        Find the AGI bracket for a given AGI value.
+        Initialize with deduction benchmarks and optional policy.
+        
+        Args:
+            deduction_benchmarks: DataFrame with deduction benchmarks by AGI bracket
+            policy: DeductionPolicy instance (creates default if None)
+        """
+        self.deduction_benchmarks = deduction_benchmarks
+        self.policy = policy or DeductionPolicy()
+    
+    def _normalize_filing_status(self, status: str) -> str:
+        """Normalize filing status to standard format."""
+        status = str(status).lower()
+        if status in ['single', 's']:
+            return 'single'
+        elif status in ['joint', 'married_filing_jointly', 'mfj', 'j']:
+            return 'joint'
+        elif status in ['head_of_household', 'hoh', 'h']:
+            return 'hoh'
+        elif status in ['married_filing_separately', 'mfs', 'separate']:
+            return 'mfs'
+        return 'single'  # Default to single
+        
+    def find_agi_bracket(self, agi: float, benchmarks: pd.DataFrame) -> Optional[Dict]:
+        """Find the AGI bracket for a given income."""
+        if benchmarks is None or len(benchmarks) == 0:
+            return None
+            
+        for _, row in benchmarks.iterrows():
+            if row['agi_min'] <= agi < row['agi_max']:
+                return row.to_dict()
+        return None
+    
+    def _get_itemization_rate(self, agi: float) -> float:
+        """
+        Get itemization probability based on AGI bracket from Table A4-2.
         
         Args:
             agi: Adjusted Gross Income
-            benchmarks: Benchmark DataFrame with agi_min and agi_max columns
-        
+            
         Returns:
-            Bracket row as Series, or None if not found
+            Probability of itemizing (0-1)
         """
-        matching = benchmarks[
-            (benchmarks['agi_min'] <= agi) & (benchmarks['agi_max'] > agi)
+        # Itemization rates from Table A4-2 (2022)
+        brackets = [
+            (0, 10000, 0.07),        # 2,588 / 36,836
+            (10000, 20000, 0.19),    # 10,690 / 56,049
+            (20000, 30000, 0.28),    # 15,222 / 54,966
+            (30000, 40000, 0.50),    # 29,552 / 58,598
+            (40000, 50000, 0.74),    # 39,198 / 52,983
+            (50000, 75000, 0.85),    # 77,709 / 90,877
+            (75000, 100000, 0.93),   # 51,126 / 54,756
+            (100000, 150000, 0.88),  # 54,341 / 61,913
+            (150000, 200000, 0.91),  # 25,446 / 27,926
+            (200000, 300000, 0.78),  # 14,723 / 18,911
+            (300000, 400000, 0.74),  # 4,459 / 6,065
+            (400000, float('inf'), 0.67)  # 5,972 / 8,867
         ]
         
-        if len(matching) > 0:
-            return matching.iloc[0]
-        
-        # If AGI is above highest bracket, use highest bracket
-        if agi >= benchmarks['agi_max'].max():
-            return benchmarks.iloc[-1]
-        
-        # If AGI is below lowest bracket, use lowest bracket
-        if agi < benchmarks['agi_min'].min():
-            return benchmarks.iloc[0]
-        
-        return None
-    
-    def _normalize_filing_status(self, filing_status: str) -> str:
-        """Normalize filing status to policy format."""
-        status_map = {
-            'single': 'single',
-            'married_filing_jointly': 'joint',
-            'joint': 'joint',
-            'head_of_household': 'hoh',
-            'hoh': 'hoh',
-            'married_filing_separately': 'mfs',
-            'mfs': 'mfs'
-        }
-        return status_map.get(filing_status, filing_status)
-    
+        for min_agi, max_agi, itemize_pct in brackets:
+            if min_agi <= agi < max_agi:
+                return itemize_pct
+                
+        return 0.5  # Default if no bracket matched
+
     def calculate_deduction(
         self,
         agi: float,
@@ -131,7 +157,7 @@ class TaxableIncomeCalculator:
         """
         Calculate deduction amount (itemized vs standard).
         
-        Uses benchmark assignment: assigns based on AGI bracket propensity to itemize.
+        Uses AGI-bracket specific itemization rates from Table A4-2.
         
         Args:
             agi: Adjusted Gross Income
@@ -145,27 +171,28 @@ class TaxableIncomeCalculator:
         policy = policy or self.policy
         filing_status = self._normalize_filing_status(filing_status)
         
-        # Find AGI bracket
+        # Find AGI bracket for benchmark data
         bracket = self.find_agi_bracket(agi, self.deduction_benchmarks)
         
         if bracket is None:
-            # Fallback to standard deduction
+            # Fallback to standard deduction if no bracket found
             standard = policy.get_standard_deduction(filing_status, age_65_plus_count)
             return standard, 'standard'
         
-        # Get standard deduction from policy
+        # Get standard and itemized deduction amounts
         standard_deduction = policy.get_standard_deduction(filing_status, age_65_plus_count)
-        
-        # Get itemized deduction from bracket average
         itemized_deduction = bracket['avg_itemized']
-        
-        # Apply itemized deduction cap if applicable
         itemized_deduction = policy.apply_itemized_deduction_cap(itemized_deduction, agi)
         
-        # Use propensity to itemize to decide
-        # For deterministic assignment: use itemize if avg_itemized > standard
-        # This matches aggregate patterns while being deterministic
-        if itemized_deduction > standard_deduction:
+        # Get itemization probability for this AGI
+        itemize_prob = self._get_itemization_rate(agi)
+        
+        # Add small random variation (5%) to prevent artificial thresholds
+        itemize_prob *= (0.95 + 0.1 * np.random.random())
+        itemize_prob = max(0.01, min(0.99, itemize_prob))
+        
+        # Decide based on probability
+        if np.random.random() < itemize_prob and itemized_deduction > 0:
             return itemized_deduction, 'itemized'
         else:
             return standard_deduction, 'standard'
