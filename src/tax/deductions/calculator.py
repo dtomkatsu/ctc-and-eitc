@@ -152,7 +152,8 @@ class TaxableIncomeCalculator:
         agi: float,
         filing_status: str,
         age_65_plus_count: int = 0,
-        policy: Optional[DeductionPolicy] = None
+        policy: Optional[DeductionPolicy] = None,
+        forced_type: Optional[str] = None
     ) -> Tuple[float, str]:
         """
         Calculate deduction amount (itemized vs standard).
@@ -183,7 +184,17 @@ class TaxableIncomeCalculator:
         standard_deduction = policy.get_standard_deduction(filing_status, age_65_plus_count)
         itemized_deduction = bracket['avg_itemized']
         itemized_deduction = policy.apply_itemized_deduction_cap(itemized_deduction, agi)
-        
+
+        if forced_type:
+            forced_type = forced_type.lower()
+            if forced_type == 'itemized' and itemized_deduction > 0:
+                return itemized_deduction, 'itemized'
+            if forced_type == 'standard':
+                return standard_deduction, 'standard'
+            # Fallback to choosing the larger deduction if forced to itemize but amount is zero
+            if forced_type == 'itemized':
+                return max(standard_deduction, itemized_deduction), 'itemized' if itemized_deduction >= standard_deduction else 'standard'
+
         # Get itemization probability for this AGI
         itemize_prob = self._get_itemization_rate(agi)
         
@@ -247,7 +258,8 @@ class TaxableIncomeCalculator:
         
         # Calculate deductions
         deduction, deduction_type = self.calculate_deduction(
-            agi, filing_status, age_65_plus_count, policy
+            agi, filing_status, age_65_plus_count, policy,
+            forced_type=tax_unit.get('forced_deduction_type')
         )
         
         # Calculate exemptions
