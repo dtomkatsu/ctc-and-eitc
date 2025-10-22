@@ -115,7 +115,7 @@ class TaxableIncomeCalculator:
                 return row.to_dict()
         return None
     
-    def _get_itemization_rate(self, agi: float) -> float:
+    def _get_itemization_rate(self, agi: float, filing_status: str) -> float:
         """
         Get itemization probability based on AGI bracket from Table A4-2.
         
@@ -141,11 +141,34 @@ class TaxableIncomeCalculator:
             (400000, float('inf'), 0.67)  # 5,972 / 8,867
         ]
         
+        base_rate = 0.5
         for min_agi, max_agi, itemize_pct in brackets:
             if min_agi <= agi < max_agi:
-                return itemize_pct
-                
-        return 0.5  # Default if no bracket matched
+                base_rate = itemize_pct
+                break
+        else:
+            base_rate = 0.5
+
+        status = self._normalize_filing_status(filing_status)
+        if status == 'hoh':
+            # More aggressive HoH reduction to align with DOTAX patterns
+            if agi < 30000:
+                base_rate *= 0.45  # Very low itemization for low-income HoH
+            elif agi < 50000:
+                base_rate *= 0.50  # Moderate reduction for mid-low income
+            elif agi < 75000:
+                base_rate *= 0.65  # Moderate reduction for mid income
+            elif agi < 100000:
+                base_rate *= 0.75  # Smaller reduction for higher income
+            else:
+                base_rate *= 0.85  # Minimal reduction for high income
+        elif status == 'single':
+            if agi < 50000:
+                base_rate *= 0.9
+        elif status == 'mfs':
+            base_rate = min(base_rate * 1.1, 0.99)
+
+        return max(0.05, min(base_rate, 0.99))
 
     def calculate_deduction(
         self,
@@ -195,8 +218,8 @@ class TaxableIncomeCalculator:
             if forced_type == 'itemized':
                 return max(standard_deduction, itemized_deduction), 'itemized' if itemized_deduction >= standard_deduction else 'standard'
 
-        # Get itemization probability for this AGI
-        itemize_prob = self._get_itemization_rate(agi)
+        # Get itemization probability for this AGI and filing status
+        itemize_prob = self._get_itemization_rate(agi, filing_status)
         
         # Add small random variation (5%) to prevent artificial thresholds
         itemize_prob *= (0.95 + 0.1 * np.random.random())

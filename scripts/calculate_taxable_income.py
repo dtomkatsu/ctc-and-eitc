@@ -117,7 +117,33 @@ def assign_forced_deductions(
         if target_share == 0:
             continue
 
-        target_weight = min(total_weight, total_weight * target_share)
+        # Apply HoH-specific adjustment to reduce over-itemization
+        # HoH filers should itemize less frequently than joint/single in mid-income brackets
+        hoh_mask = subset.index.isin(tax_units[
+            tax_units['filing_status'].str.lower().isin([
+                'head_of_household', 'qualifying_widow', 'qualifying_widower'
+            ])
+        ].index)
+        
+        if hoh_mask.any() and agi_min >= 20000 and agi_max <= 100000:
+            # Reduce HoH itemization target by 25-40% in mid-income brackets
+            hoh_reduction = 0.35 if agi_min < 50000 else 0.25
+            adjusted_target_share = target_share * (1 - hoh_reduction)
+            
+            # Calculate separate targets for HoH and non-HoH
+            hoh_subset = subset.loc[hoh_mask]
+            non_hoh_subset = subset.loc[~hoh_mask]
+            
+            hoh_weight = hoh_subset[weight_col].sum()
+            non_hoh_weight = non_hoh_subset[weight_col].sum()
+            
+            # HoH gets reduced target, non-HoH gets standard target
+            hoh_target_weight = hoh_weight * adjusted_target_share
+            non_hoh_target_weight = non_hoh_weight * target_share
+            
+            target_weight = hoh_target_weight + non_hoh_target_weight
+        else:
+            target_weight = min(total_weight, total_weight * target_share)
 
         subset = subset.sort_values(['agi', weight_col], ascending=[False, False])
         subset['cum_weight'] = subset[weight_col].cumsum()
@@ -255,7 +281,22 @@ def main():
     
     # Load exemption benchmarks for estimation
     exemption_benchmarks = pd.read_csv('data/processed/exemption_benchmarks.csv')
-    
+
+    # Ensure HoH units retain at least one dependent for deduction/exemption logic
+    normalized_status = tax_units['filing_status'].astype(str).str.lower()
+    if 'num_dependents' not in tax_units.columns:
+        tax_units['num_dependents'] = 0
+    missing_dependents_mask = normalized_status.isin([
+        'head_of_household',
+        'qualifying_widow',
+        'qualifying_widower'
+    ]) & (tax_units['num_dependents'].fillna(0) < 1)
+    if missing_dependents_mask.any():
+        logger.info(
+            f"\nAdjusting HoH dependents to minimum of 1 for {missing_dependents_mask.sum():,} units"
+        )
+        tax_units.loc[missing_dependents_mask, 'num_dependents'] = 1
+
     # Estimate exemptions if not present
     if 'num_exemptions' not in tax_units.columns:
         logger.info("\nEstimating exemptions from household composition...")
