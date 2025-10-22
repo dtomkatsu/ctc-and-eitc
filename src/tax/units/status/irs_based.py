@@ -517,3 +517,124 @@ def _convert_from_status(df: pd.DataFrame, from_status: str, to_status: str,
                         target_weight: float, weight_col: str) -> pd.DataFrame:
     """Helper function to convert units FROM one status TO another (same as _convert_to_status)."""
     return _convert_to_status(df, from_status, to_status, target_weight, weight_col)
+
+
+def adjust_high_income_statuses(df: pd.DataFrame, weight_col: str = 'weight', 
+                               agi_threshold: float = 200_000, max_adjustment_weight: float = 80_000_000) -> pd.DataFrame:
+    """
+    Fine-tune high-income filing status distribution to improve revenue accuracy.
+    
+    Args:
+        df: DataFrame with tax units including 'agi', 'filing_status', weight_col
+        weight_col: Name of weight column
+        agi_threshold: Minimum AGI to consider for adjustment (default $200k)
+        max_adjustment_weight: Maximum total weight to adjust (default 80M weighted units)
+    
+    Returns:
+        DataFrame with adjusted filing statuses and 'high_income_adjusted' flag
+    """
+    logger.info(f"\n{'='*60}")
+    logger.info("HIGH-INCOME FILING STATUS FINE-TUNING")
+    logger.info(f"{'='*60}")
+    
+    # Make copy and add adjustment flag
+    result_df = df.copy()
+    if 'high_income_adjusted' not in result_df.columns:
+        result_df['high_income_adjusted'] = False
+    
+    # Filter to high-income, taxable units
+    high_income_mask = (
+        (result_df['agi'] >= agi_threshold) & 
+        (~result_df.get('is_nontaxable', False))
+    )
+    high_income_units = result_df[high_income_mask].copy()
+    
+    if high_income_units.empty:
+        logger.info(f"No high-income units found above ${agi_threshold:,.0f}")
+        return result_df
+    
+    logger.info(f"High-income units (AGI >= ${agi_threshold:,.0f}): {len(high_income_units):,}")
+    logger.info(f"Total high-income weight: {high_income_units[weight_col].sum():,.0f}")
+    
+    # Current distribution in high-income segment
+    hi_dist = high_income_units.groupby('filing_status')[weight_col].sum()
+    logger.info(f"\nHigh-income filing status distribution:")
+    for status, weight in hi_dist.items():
+        pct = weight / hi_dist.sum() * 100
+        logger.info(f"  {status}: {weight:,.0f} ({pct:.1f}%)")
+    
+    # Identify conversion candidates
+    joint_candidates = high_income_units[
+        high_income_units['filing_status'] == 'married_filing_jointly'
+    ].sort_values('agi', ascending=True)  # Start with lowest AGI joint filers
+    
+    single_candidates = high_income_units[
+        high_income_units['filing_status'] == 'single'
+    ].sort_values('agi', ascending=False)  # Start with highest AGI single filers
+    
+    logger.info(f"\nConversion candidates:")
+    logger.info(f"  Joint filers available: {len(joint_candidates):,} ({joint_candidates[weight_col].sum():,.0f} weighted)")
+    logger.info(f"  Single filers available: {len(single_candidates):,} ({single_candidates[weight_col].sum():,.0f} weighted)")
+    
+    # Calculate target adjustment (aim to move ~$70M in liability from joint to single)
+    # Rough estimate: $70M liability ≈ 15-20k weighted high-income units
+    target_weight_to_convert = min(max_adjustment_weight, joint_candidates[weight_col].sum() * 0.15)
+    
+    logger.info(f"\nTarget weight to convert: {target_weight_to_convert:,.0f}")
+    
+    if target_weight_to_convert < 1000:
+        logger.info("Target weight too small, skipping adjustment")
+        return result_df
+    
+    # Apply conversion using existing fractional splitting logic
+    converted_weight = 0.0
+    converted_indices = []
+    
+    cumsum = joint_candidates[weight_col].cumsum()
+    full_converts = joint_candidates[cumsum <= target_weight_to_convert]
+    
+    if not full_converts.empty:
+        # Convert full units to married_filing_separately (more realistic than single)
+        result_df.loc[full_converts.index, 'filing_status'] = 'married_filing_separately'
+        result_df.loc[full_converts.index, 'high_income_adjusted'] = True
+        converted_weight += full_converts[weight_col].sum()
+        converted_indices.extend(full_converts.index.tolist())
+    
+    # Handle fractional conversion if needed
+    remaining = target_weight_to_convert - converted_weight
+    if remaining > 0.01:
+        next_candidates = joint_candidates[cumsum > target_weight_to_convert]
+        if not next_candidates.empty:
+            split_unit = next_candidates.iloc[0]
+            split_idx = split_unit.name
+            original_weight = split_unit[weight_col]
+            take_weight = min(remaining, original_weight)
+            
+            if take_weight > 0:
+                # Reduce original unit's weight
+                result_df.loc[split_idx, weight_col] = original_weight - take_weight
+                
+                # Create new record with MFS status
+                new_record = split_unit.copy()
+                new_record[weight_col] = take_weight
+                new_record['filing_status'] = 'married_filing_separately'
+                new_record['high_income_adjusted'] = True
+                
+                # Add new record to dataframe
+                result_df = pd.concat([result_df, pd.DataFrame([new_record])], ignore_index=True)
+                converted_weight += take_weight
+    
+    logger.info(f"\nConversion completed:")
+    logger.info(f"  Units converted: {len(converted_indices):,}")
+    logger.info(f"  Weight converted: {converted_weight:,.0f}")
+    logger.info(f"  Conversion: married_filing_jointly → married_filing_separately")
+    
+    # Final distribution check
+    final_dist = result_df.groupby('filing_status')[weight_col].sum()
+    total_adjusted = result_df[result_df['high_income_adjusted']][weight_col].sum()
+    
+    logger.info(f"\nFinal adjustment summary:")
+    logger.info(f"  Total adjusted weight: {total_adjusted:,.0f} ({total_adjusted/result_df[weight_col].sum()*100:.2f}% of total)")
+    logger.info(f"  New MFS share: {final_dist.get('married_filing_separately', 0)/final_dist.sum()*100:.1f}%")
+    
+    return result_df

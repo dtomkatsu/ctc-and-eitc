@@ -13,10 +13,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pandas as pd
 import numpy as np
 import logging
+import argparse
 
 from src.tax.deductions import TaxableIncomeCalculator, DeductionPolicy
 from src.tax.deductions.calculator import estimate_num_exemptions
 from src.tax.deductions.parsers import clean_currency
+from src.tax.units.status.irs_based import adjust_high_income_statuses
 from typing import Dict, Tuple, Optional
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -223,6 +225,14 @@ def estimate_exemptions_for_tax_units(tax_units_df, exemption_benchmarks):
 
 def main():
     """Calculate taxable income for all tax units."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Calculate taxable income for all tax units')
+    parser.add_argument('--high-income-tweak', action='store_true', 
+                       help='Apply high-income filing status fine-tuning to improve revenue accuracy')
+    parser.add_argument('--agi-threshold', type=float, default=200_000,
+                       help='AGI threshold for high-income adjustment (default: $200,000)')
+    args = parser.parse_args()
+    
     logger.info("="*80)
     logger.info("CALCULATING TAXABLE INCOME FOR ALL TAX UNITS")
     logger.info("="*80)
@@ -325,6 +335,15 @@ def main():
     
     # Convert results to DataFrame
     results = pd.DataFrame(results)
+
+    # Apply high-income fine-tuning if requested
+    if args.high_income_tweak:
+        logger.info("\nApplying high-income filing status fine-tuning...")
+        results = adjust_high_income_statuses(
+            results, 
+            weight_col='weight',
+            agi_threshold=args.agi_threshold
+        )
 
     # Summary statistics
     logger.info("\n" + "="*80)
