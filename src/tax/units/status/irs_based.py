@@ -9,7 +9,7 @@ import random
 import hashlib
 import logging
 import pandas as pd
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple, Set
 
 logger = logging.getLogger(__name__)
 
@@ -264,9 +264,13 @@ def calibrate_to_soi_totals(tax_units: pd.DataFrame,
         gap = current - target
         logger.info(f"{status:<30} {current:>9.1%} {target:>9.1%} {gap:>+9.1%}")
     
-    # Iterative calibration approach
-    max_iterations = 10
-    tolerance = 0.001  # 0.1% tolerance
+    # Prioritized calibration approach: handle married statuses first, then unmarried
+    max_iterations = 15
+    tolerance = 0.0005  # 0.05% tolerance
+    
+    # Define adjustment order: married statuses first to avoid cross-interference
+    married_statuses = ['married_filing_jointly', 'married_filing_separately']
+    unmarried_statuses = ['single', 'head_of_household']
     
     for iteration in range(max_iterations):
         logger.info(f"\n--- Iteration {iteration + 1} ---")
@@ -275,15 +279,30 @@ def calibrate_to_soi_totals(tax_units: pd.DataFrame,
         total_weight = df[weight_col].sum()
         current_dist = df.groupby('filing_status')[weight_col].sum() / total_weight
         
-        # Find largest gap
+        # Find largest gap, prioritizing married statuses first
         max_gap = 0
         max_gap_status = None
-        for status, target in target_distributions.items():
-            current = current_dist.get(status, 0)
-            gap = abs(current - target)
-            if gap > max_gap:
-                max_gap = gap
-                max_gap_status = status
+        
+        # First check married statuses
+        for status in married_statuses:
+            if status in target_distributions:
+                current = current_dist.get(status, 0)
+                target = target_distributions[status]
+                gap = abs(current - target)
+                if gap > max_gap:
+                    max_gap = gap
+                    max_gap_status = status
+        
+        # If no significant married gaps, check unmarried statuses
+        if max_gap < tolerance:
+            for status in unmarried_statuses:
+                if status in target_distributions:
+                    current = current_dist.get(status, 0)
+                    target = target_distributions[status]
+                    gap = abs(current - target)
+                    if gap > max_gap:
+                        max_gap = gap
+                        max_gap_status = status
         
         if max_gap < tolerance:
             logger.info(f"✅ Converged! Max gap: {max_gap:.3%}")
@@ -333,6 +352,26 @@ def calibrate_to_soi_totals(tax_units: pd.DataFrame,
                 # Can only convert to MFJ (both are married couples)
                 df = _convert_from_status(df, max_gap_status, 'married_filing_jointly', surplus, weight_col)
     
+    # Final single vs HoH fine-tuning (if still outside tolerance)
+    total_weight = df[weight_col].sum()
+    single_target = target_distributions.get('single')
+    hoh_target = target_distributions.get('head_of_household')
+    if single_target is not None and hoh_target is not None:
+        for _ in range(6):
+            current_dist = df.groupby('filing_status')[weight_col].sum() / total_weight
+            single_current = current_dist.get('single', 0.0)
+            single_gap = single_target - single_current
+            if abs(single_gap) < tolerance:
+                break
+            adjust_weight = single_gap * total_weight
+            if adjust_weight > 0:
+                logger.info(f"Fine-tuning: adding {adjust_weight:,.0f} weighted units to single from head_of_household")
+                df = _convert_to_status(df, 'head_of_household', 'single', adjust_weight, weight_col)
+            else:
+                logger.info(f"Fine-tuning: removing {-adjust_weight:,.0f} weighted units from single to head_of_household")
+                df = _convert_to_status(df, 'single', 'head_of_household', -adjust_weight, weight_col)
+            total_weight = df[weight_col].sum()
+
     # Final statistics
     total_weight = df[weight_col].sum()
     final_dist = df.groupby('filing_status')[weight_col].sum() / total_weight
@@ -359,29 +398,119 @@ def calibrate_to_soi_totals(tax_units: pd.DataFrame,
 
 def _convert_to_status(df: pd.DataFrame, from_status: str, to_status: str, 
                       target_weight: float, weight_col: str) -> pd.DataFrame:
-    """Helper function to convert units FROM one status TO another."""
-    # Get candidates
+    """Convert units FROM one status TO another using AGI-stratified, fractional adjustments."""
     candidates = df[df['filing_status'] == from_status].copy()
-    
+
     if candidates.empty or target_weight <= 0:
         return df
-    
-    # Sort by income (higher income more likely for joint, lower for others)
-    if to_status == 'married_filing_jointly':
-        candidates = candidates.sort_values('income', ascending=False)
+
+    sort_col = 'income' if 'income' in candidates.columns else 'agi'
+
+    # Determine ordering preferences by destination status
+    if to_status == 'head_of_household':
+        ascending = True
+        band_order = ['low', 'mid', 'high']
     else:
-        candidates = candidates.sort_values('income', ascending=True)
-    
-    # Select units to convert
-    cumsum = candidates[weight_col].cumsum()
-    to_convert = candidates[cumsum <= target_weight]
-    
-    if len(to_convert) > 0:
-        df.loc[to_convert.index, 'filing_status'] = to_status
-        df.loc[to_convert.index, 'calibrated'] = True
-        logger.info(f"  Converted {len(to_convert):,} units ({to_convert[weight_col].sum():,.0f} weighted) from {from_status} to {to_status}")
-    
+        ascending = False
+        band_order = ['high', 'mid', 'low']
+
+    # Assign AGI bands to preserve income distribution during calibration
+    agi_series = pd.to_numeric(candidates.get('agi'), errors='coerce').fillna(0)
+    bins = [-float('inf'), 50000, 150000, float('inf')]
+    labels = ['low', 'mid', 'high']
+    candidates['agi_band'] = pd.cut(agi_series, bins=bins, labels=labels, include_lowest=True)
+    candidates['agi_band'] = candidates['agi_band'].astype(str)
+    candidates.loc[~candidates['agi_band'].isin(labels), 'agi_band'] = 'mid'
+
+    converted_weight = 0.0
+    converted_indices: Set[int] = set()
+    remaining = target_weight
+
+    for band in band_order:
+        if remaining <= 0.01:
+            break
+
+        band_candidates = candidates[
+            (candidates['agi_band'] == band) &
+            (~candidates.index.isin(converted_indices))
+        ]
+
+        if band_candidates.empty:
+            continue
+
+        band_candidates = band_candidates.sort_values(sort_col, ascending=ascending)
+        band_target = min(remaining, band_candidates[weight_col].sum())
+
+        df, band_converted, indices = _apply_conversions(
+            df, band_candidates, band_target, to_status, weight_col
+        )
+
+        converted_weight += band_converted
+        converted_indices.update(indices)
+        remaining = target_weight - converted_weight
+
+    # Fallback: apply any remaining weight using all leftover candidates
+    if converted_weight < target_weight and remaining > 0.01:
+        fallback_candidates = candidates[~candidates.index.isin(converted_indices)]
+        if not fallback_candidates.empty:
+            fallback_candidates = fallback_candidates.sort_values(sort_col, ascending=ascending)
+            df, extra_converted, indices = _apply_conversions(
+                df, fallback_candidates, remaining, to_status, weight_col
+            )
+            converted_weight += extra_converted
+            converted_indices.update(indices)
+
+    if converted_weight > 0:
+        logger.info(
+            f"  Converted {len(converted_indices):,} units ({converted_weight:,.0f} weighted) "
+            f"from {from_status} to {to_status}"
+        )
+
     return df
+
+
+def _apply_conversions(df: pd.DataFrame, candidates: pd.DataFrame, target_weight: float,
+                       to_status: str, weight_col: str) -> Tuple[pd.DataFrame, float, List[int]]:
+    """Apply conversions for a set of candidates with fractional splitting."""
+    converted_weight = 0.0
+    converted_indices: List[int] = []
+
+    if target_weight <= 0 or candidates.empty:
+        return df, converted_weight, converted_indices
+
+    cumsum = candidates[weight_col].cumsum()
+    full_mask = cumsum <= target_weight + 1e-9
+    full_converts = candidates[full_mask]
+
+    if not full_converts.empty:
+        df.loc[full_converts.index, 'filing_status'] = to_status
+        df.loc[full_converts.index, 'calibrated'] = True
+        converted_weight += full_converts[weight_col].sum()
+        converted_indices.extend(full_converts.index.tolist())
+
+    remaining = target_weight - converted_weight
+    if remaining > 0.01:
+        next_candidates = candidates[~full_mask]
+        if not next_candidates.empty:
+            split_unit = next_candidates.iloc[0]
+            split_idx = split_unit.name
+            original_weight = split_unit[weight_col]
+            take_weight = min(remaining, original_weight)
+
+            if take_weight > 0:
+                df.loc[split_idx, weight_col] = original_weight - take_weight
+
+                new_record = split_unit.copy()
+                if 'agi_band' in new_record.index:
+                    new_record = new_record.drop(labels=['agi_band'])
+                new_record[weight_col] = take_weight
+                new_record['filing_status'] = to_status
+                new_record['calibrated'] = True
+
+                df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
+                converted_weight += take_weight
+
+    return df, converted_weight, converted_indices
 
 
 def _convert_from_status(df: pd.DataFrame, from_status: str, to_status: str,

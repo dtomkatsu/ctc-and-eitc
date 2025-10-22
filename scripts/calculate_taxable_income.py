@@ -325,7 +325,7 @@ def main():
     
     # Convert results to DataFrame
     results = pd.DataFrame(results)
-    
+
     # Summary statistics
     logger.info("\n" + "="*80)
     logger.info("SUMMARY STATISTICS")
