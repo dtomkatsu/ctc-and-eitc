@@ -1,21 +1,19 @@
 # Hawaii State-Wide Tax Estimation
 
-This project estimates state-wide tax liabilities and distributions using a **hybrid approach** that combines:
-- **DOTAX/IRS SOI data** (primary) - Official tax return counts and income distributions
-- **PUMS microdata** (supplementary) - Demographic and geographic detail
+This project builds a Hawaii resident income tax model that aligns closely with Department of Taxation (DOTAX) Statistics of Income (SOI) benchmarks. We combine:
+- **DOTAX SOI administrative tables** as the source of truth for counts, income, deductions, and liabilities.
+- **ACS PUMS microdata** to construct detailed tax units (filers, spouses, dependents) and to retain demographic structure.
 
-This methodology addresses the critical data quality issue where PUMS data overcounts tax units by 65% and underrepresents high-income households, which are responsible for 60-70% of tax revenue.
+Recent work focuses on narrowing the Head of Household (HoH) revenue gap by rebalancing deductions and dependents so taxable income matches DOTAX A2/A9 targets.
 
 ## Key Features
 
-- **Hybrid Data Approach**: Uses DOTAX/IRS SOI as primary source, PUMS for demographic/geographic detail
-- **SOI Weight Calibration**: Automatically adjusts PUMS weights to match official tax return counts (634,956 DOTAX returns)
-- **Statistical Matching with Multiple Data Sources**: Enhances income estimation using BLS OES, CEX, and National SOI PUF data (15-25% error reduction)
-- **High-Income Accuracy**: Addresses PUMS undersampling of high earners through income-bracket-specific calibration
-- **Tax Unit Construction**: Robust construction of tax filing units from household survey data
-- **Hawaii Income Tax Calculation**: Complete implementation of Hawaii state income tax brackets and deductions (2017-2031)
-- **Filing Status Determination**: Support for Single, Joint, Head of Household, and Married Filing Separately
-- **Scenario Analysis**: Compare tax impacts across different years and policy scenarios
+- **Resident-focused calibration** to DOTAX 2022 tables (A2, A4, A9) for filing status counts, deductions, and liabilities.
+- **PUMS-derived tax unit construction** with repaired filing status logic, dependent assignment, and income calculation.
+- **Taxable income pipeline** (`scripts/calculate_taxable_income.py`) that enforces DOTAX deduction benchmarks with HoH-specific controls.
+- **High-income fine-tuning** to achieve realistic married filing separately (MFS) shares and revenue alignment above $200k AGI.
+- **Hawaii tax calculator** (`src/tax/brackets/hawaii_tax.py`) supporting statutory brackets and standard deductions across 2017–2031.
+- **Validation tooling** to compare modeled revenue against DOTAX SOI tables and highlight remaining gaps.
 
 ## Methodology: SOI-Primary Hybrid Approach
 
