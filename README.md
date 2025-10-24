@@ -142,9 +142,29 @@ The system implements a comprehensive three-stage calibration pipeline:
 - Update total income to reflect wage changes
 
 **BLS OES Data Available:**
-- 2022, 2023, 2024 Hawaii wage data
-- 577 occupation-level records
-- Covers 594,880 workers
+- 20092024 state-level wage tables (`data/external/bls_oes/state_YYYY*.xls[x]`)
+- 577 occupation-level records (latest tables)
+- Covers 594,880 workers (2024 release)
+
+**State Wage File Coverage:**
+| Year | Filename |
+|------|----------|
+| 2009 | `state_2009.xls` |
+| 2010 | `state_M2010_dl.xls` |
+| 2011 | `state_M2011_dl.xls` |
+| 2012 | `state_M2012_dl.xls` |
+| 2013 | `state_M2013_dl.xls` |
+| 2014 | `state_M2014_dl.xlsx` |
+| 2015 | `state_M2015_dl.xlsx` |
+| 2016 | `state_M2016_dl.xlsx` |
+| 2017 | `state_M2017_dl.xlsx` |
+| 2018 | `state_M2018_dl.xlsx` |
+| 2019 | `state_M2019_dl.xlsx` |
+| 2020 | `state_M2020_dl.xlsx` |
+| 2021 | `state_M2021_dl.xlsx` |
+| 2022 | `state_M2022_dl.xlsx` |
+| 2023 | `state_M2023_dl.xlsx` |
+| 2024 | `state_M2024_dl.xlsx` |
 
 **Growth Rates (2022 → 2024):**
 - Overall: 11.38% (employment-weighted)
@@ -154,8 +174,8 @@ The system implements a comprehensive three-stage calibration pipeline:
 - Range: -36% to +115% (occupation-specific)
 
 **Process:**
-1. Load BLS OES data for 2022 and 2024
-2. Calculate occupation-specific growth rates
+1. Load BLS OES data for 20092024
+2. Calculate occupation-specific growth rates (e.g., 20222024)
 3. Match PUMS occupation codes to BLS SOC codes
 4. Apply adjustments with fallbacks
 5. Update total income

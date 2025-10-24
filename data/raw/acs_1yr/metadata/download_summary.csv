@@ -1,0 +1,11 @@
+table_code,description,year,rows,columns,category
+B19001,Income Distribution,2023,1,21,critical
+B19013,Median Income,2023,1,5,critical
+B19019,Income by Household Type,2023,1,12,critical
+B12001,Marital Status,2023,1,23,critical
+B01001,Age/Sex Distribution,2023,1,53,critical
+B11001,Household Type,2023,1,13,additional
+B09002,Children by Family Type,2023,1,24,additional
+B23025,Employment,2023,1,11,additional
+B25003,Homeownership,2023,1,7,additional
+B25077,Home Value,2023,1,5,additional
