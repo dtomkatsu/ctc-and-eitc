@@ -1,11 +1,81 @@
 table_code,description,year,rows,columns,category
+B19001,Income Distribution,2015,1,21,critical
+B19001,Income Distribution,2016,1,21,critical
+B19001,Income Distribution,2017,1,21,critical
+B19001,Income Distribution,2018,1,21,critical
+B19001,Income Distribution,2019,1,21,critical
+B19001,Income Distribution,2021,1,21,critical
+B19001,Income Distribution,2022,1,21,critical
 B19001,Income Distribution,2023,1,21,critical
+B19013,Median Income,2015,1,5,critical
+B19013,Median Income,2016,1,5,critical
+B19013,Median Income,2017,1,5,critical
+B19013,Median Income,2018,1,5,critical
+B19013,Median Income,2019,1,5,critical
+B19013,Median Income,2021,1,5,critical
+B19013,Median Income,2022,1,5,critical
 B19013,Median Income,2023,1,5,critical
+B19019,Income by Household Type,2015,1,12,critical
+B19019,Income by Household Type,2016,1,12,critical
+B19019,Income by Household Type,2017,1,12,critical
+B19019,Income by Household Type,2018,1,12,critical
+B19019,Income by Household Type,2019,1,12,critical
+B19019,Income by Household Type,2021,1,12,critical
+B19019,Income by Household Type,2022,1,12,critical
 B19019,Income by Household Type,2023,1,12,critical
+B12001,Marital Status,2015,1,23,critical
+B12001,Marital Status,2016,1,23,critical
+B12001,Marital Status,2017,1,23,critical
+B12001,Marital Status,2018,1,23,critical
+B12001,Marital Status,2019,1,23,critical
+B12001,Marital Status,2021,1,23,critical
+B12001,Marital Status,2022,1,23,critical
 B12001,Marital Status,2023,1,23,critical
+B01001,Age/Sex Distribution,2015,1,53,critical
+B01001,Age/Sex Distribution,2016,1,53,critical
+B01001,Age/Sex Distribution,2017,1,53,critical
+B01001,Age/Sex Distribution,2018,1,53,critical
+B01001,Age/Sex Distribution,2019,1,53,critical
+B01001,Age/Sex Distribution,2021,1,53,critical
+B01001,Age/Sex Distribution,2022,1,53,critical
 B01001,Age/Sex Distribution,2023,1,53,critical
+B11001,Household Type,2015,1,13,additional
+B11001,Household Type,2016,1,13,additional
+B11001,Household Type,2017,1,13,additional
+B11001,Household Type,2018,1,13,additional
+B11001,Household Type,2019,1,13,additional
+B11001,Household Type,2021,1,13,additional
+B11001,Household Type,2022,1,13,additional
 B11001,Household Type,2023,1,13,additional
+B09002,Children by Family Type,2015,1,24,additional
+B09002,Children by Family Type,2016,1,24,additional
+B09002,Children by Family Type,2017,1,24,additional
+B09002,Children by Family Type,2018,1,24,additional
+B09002,Children by Family Type,2019,1,24,additional
+B09002,Children by Family Type,2021,1,24,additional
+B09002,Children by Family Type,2022,1,24,additional
 B09002,Children by Family Type,2023,1,24,additional
+B23025,Employment,2015,1,11,additional
+B23025,Employment,2016,1,11,additional
+B23025,Employment,2017,1,11,additional
+B23025,Employment,2018,1,11,additional
+B23025,Employment,2019,1,11,additional
+B23025,Employment,2021,1,11,additional
+B23025,Employment,2022,1,11,additional
 B23025,Employment,2023,1,11,additional
+B25003,Homeownership,2015,1,7,additional
+B25003,Homeownership,2016,1,7,additional
+B25003,Homeownership,2017,1,7,additional
+B25003,Homeownership,2018,1,7,additional
+B25003,Homeownership,2019,1,7,additional
+B25003,Homeownership,2021,1,7,additional
+B25003,Homeownership,2022,1,7,additional
 B25003,Homeownership,2023,1,7,additional
+B25077,Home Value,2015,1,5,additional
+B25077,Home Value,2016,1,5,additional
+B25077,Home Value,2017,1,5,additional
+B25077,Home Value,2018,1,5,additional
+B25077,Home Value,2019,1,5,additional
+B25077,Home Value,2021,1,5,additional
+B25077,Home Value,2022,1,5,additional
 B25077,Home Value,2023,1,5,additional

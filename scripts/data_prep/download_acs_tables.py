@@ -151,14 +151,18 @@ class ACSTableDownloader:
                 return None
             
             # Census API has limit on number of variables per request
-            # Split into chunks if needed
-            var_chunks = [variables[i:i+50] for i in range(0, len(variables), 50)]
+            # Use smaller chunks for problematic tables like B07001
+            chunk_size = 30 if table_code == 'B07001' else 50
+            var_chunks = [variables[i:i+chunk_size] for i in range(0, len(variables), chunk_size)]
+            logger.info(f"Split {len(variables)} variables into {len(var_chunks)} chunks of max {chunk_size}")
         else:
             var_chunks = [[f'{table_code}_001E']]  # Just get estimate for concept
         
         all_data = []
         
-        for chunk in var_chunks:
+        for i, chunk in enumerate(var_chunks):
+            logger.info(f"Downloading chunk {i+1}/{len(var_chunks)} ({len(chunk)} variables)")
+            
             params = {
                 'get': ','.join(chunk + ['NAME']),
                 'for': 'state:15',  # Hawaii
@@ -174,21 +178,28 @@ class ACSTableDownloader:
                 df = pd.DataFrame(data[1:], columns=data[0])
                 all_data.append(df)
                 
-                # Rate limiting
-                time.sleep(0.5)
+                # Rate limiting - longer for problematic tables
+                sleep_time = 1.0 if table_code == 'B07001' else 0.5
+                time.sleep(sleep_time)
                 
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 404:
                     logger.warning(f"Table {table_code} not available for {year}")
                     return None
+                elif e.response.status_code == 400:
+                    logger.error(f"HTTP 400 error for {table_code} chunk {i+1}: {e}")
+                    logger.error(f"Chunk variables: {chunk[:5]}...{chunk[-5:] if len(chunk) > 5 else chunk}")
+                    # Continue with other chunks
+                    continue
                 else:
                     logger.error(f"HTTP error downloading {table_code} ({year}): {e}")
                     return None
             except Exception as e:
-                logger.error(f"Error downloading {table_code} ({year}): {e}")
-                return None
+                logger.error(f"Error downloading {table_code} ({year}) chunk {i+1}: {e}")
+                continue
         
         if not all_data:
+            logger.error(f"No data chunks successfully downloaded for {table_code} ({year})")
             return None
             
         # Combine chunks
