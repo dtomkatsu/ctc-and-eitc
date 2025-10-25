@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Download ACS 1-Year Estimates for Hawaii (2015-2023+)
+Download ACS 1-Year Estimates for Hawaii (2015-2024, excluding 2020)
 
 This script downloads key demographic and economic tables from the Census Bureau's
 American Community Survey (ACS) to support ensemble growth projections for the
@@ -79,10 +79,10 @@ class ACSTableDownloader:
         2017,
         2018,
         2019,
-        2020,
         2021,
         2022,
         2023,
+        2024,
     }
 
     def __init__(self, api_key: str, output_dir: Path, available_years: Optional[set[int]] = None):
@@ -222,7 +222,7 @@ class ACSTableDownloader:
     def download_all_tables(
         self,
         start_year: int = 2015,
-        end_year: int = 2023
+        end_year: int = 2024
     ) -> Dict[str, Dict[int, pd.DataFrame]]:
         """Download all tables for the requested year range."""
 

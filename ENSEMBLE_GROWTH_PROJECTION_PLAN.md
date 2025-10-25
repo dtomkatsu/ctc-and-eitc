@@ -29,6 +29,8 @@ The goal is to create robust, multi-dimensional growth rates that account for:
 ### 1. ACS 1-Year Estimates (2015-2023)
 **Location:** `data/raw/acs_1yr/`
 
+> **2020 sampling note:** Incorporate the 2020 release but down-weight it (recommend weight = 0.35 vs. 1.0 for other years) in all time-series statistics to reflect reduced response rates.
+
 #### Critical Tables (Income & Demographics)
 | Table | Description | Use Case |
 |-------|-------------|----------|
@@ -87,15 +89,15 @@ The goal is to create robust, multi-dimensional growth rates that account for:
 **Data:** ACS B19013 (Median Income) + B19019 (by Household Type)
 
 **Analysis:**
-1. Calculate CAGR (Compound Annual Growth Rate) 2015-2023
+1. Calculate time-weighted CAGR (Compound Annual Growth Rate) 2015-2023 using year weights where 2020 weight = 0.35, all other years = 1.0
 2. Segment by household type (maps to filing status):
    - Married-couple families → Joint filers
    - Male/female householder, no spouse → Single/HoH
-3. Detect trend breaks (e.g., COVID impact 2020-2021)
+3. Detect trend breaks (e.g., COVID impact 2020-2021) and flag if weighted residuals still exceed thresholds
 
 **Output:**
 - `median_income_growth_by_type.csv`
-- Filing status-specific baseline growth rates
+- Filing status-specific baseline growth rates with `year_weight` metadata (2020 down-weighted)
 
 **Application:**
 - Set baseline income inflation for each filing status
