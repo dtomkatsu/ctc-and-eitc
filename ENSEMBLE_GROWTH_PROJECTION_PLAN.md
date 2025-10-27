@@ -273,17 +273,19 @@ The goal is to create robust, multi-dimensional growth rates that account for:
 #### Step 1: Data Preparation (Week 1)
 **Scripts:**
 - `scripts/data_prep/download_acs_tables.py` ✅ COMPLETE
-- `scripts/data_prep/process_acs_timeseries.py` (NEW)
+- `scripts/data_prep/process_acs_timeseries.py` ✅ COMPLETE
 - `scripts/data_prep/harmonize_bls_oes_years.py` (NEW)
 
 **Tasks:**
-1. Download all ACS tables 2015-2023
-2. Clean and standardize variable names across years
-3. Create consistent time-series datasets
-4. Match ACS geography to PUMS (state-level, both Hawaii)
+1. ✅ Download all ACS tables 2015-2024 (excluding 2020)
+2. ✅ Clean and standardize variable names across years
+3. ✅ Create consistent time-series datasets (wide + long formats)
+4. ✅ Apply year weights (2020 would be 0.35 if included)
+5. Match ACS geography to PUMS (state-level, both Hawaii)
 
 **Deliverables:**
-- `data/processed/acs_timeseries/` with clean panel data
+- ✅ `data/processed/acs_timeseries/wide/` with clean panel data (11 tables, parquet + CSV)
+- ✅ `data/processed/acs_timeseries/long/` with melted distribution tables (4 tables)
 - `data/processed/bls_oes_timeseries.parquet` (all years combined)
 
 #### Step 2: Component Model Development (Week 2-3)
