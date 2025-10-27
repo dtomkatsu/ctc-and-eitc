@@ -351,21 +351,48 @@ The goal is to create robust, multi-dimensional growth rates that account for:
 - Projected tax units 2024-2030 in `data/processed/`
 - Ensemble validation report
 
-#### Step 4: Integration with Tax Model (Week 5)
+#### Step 4: Ensemble Integration & Tax Calculation (Week 4-5)
 **Scripts:**
-- `scripts/pipeline/08_apply_ensemble_projection.py` (NEW)
-- Update `scripts/calculate_taxable_income.py`
+- `scripts/projection/run_ensemble_projection.py` (NEW)
+- `scripts/analysis/compare_projection_methods.py` (NEW)
+- `src/tax/deductions/itemized_deductions.py` (NEW)
 
 **Tasks:**
-1. Replace simple inflation with ensemble projections
-2. Update tax unit counts by filing status (demographic model)
-3. Adjust dependent assignments (children trend model)
-4. Project non-wage income using housing/employment indicators
-5. Re-run full tax calculation pipeline for 2024-2030
+1. **Ensemble Weighting:**
+   - Implement confidence-weighted averaging
+   - ACS weight: 40%, BLS weight: 60% (adjustable)
+   - Higher BLS confidence → more BLS weight
+
+2. **Income Projection Pipeline:**
+   - Apply ensemble growth to each tax unit
+   - Project from base year (2023) to target years (2024-2030)
+   - Preserve income distribution shape while allowing growth
+
+3. **Itemized Deduction Modeling:**
+   - Implement itemization probability model by income/demographics
+   - Project major deduction components:
+     * State/Local Taxes (SALT): Hawaii income + property taxes
+     * Mortgage Interest: From PUMS housing data (VALP, mortgage status)
+     * Charitable Contributions: Income-based statistical model
+     * Medical Expenses: Age/income-based model (>7.5% AGI threshold)
+   - Choose higher of standard vs itemized deduction for each tax unit
+
+4. **Tax Liability Calculation:**
+   - Apply projected incomes to Hawaii tax brackets by year
+   - Use itemized deductions where beneficial, otherwise standard
+   - Calculate effective tax rates and revenue totals
+
+5. **Validation & Comparison:**
+   - Compare ensemble vs individual component projections
+   - Validate against known 2024 data points
+   - Sensitivity analysis on ensemble weights and deduction models
+
+6. Re-run full tax calculation pipeline for 2024-2030
 
 **Deliverables:**
-- Multi-year tax revenue forecasts
-- Sensitivity analysis (vary ensemble weights)
+- Multi-year tax revenue forecasts with itemized deductions
+- Itemization rate analysis by income group
+- Sensitivity analysis (vary ensemble weights and deduction assumptions)
 - Comparison to baseline (simple inflation) approach
 
 #### Step 5: Validation & Documentation (Week 6)
@@ -567,7 +594,68 @@ The goal is to create robust, multi-dimensional growth rates that account for:
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** 2025-10-23  
+## Phase 6: Itemized Deduction Integration (Future Enhancement)
+
+### Overview
+Current model only uses standard deductions, which overestimates tax revenue by missing ~10-15% of filers who benefit from itemizing. This enhancement will add itemized deduction modeling to improve accuracy.
+
+### Implementation Plan
+
+#### New Module: `src/tax/deductions/itemized_deductions.py`
+**Components to Model:**
+1. **State and Local Taxes (SALT):**
+   - Hawaii income tax (from our calculations)
+   - Property taxes (from PUMS housing data: TAXP, GRNTP, SMOCP)
+   - General Excise Tax (Hawaii sales tax equivalent)
+   - Federal cap: $10,000
+
+2. **Mortgage Interest:**
+   - From PUMS: VALP (property value), MRGP (mortgage payment)
+   - Estimate interest portion based on prevailing rates
+
+3. **Charitable Contributions:**
+   - Income-based statistical model from SOI patterns
+   - Higher-income filers give higher percentages
+
+4. **Medical Expenses:**
+   - Age/income-based model
+   - Only deductible above 7.5% of AGI threshold
+
+#### Integration with Ensemble Projections
+**Project deduction components forward:**
+- **SALT:** Grows with income (capped at $10,000)
+- **Mortgage interest:** Stable/declining over time
+- **Charitable:** Grows with income
+- **Medical:** Grows with income and age factors
+
+#### Expected Impact
+- **Itemization rates by income:**
+  - <$50K: ~8% itemize
+  - $50K-$100K: ~18% itemize  
+  - $100K-$200K: ~40% itemize
+  - >$200K: >55% itemize
+
+- **Revenue impact:** -4% to -6% reduction in total tax revenue
+- **2026 projection adjustment:** $3.6B → ~$3.4B (scaled to full population)
+
+#### Implementation Timeline
+- **Week 1:** Build deduction calculation modules
+- **Week 2:** Integrate with tax calculator and ensemble system
+- **Week 3:** Validate against SOI benchmarks
+- **Week 4:** Run full projections with itemized deductions
+
+### Policy Analysis Benefits
+With itemized deductions, the model can analyze:
+- SALT cap impact (raising/lowering $10,000 limit)
+- Mortgage interest deduction changes
+- Charitable giving incentives
+- Standard vs itemized deduction policy trade-offs
+
+**Reference:** See `ITEMIZED_DEDUCTION_MODELING_PLAN.md` for detailed implementation specifications.
+
+---
+
+**Document Version:** 1.1  
+**Last Updated:** 2025-10-27  
 **Owner:** Tax Model Development Team  
 **Status:** Implementation Planning
