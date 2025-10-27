@@ -1,0 +1,24 @@
+{
+  "processing_date": "2025-10-26T14:39:19.421044",
+  "total_records": 2736,
+  "total_occupations": 604,
+  "year_range": "2020-2024",
+  "years_available": [
+    2020,
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "wage_columns": [
+    "mean_wage_annual",
+    "median_wage_annual",
+    "pct10_wage_annual",
+    "pct25_wage_annual",
+    "pct75_wage_annual",
+    "pct90_wage_annual"
+  ],
+  "data_source": "BLS Occupational Employment Statistics (OES)",
+  "geographic_scope": "Hawaii (State FIPS: 15)",
+  "notes": "Harmonized across years with SOC code mapping and growth rate calculations"
+}

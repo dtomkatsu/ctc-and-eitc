@@ -274,19 +274,27 @@ The goal is to create robust, multi-dimensional growth rates that account for:
 **Scripts:**
 - `scripts/data_prep/download_acs_tables.py` ✅ COMPLETE
 - `scripts/data_prep/process_acs_timeseries.py` ✅ COMPLETE
-- `scripts/data_prep/harmonize_bls_oes_years.py` (NEW)
+- `scripts/data_prep/harmonize_bls_oes_years.py` ✅ COMPLETE
 
 **Tasks:**
 1. ✅ Download all ACS tables 2015-2024 (excluding 2020)
 2. ✅ Clean and standardize variable names across years
 3. ✅ Create consistent time-series datasets (wide + long formats)
 4. ✅ Apply year weights (2020 would be 0.35 if included)
-5. Match ACS geography to PUMS (state-level, both Hawaii)
+5. ✅ Harmonize BLS OES data 2020-2024 for Hawaii (604 occupations)
+6. ✅ Assess PUMS-to-BLS occupation mapping feasibility
 
 **Deliverables:**
 - ✅ `data/processed/acs_timeseries/wide/` with clean panel data (11 tables, parquet + CSV)
 - ✅ `data/processed/acs_timeseries/long/` with melted distribution tables (4 tables)
-- `data/processed/bls_oes_timeseries.parquet` (all years combined)
+- ✅ `data/processed/bls_oes_timeseries.parquet` (2,736 records, 5 years)
+- ✅ `data/processed/bls_oes_occupation_summary.parquet` (604 occupations with growth rates)
+- ✅ `PUMS_BLS_MAPPING_ASSESSMENT.md` (mapping feasibility analysis)
+
+**Key Findings:**
+- 65.5% exact PUMS SOCP → BLS SOC match rate
+- 91.7% major group (2-digit) match rate
+- **Recommendation:** Use hierarchical matching with confidence scores
 
 #### Step 2: Component Model Development (Week 2-3)
 **Scripts:**
