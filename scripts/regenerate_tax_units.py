@@ -212,15 +212,25 @@ def main(include_capital_gains: bool = True):
     # Apply AGI adjustment tax savings (similar calculation)
     tax_units['agi_adjustment_savings'] = tax_units.get('agi_adjustments', 0) * tax_units['marginal_rate']
     
-    # Reduce Hawaii tax by total savings
+    # Reduce Hawaii tax by total savings (preserve synthetic filers)
     tax_units['hi_state_tax_adjusted'] = (
         tax_units['hi_state_tax'] - 
         tax_units['deduction_tax_savings'] - 
         tax_units['agi_adjustment_savings']
     ).clip(lower=0)
     
-    # Use adjusted tax as the final tax
-    tax_units['hi_state_tax'] = tax_units['hi_state_tax_adjusted']
+    # Use adjusted tax as the final tax, but preserve synthetic filer taxes
+    if 'is_synthetic_ultra_high' in tax_units.columns:
+        synthetic_mask = tax_units['is_synthetic_ultra_high'] == True
+        if synthetic_mask.any():
+            logger.info(f"  Preserving taxes for {synthetic_mask.sum()} synthetic filers during deduction adjustments")
+            # Only apply adjustments to non-synthetic filers
+            non_synthetic_mask = ~synthetic_mask
+            tax_units.loc[non_synthetic_mask, 'hi_state_tax'] = tax_units.loc[non_synthetic_mask, 'hi_state_tax_adjusted']
+        else:
+            tax_units['hi_state_tax'] = tax_units['hi_state_tax_adjusted']
+    else:
+        tax_units['hi_state_tax'] = tax_units['hi_state_tax_adjusted']
     
     logger.info(f"  Average deduction benefit: ${tax_units['deduction_benefit'].mean():.0f}")
     logger.info(f"  Average AGI adjustment: ${tax_units.get('agi_adjustments', pd.Series([0])).mean():.0f}")
