@@ -62,20 +62,20 @@ class CapitalGainsEstimator:
         self.avg_cap_gains_per_filer = (self.total_cap_gains_millions * 1_000_000) / self.total_filers_with_cap_gains
         
         # Bracket-specific scaling factors to match Table 21 amounts per bracket
-        # Redistributed to fix bracket-level errors while maintaining total accuracy
+        # Calibrated to achieve total capital gains of $2,995M (79.2% of previous values)
         self.bracket_scaling = {
-            (0, 10000): 1900.0,     # $0.5M target (already accurate)
-            (10000, 20000): 1.0,    # $0.0M target (already accurate)
-            (20000, 30000): 1330.0, # $0.3M target (reduced from 1900)
-            (30000, 40000): 52.5,   # $3.6M target (reduced 30% from 75.0)
-            (40000, 50000): 34.3,   # $7.7M target (reduced 30% from 49.0)
-            (50000, 75000): 23.8,   # $30.1M target (reduced 30% from 34.0)
-            (75000, 100000): 14.7,  # $46.0M target (reduced 30% from 21.0)
-            (100000, 150000): 9.4,  # $112.0M target (reduced 30% from 13.5)
-            (150000, 200000): 5.6,  # $126.0M target (reduced 30% from 8.0)
-            (200000, 300000): 4.5,  # $242.0M target (reduced 30% from 6.5)
-            (300000, 400000): 3.7,  # $216.9M target (reduced 30% from 5.3)
-            (400000, float('inf')): 5.3   # $2,210.3M target (increased 40% from 3.8)
+            (0, 10000): 147.6,      # $0.5M target
+            (10000, 20000): 0.8,    # $0.0M target
+            (20000, 30000): 526.8,  # $0.3M target
+            (30000, 40000): 26.8,   # $3.6M target
+            (40000, 50000): 15.8,   # $7.7M target
+            (50000, 75000): 10.5,   # $30.1M target
+            (75000, 100000): 6.8,   # $46.0M target
+            (100000, 150000): 5.2,  # $112.0M target
+            (150000, 200000): 3.6,  # $126.0M target
+            (200000, 300000): 3.2,  # $242.0M target
+            (300000, 400000): 2.4,  # $216.9M target
+            (400000, float('inf')): 4.6   # $2,210.3M target
         }
     
     def get_capital_gains_rate(self, agi: float) -> float:
@@ -113,14 +113,16 @@ class CapitalGainsEstimator:
         return 0.514454
     
     def estimate_capital_gains(self, agi: float, taxable_income: float,
-                              include_random: bool = True) -> float:
+                              include_random: bool = True, 
+                              assignment_method: str = 'random') -> float:
         """
         Estimate capital gains for a tax unit.
         
         Args:
             agi: Adjusted Gross Income
             taxable_income: Taxable income after deductions
-            include_random: If True, use participation rate to randomly assign cap gains
+            include_random: If True, use participation rate to assign cap gains
+            assignment_method: 'random', 'deterministic_top', 'deterministic_income', or 'deterministic_hash'
             
         Returns:
             Estimated capital gains amount
@@ -152,7 +154,8 @@ class CapitalGainsEstimator:
         return cap_gains
     
     def estimate_agi_with_cap_gains(self, agi_without_cap_gains: float,
-                                    include_random: bool = True) -> tuple[float, float]:
+                                    include_random: bool = True,
+                                    assignment_method: str = 'random') -> tuple[float, float]:
         """
         Estimate AGI including capital gains.
         
@@ -162,6 +165,7 @@ class CapitalGainsEstimator:
         Args:
             agi_without_cap_gains: AGI without capital gains (from PUMS)
             include_random: If True, use participation rate
+            assignment_method: 'random', 'deterministic_top', 'deterministic_income', or 'deterministic_hash'
             
         Returns:
             Tuple of (estimated_cap_gains, agi_with_cap_gains)
@@ -195,10 +199,80 @@ class CapitalGainsEstimator:
         return (cap_gains, agi_with_cap_gains)
 
 
+def _apply_deterministic_assignment(df: pd.DataFrame, estimator: CapitalGainsEstimator, 
+                                   agi_col: str, assignment_method: str) -> pd.DataFrame:
+    """
+    Apply deterministic assignment of capital gains by bracket.
+    
+    Args:
+        df: DataFrame with tax units
+        estimator: CapitalGainsEstimator instance
+        agi_col: Name of AGI column
+        assignment_method: Deterministic assignment method
+        
+    Returns:
+        DataFrame with 'has_capital_gains' column added
+    """
+    import hashlib
+    
+    result_df = df.copy()
+    result_df['has_capital_gains'] = False
+    
+    # Process each bracket separately
+    for (min_agi, max_agi), participation_rate in estimator.PARTICIPATION_RATES.items():
+        # Filter to bracket
+        if max_agi == float('inf'):
+            mask = result_df[agi_col] >= min_agi
+        else:
+            mask = (result_df[agi_col] >= min_agi) & (result_df[agi_col] < max_agi)
+        
+        bracket_df = result_df[mask]
+        if len(bracket_df) == 0:
+            continue
+            
+        # Calculate number of filers to assign capital gains
+        # Use unweighted count for selection, but consider weights for targeting
+        total_filers = len(bracket_df)
+        target_filers = max(1, int(total_filers * participation_rate))
+        
+        if target_filers == 0:
+            continue
+            
+        # Apply deterministic assignment method
+        if assignment_method == 'deterministic_top':
+            # Assign to highest income filers
+            selected_indices = bracket_df.nlargest(target_filers, agi_col).index
+            
+        elif assignment_method == 'deterministic_income':
+            # Assign based on income percentile (top percentile gets capital gains)
+            percentile_threshold = max(0, 100 - (participation_rate * 100))
+            income_threshold = bracket_df[agi_col].quantile(percentile_threshold / 100)
+            selected_indices = bracket_df[bracket_df[agi_col] >= income_threshold].index
+            
+        elif assignment_method == 'deterministic_hash':
+            # Assign based on deterministic hash of row data
+            bracket_df_copy = bracket_df.copy()
+            bracket_df_copy['hash_value'] = bracket_df_copy.apply(
+                lambda row: int(hashlib.md5(f"{row[agi_col]:.2f}_{row.get('weight', 1):.2f}".encode()).hexdigest()[:8], 16),
+                axis=1
+            )
+            selected_indices = bracket_df_copy.nlargest(target_filers, 'hash_value').index
+            
+        else:
+            # Default to top income method
+            selected_indices = bracket_df.nlargest(target_filers, agi_col).index
+        
+        # Mark selected filers as having capital gains
+        result_df.loc[selected_indices, 'has_capital_gains'] = True
+    
+    return result_df
+
+
 def apply_capital_gains_to_dataframe(df: pd.DataFrame,
                                      agi_col: str = 'agi',
                                      taxable_income_col: Optional[str] = None,
-                                     include_random: bool = True) -> pd.DataFrame:
+                                     include_random: bool = True,
+                                     assignment_method: str = 'random') -> pd.DataFrame:
     """
     Apply capital gains estimation to a DataFrame of tax units.
     
@@ -206,7 +280,12 @@ def apply_capital_gains_to_dataframe(df: pd.DataFrame,
         df: DataFrame with tax units
         agi_col: Name of AGI column
         taxable_income_col: Name of taxable income column (optional)
-        include_random: If True, randomly assign based on participation rates
+        include_random: If True, assign based on participation rates
+        assignment_method: Method for assignment:
+            - 'random': Random assignment based on participation rates
+            - 'deterministic_top': Assign to highest income filers in each bracket
+            - 'deterministic_income': Assign based on income percentile within bracket
+            - 'deterministic_hash': Assign based on deterministic hash of filer data
         
     Returns:
         DataFrame with added columns:
@@ -216,29 +295,45 @@ def apply_capital_gains_to_dataframe(df: pd.DataFrame,
     result_df = df.copy()
     estimator = CapitalGainsEstimator()
     
-    capital_gains = []
-    agi_with_cap_gains_list = []
+    # If using deterministic assignment, pre-calculate assignments by bracket
+    if assignment_method != 'random' and include_random:
+        result_df = _apply_deterministic_assignment(result_df, estimator, agi_col, assignment_method)
     
-    for _, row in df.iterrows():
+    capital_gains = []
+    agi_with_cap_gains = []
+    
+    for _, row in result_df.iterrows():
         agi = row[agi_col]
+        
+        # Check if this filer should have capital gains
+        if assignment_method != 'random' and include_random:
+            # Use deterministic assignment
+            should_have_cap_gains = row.get('has_capital_gains', False)
+            if not should_have_cap_gains:
+                capital_gains.append(0.0)
+                agi_with_cap_gains.append(agi)
+                continue
         
         if taxable_income_col and taxable_income_col in df.columns:
             # Use actual taxable income if available
             taxable_income = row[taxable_income_col]
-            cap_gains = estimator.estimate_capital_gains(agi, taxable_income, include_random)
+            cap_gains = estimator.estimate_capital_gains(agi, taxable_income, 
+                                                       include_random=(assignment_method == 'random'), 
+                                                       assignment_method=assignment_method)
             agi_with_cg = agi + cap_gains
         else:
-            # Estimate both cap gains and new AGI
-            cap_gains, agi_with_cg = estimator.estimate_agi_with_cap_gains(agi, include_random)
+            # Estimate from AGI
+            cap_gains, agi_with_cg = estimator.estimate_agi_with_cap_gains(agi, 
+                                                                          include_random=(assignment_method == 'random'),
+                                                                          assignment_method=assignment_method)
         
         capital_gains.append(cap_gains)
-        agi_with_cap_gains_list.append(agi_with_cg)
+        agi_with_cap_gains.append(agi_with_cg)
     
     result_df['capital_gains'] = capital_gains
-    result_df['agi_with_cap_gains'] = agi_with_cap_gains_list
+    result_df['agi_with_cap_gains'] = agi_with_cap_gains
     
     return result_df
-
 
 if __name__ == '__main__':
     # Example usage

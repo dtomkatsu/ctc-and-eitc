@@ -28,34 +28,35 @@ class AGIAdjustmentEstimator:
     """
     
     # SOI-based adjustment rates (as % of income)
+    # Rates increased by ~7% to match DOTax taxable income benchmarks
     ADJUSTMENT_RATES = {
         'ira_contribution': {
-            'base_rate': 0.003,  # 0.3% of income on average
+            'base_rate': 0.0032,  # 0.32% of income on average (was 0.3%)
             'income_threshold': 50000,
-            'max_rate': 0.02,   # Up to 2.0% for middle income
+            'max_rate': 0.0214,   # Up to 2.14% for middle income (was 2.0%)
         },
         'self_employed_health': {
-            'base_rate': 0.0035,  # 0.35% of income
+            'base_rate': 0.00375,  # 0.375% of income (was 0.35%)
             'se_multiplier': 3.5,  # 3.5x for self-employed
         },
         'self_employed_retirement': {
-            'base_rate': 0.0012,  # 0.12% of income
+            'base_rate': 0.00128,  # 0.128% of income (was 0.12%)
             'se_multiplier': 5.5,  # 5.5x for self-employed
         },
         'student_loan_interest': {
-            'base_rate': 0.0004,  # 0.04% of income
+            'base_rate': 0.00043,  # 0.043% of income (was 0.04%)
             'age_factor': True,  # Higher for younger filers
             'income_cap': 145000,  # Phase out above this
         },
         'educator_expenses': {
-            'flat_amount': 350,  # Average per educator
+            'flat_amount': 375,  # Average per educator (was 350)
             'educator_rate': 0.06,  # 6% of filers are educators
         }
     }
     
     def __init__(self):
         """Initialize with SOI-based rates"""
-        self.total_adjustment_rate = 0.015  # Target ~1.5% overall adjustments
+        self.total_adjustment_rate = 0.0165  # Target ~1.65% overall adjustments (increased to match DOTax taxable income)
     
     def estimate_ira_contribution(self, income: float, age: Optional[int] = None,
                                   filing_status: str = 'single') -> float:

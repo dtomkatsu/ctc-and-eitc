@@ -94,17 +94,19 @@ def main(include_capital_gains: bool = True):
         from src.tax.adjustments.capital_gains import apply_capital_gains_to_dataframe
         
         logger.info("\n📈 Applying capital gains (Table 21)...")
-        logger.info("   Capital gains will be added to AGI for apples-to-apples DOTax comparison")
+        logger.info("   Capital gains added to AGI → affects taxable income → affects tax liability")
+        logger.info("   Comparing AMOUNTS of capital gains (not tax on them) to Table 21")
         
         # Store original AGI without capital gains
         tax_units['agi_without_cap_gains'] = tax_units['agi']
         
-        # Apply capital gains estimation
+        # Apply capital gains estimation with deterministic assignment
         tax_units = apply_capital_gains_to_dataframe(
             tax_units,
             agi_col='agi',
             taxable_income_col=None,  # Will estimate from AGI
-            include_random=True
+            include_random=True,
+            assignment_method='deterministic_top'  # Use deterministic assignment for consistency
         )
         
         # Use AGI with capital gains as the primary AGI
@@ -132,15 +134,15 @@ def main(include_capital_gains: bool = True):
         agi = row.get('agi', row.get('income', 0))
         filing_status = row['filing_status']
         
-        # Get standard deduction amount (2022 Hawaii)
+        # Get standard deduction amount (2022 Hawaii) - CORRECTED VALUES
         standard_amounts = {
-            'single': 4400,
-            'married_filing_jointly': 8800,
-            'married_filing_separately': 4400,
-            'head_of_household': 6500,
-            'qualifying_widow': 8800
+            'single': 2200,
+            'married_filing_jointly': 4400,
+            'married_filing_separately': 2200,
+            'head_of_household': 3212,
+            'qualifying_widow': 4400
         }
-        standard_deduction = standard_amounts.get(filing_status, 4400)
+        standard_deduction = standard_amounts.get(filing_status, 2200)
         
         # Get deduction (standard or itemized)
         deduction_info = deduction_estimator.get_deduction(
@@ -162,12 +164,13 @@ def main(include_capital_gains: bool = True):
     logger.info("\n📉 Applying deduction-based tax reductions...")
     
     # Calculate effective deduction benefit (amount above standard deduction)
+    # CORRECTED 2022 Hawaii standard deductions
     standard_amounts = {
-        'single': 4400,
-        'married_filing_jointly': 8800,
-        'married_filing_separately': 4400,
-        'head_of_household': 6500,
-        'qualifying_widow': 8800
+        'single': 2200,
+        'married_filing_jointly': 4400,
+        'married_filing_separately': 2200,
+        'head_of_household': 3212,
+        'qualifying_widow': 4400
     }
     
     tax_units['standard_deduction_amount'] = tax_units['filing_status'].map(standard_amounts)

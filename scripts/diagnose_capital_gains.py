@@ -45,6 +45,9 @@ table_21_benchmarks = {
 print("="*100)
 print("CAPITAL GAINS DISTRIBUTION DIAGNOSIS")
 print("="*100)
+print("\n📋 NOTE: This compares AMOUNTS of capital gains (in dollars), not tax liability.")
+print("   Capital gains are added to AGI, which then affects taxable income and tax liability.")
+print("   Table 21 shows capital gains amounts by bracket, not the tax on those gains.\n")
 print()
 
 # Analyze by bracket

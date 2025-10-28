@@ -82,7 +82,8 @@ class HawaiiTaxCalculator:
                                  agi: float, 
                                  filing_status: str,
                                  num_dependents: int = 0,
-                                 num_adults: int = 1) -> float:
+                                 num_adults: int = 1,
+                                 deduction_amount: float = None) -> float:
         """
         Calculate Hawaii taxable income from AGI.
         
@@ -91,19 +92,24 @@ class HawaiiTaxCalculator:
             filing_status: Filing status (single, married_filing_jointly, etc.)
             num_dependents: Number of dependents
             num_adults: Number of adults (1 for single/HoH, 2 for MFJ/MFS)
+            deduction_amount: Actual deduction amount (itemized or standard)
+                            If None, uses standard deduction
             
         Returns:
             Hawaii taxable income
         """
-        # Get standard deduction
-        std_deduction = self.standard_deductions.get(filing_status, 0)
+        # Use provided deduction amount, or default to standard deduction
+        if deduction_amount is not None:
+            deduction = deduction_amount
+        else:
+            deduction = self.standard_deductions.get(filing_status, 0)
         
         # Calculate personal exemptions
         total_people = num_adults + num_dependents
         total_exemptions = total_people * self.personal_exemption
         
-        # Taxable income = AGI - standard deduction - exemptions
-        taxable_income = max(0, agi - std_deduction - total_exemptions)
+        # Taxable income = AGI - deduction - exemptions
+        taxable_income = max(0, agi - deduction - total_exemptions)
         
         return taxable_income
         
@@ -228,7 +234,8 @@ class HawaiiTaxCalculator:
                 row['agi'],
                 row['filing_status'],
                 row['num_dependents'],
-                row['num_adults']
+                row['num_adults'],
+                row.get('total_deductions', None)  # Use actual deductions if available
             ),
             axis=1
         )
