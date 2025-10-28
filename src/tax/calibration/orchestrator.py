@@ -350,7 +350,7 @@ class CalibrationOrchestrator:
             
             logger.info(f"  $200k+ deductions: ${original_deductions/1e6:>8,.1f}M → ${new_deductions/1e6:>8,.1f}M (×0.85)")
         
-        # Recalculate taxes after deduction changes
+        # Recalculate taxes after deduction changes (preserve synthetic filers)
         from src.tax.hawaii_calculator import HawaiiTaxCalculator
         calculator = HawaiiTaxCalculator()
         result = calculator.calculate_tax_units_batch(result)

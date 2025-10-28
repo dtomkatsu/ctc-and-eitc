@@ -279,16 +279,26 @@ class HawaiiTaxCalculator:
                     ),
                     axis=1
                 )
-            if preserved_tax is not None and preserved_tax.notna().any():
-                result.loc[synthetic_mask, 'hi_state_tax'] = preserved_tax
+            # Always recalculate tax for synthetic filers to ensure valid values
+            logger.info(f"   Recalculating taxes for {synthetic_mask.sum()} synthetic filers...")
+            for idx in result[synthetic_mask].index:
+                row = result.loc[idx]
+                taxable_income = row['hi_taxable_income']
+                filing_status = row['filing_status']
+                
+                if pd.notna(taxable_income):
+                    tax = self.calculate_tax(taxable_income, filing_status)
+                    result.loc[idx, 'hi_state_tax'] = tax
+                    logger.debug(f"     Synthetic filer {idx}: taxable=${taxable_income:,.0f} → tax=${tax:,.2f}")
+                else:
+                    logger.warning(f"     Synthetic filer {idx}: taxable income is NaN")
+            
+            # Verify all synthetic filers now have valid taxes
+            synthetic_nan_count = result.loc[synthetic_mask, 'hi_state_tax'].isna().sum()
+            if synthetic_nan_count > 0:
+                logger.warning(f"   ⚠️  {synthetic_nan_count} synthetic filers still have NaN tax")
             else:
-                result.loc[synthetic_mask, 'hi_state_tax'] = result.loc[synthetic_mask].apply(
-                    lambda row: self.calculate_tax(
-                        row['hi_taxable_income'],
-                        row['filing_status']
-                    ),
-                    axis=1
-                )
+                logger.info(f"   ✅ All synthetic filers now have valid tax values")
         
         # Calculate effective rate
         result['hi_effective_rate'] = np.where(

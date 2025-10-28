@@ -153,96 +153,14 @@ def main(include_capital_gains: bool = True):
     
     tax_units['total_deductions'] = itemized_deductions
     
-    # Apply Pareto calibration to high-income filers
-    logger.info("\n📊 Calibrating high-income distribution (AGI >= $200k)...")
-    from src.tax.adjustments.pareto_calibration import apply_pareto_calibration
-    
-    tax_units = apply_pareto_calibration(
+    # Apply systematic calibration pipeline (industrial-grade ordering)
+    from src.tax.calibration import apply_systematic_calibration
+
+    logger.info("\n🔁 Running systematic calibration pipeline (TPC/CBO style)...")
+    tax_units = apply_systematic_calibration(
         tax_units,
-        threshold=200000,
-        target_alpha=1.454,  # Calibrated to match DOTax Table A8
-        add_synthetic=False  # Can enable if needed for extreme high-income
-    )
-    
-    # Calculate Hawaii state taxes (first pass)
-    from src.tax.hawaii_calculator import HawaiiTaxCalculator
-    
-    logger.info("\n💵 Calculating Hawaii state taxes (2022) - initial...")
-    calculator = HawaiiTaxCalculator()
-    tax_units = calculator.calculate_tax_units_batch(tax_units)
-    
-    # Apply systematic income distribution calibration to match effective rates
-    logger.info("\n📈 Calibrating income distributions to match DOTax effective rates...")
-    from src.tax.adjustments.income_distribution_calibrator import apply_income_distribution_calibration
-    
-    tax_units = apply_income_distribution_calibration(
-        tax_units,
-        threshold=100000,  # Calibrate incomes >= $100k
-        method='percentile',  # Use percentile-based redistribution
-        recalculate_tax=True  # Recalculate taxes after adjustment
-    )
-    
-    # Apply comprehensive weight calibration to match filer counts (low/middle income only)
-    logger.info("\n⚖️  Calibrating weights to match DOTax filer counts...")
-    from src.tax.adjustments.comprehensive_weight_calibrator import (
-        apply_comprehensive_weight_calibration
-    )
-    
-    # Only calibrate low/middle income brackets (<$200k)
-    # High-income brackets already calibrated via Pareto
-    tax_units_copy = tax_units.copy()
-    
-    for (min_agi, max_agi), target_filers in [
-        ((0, 10000), 115285),
-        ((10000, 20000), 64160),
-        ((20000, 30000), 57835),
-        ((30000, 40000), 59827),
-        ((40000, 50000), 53555),
-        ((50000, 75000), 91459),
-        ((75000, 100000), 54976),
-        ((100000, 150000), 62065),
-        ((150000, 200000), 27976),
-    ]:
-        mask = (tax_units_copy['agi'] >= min_agi) & (tax_units_copy['agi'] < max_agi)
-        current_filers = tax_units_copy.loc[mask, 'weight'].sum()
-        
-        if current_filers > 0 and abs(current_filers - target_filers) > 100:
-            adj_factor = target_filers / current_filers
-            tax_units_copy.loc[mask, 'weight'] *= adj_factor
-            
-            logger.info(f"  ${min_agi//1000}k-${max_agi//1000}k: "
-                       f"{current_filers:>8,.0f} → {target_filers:>8,} (×{adj_factor:.3f})")
-    
-    tax_units = tax_units_copy
-    
-    # Recalculate taxes after weight adjustments
-    logger.info("\n💵 Recalculating Hawaii state taxes after weight calibration...")
-    calculator = HawaiiTaxCalculator()
-    tax_units = calculator.calculate_tax_units_batch(tax_units)
-    
-    # Reallocate $1M+ weight to synthetic ultra-high incomes
-    logger.info("\n💎 Reallocating $1M+ weight to ultra-high-income levels...")
-    from src.tax.adjustments.million_plus_reallocation import apply_million_plus_reallocation
-    
-    tax_units = apply_million_plus_reallocation(
-        tax_units,
-        reallocation_pct=0.35,  # Move 35% of $1M-$2M weight to $5M+
-        target_tax_m=663.0,     # DOTax target for $1M+ bracket
-        pareto_alpha=1.454      # Pareto shape parameter
-    )
-    
-    # Recalculate taxes with reallocated weights
-    logger.info("\n💵 Recalculating Hawaii state taxes with reallocated weights...")
-    calculator = HawaiiTaxCalculator()
-    tax_units = calculator.calculate_tax_units_batch(tax_units)
-    
-    # Apply final gap-closing adjustments (Hybrid Solution C)
-    logger.info("\n🎯 Applying final gap-closing adjustments...")
-    from src.tax.adjustments.final_gap_closer import apply_final_gap_closer
-    
-    tax_units = apply_final_gap_closer(
-        tax_units,
-        recalculate_tax=True  # Recalculate after deduction adjustments
+        max_iterations=5,
+        tolerance=0.05
     )
     
     # Apply deduction adjustments to reduce tax liability
