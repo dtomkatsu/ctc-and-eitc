@@ -6,12 +6,14 @@ Based on IRS SOI 2022 data:
 - Average itemized deduction: $34,592
 - Total itemized deductions: $2.81B
 
-Major categories:
-- State & Local Taxes (SALT): $1.23B (85.7% of itemizers)
+Major federal categories we keep for Hawaii modeling:
 - Home Mortgage Interest: $1.09B (81.9% of itemizers)
 - Charitable Contributions: $502M (72.7% of itemizers)
 - Medical & Dental: $339M (17.1% of itemizers)
 - Real Estate Taxes: $254M (85.7% of itemizers)
+
+Note: State income taxes (SALT) are excluded because Hawaii taxable
+income should not deduct Hawaii income tax payments.
 """
 
 import pandas as pd
@@ -31,18 +33,18 @@ class ItemizedDeductionEstimator:
     
     # SOI-based itemization rates by income
     ITEMIZATION_RATES = {
-        'under_50k': 0.02,      # 2% itemize
-        '50k_to_100k': 0.08,    # 8% itemize
-        '100k_to_200k': 0.25,   # 25% itemize
-        '200k_plus': 0.45,      # 45% itemize
+        'under_50k': 0.08,      # 8% itemize
+        '50k_to_100k': 0.25,    # 25% itemize
+        '100k_to_200k': 0.45,   # 45% itemize
+        '200k_plus': 0.65,      # 65% itemize
     }
     
     # Average deductions by income level (from SOI patterns)
     AVG_DEDUCTIONS = {
-        'under_50k': 15000,
-        '50k_to_100k': 22000,
-        '100k_to_200k': 35000,
-        '200k_plus': 55000,
+        'under_50k': 18000,
+        '50k_to_100k': 26000,
+        '100k_to_200k': 42000,
+        '200k_plus': 60000,
     }
     
     def __init__(self):
@@ -63,53 +65,69 @@ class ItemizedDeductionEstimator:
     
     def will_itemize(self, agi: float, filing_status: str) -> bool:
         """
-        Determine if filer will itemize based on income.
+        Determine if filer will itemize based on income and filing status.
         
         Higher income filers are more likely to itemize.
+        Joint filers itemize more than singles due to higher deduction thresholds.
         """
         bracket = self.get_income_bracket(agi)
-        itemization_rate = self.ITEMIZATION_RATES[bracket]
+        base_rate = self.ITEMIZATION_RATES[bracket]
+        
+        # Adjust by filing status - joint filers itemize more
+        if filing_status in ['married_filing_jointly', 'qualifying_widow']:
+            rate = base_rate * 1.3  # 30% higher for joint filers
+        elif filing_status == 'head_of_household':
+            rate = base_rate * 1.1  # 10% higher for HoH
+        else:
+            rate = base_rate
+        
+        # Cap at reasonable maximum
+        rate = min(rate, 0.8)
         
         # Random selection based on probability
-        return np.random.random() < itemization_rate
-    
-    def estimate_salt_deduction(self, agi: float, filing_status: str) -> float:
-        """
-        Estimate State and Local Tax (SALT) deduction.
-        
-        From SOI: 85.7% of itemizers claim SALT, avg $17,642
-        SALT cap: $10,000 (federal limit applies)
-        """
-        # Base SALT as % of income
-        if agi < 100000:
-            salt = agi * 0.05  # ~5% of income
-        elif agi < 200000:
-            salt = agi * 0.06  # ~6% of income
-        else:
-            salt = agi * 0.07  # ~7% of income
-        
-        # Apply $10,000 federal cap
-        return min(salt, 10000)
+        return np.random.random() < rate
     
     def estimate_mortgage_interest(self, agi: float, filing_status: str) -> float:
         """
         Estimate home mortgage interest deduction.
         
-        From SOI: 81.9% of itemizers claim mortgage interest, avg $16,381
+        Income-sensitive amounts that scale with AGI.
+        Joint filers more likely to own homes and have larger mortgages.
         """
-        # Only homeowners (estimate ~65% of itemizers)
-        if np.random.random() > 0.65:
+        # Homeownership probability by income and filing status
+        if filing_status in ['married_filing_jointly', 'qualifying_widow']:
+            ownership_prob = min(0.8, 0.4 + (agi / 200000) * 0.4)  # 40-80%
+        elif filing_status == 'head_of_household':
+            ownership_prob = min(0.7, 0.3 + (agi / 200000) * 0.4)  # 30-70%
+        else:
+            ownership_prob = min(0.6, 0.2 + (agi / 200000) * 0.4)  # 20-60%
+        
+        if np.random.random() > ownership_prob:
             return 0
         
-        # Mortgage interest based on income (proxy for home value)
-        if agi < 75000:
-            return 8000
+        # Moderate income-sensitive mortgage interest
+        if agi < 30000:
+            base_interest = 3000
+        elif agi < 50000:
+            base_interest = 6000
+        elif agi < 75000:
+            base_interest = 10000
+        elif agi < 100000:
+            base_interest = 15000
         elif agi < 150000:
-            return 15000
+            base_interest = 20000
+        elif agi < 200000:
+            base_interest = 25000
         elif agi < 300000:
-            return 22000
+            base_interest = 32000
         else:
-            return 30000
+            base_interest = 40000
+        
+        # Filing status adjustment
+        if filing_status in ['married_filing_jointly', 'qualifying_widow']:
+            return base_interest * 1.3  # Joint filers have larger mortgages
+        else:
+            return base_interest
     
     def estimate_charitable_contributions(self, agi: float, filing_status: str) -> float:
         """
@@ -119,13 +137,13 @@ class ItemizedDeductionEstimator:
         """
         # Charitable giving as % of income
         if agi < 75000:
-            giving_rate = 0.015  # 1.5%
+            giving_rate = 0.02   # 2%
         elif agi < 150000:
-            giving_rate = 0.025  # 2.5%
+            giving_rate = 0.03   # 3%
         elif agi < 300000:
-            giving_rate = 0.035  # 3.5%
+            giving_rate = 0.04   # 4%
         else:
-            giving_rate = 0.045  # 4.5%
+            giving_rate = 0.05   # 5%
         
         # 72.7% of itemizers give
         if np.random.random() < 0.727:
@@ -169,13 +187,13 @@ class ItemizedDeductionEstimator:
         """
         # Property tax based on income (proxy for home value)
         if agi < 75000:
-            return 2500
+            return 3200
         elif agi < 150000:
-            return 4000
+            return 4800
         elif agi < 300000:
-            return 6000
+            return 7000
         else:
-            return 8000
+            return 9000
     
     def estimate_total_itemized_deductions(self, agi: float, 
                                           filing_status: str,
@@ -187,21 +205,11 @@ class ItemizedDeductionEstimator:
             Dictionary with individual deductions and total
         """
         deductions = {
-            'salt': self.estimate_salt_deduction(agi, filing_status),
             'mortgage_interest': self.estimate_mortgage_interest(agi, filing_status),
             'charitable': self.estimate_charitable_contributions(agi, filing_status),
             'medical': self.estimate_medical_deduction(agi, age),
             'real_estate_taxes': self.estimate_real_estate_taxes(agi, filing_status),
         }
-        
-        # Note: SALT cap of $10,000 includes both income and property taxes
-        # Adjust if combined exceeds cap
-        combined_salt = deductions['salt'] + deductions['real_estate_taxes']
-        if combined_salt > 10000:
-            # Proportionally reduce both
-            reduction_factor = 10000 / combined_salt
-            deductions['salt'] *= reduction_factor
-            deductions['real_estate_taxes'] *= reduction_factor
         
         deductions['total'] = sum(deductions.values())
         

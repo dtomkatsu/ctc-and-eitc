@@ -30,10 +30,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
-    """Main execution."""
+def main(include_capital_gains: bool = True):
+    """
+    Main execution.
+    
+    Args:
+        include_capital_gains: If True, include capital gains in AGI for apples-to-apples
+                              comparison with DOTax benchmarks. If False, exclude capital
+                              gains (useful for policy scenarios without cap gains).
+    """
     logger.info("="*80)
     logger.info("REGENERATING TAX UNITS WITH UPDATED LOGIC")
+    logger.info(f"Capital gains: {'INCLUDED' if include_capital_gains else 'EXCLUDED'}")
     logger.info("="*80)
     
     # Load PUMS data
@@ -70,12 +78,147 @@ def main():
     
     logger.info(f"\n✅ Calibration complete - {len(tax_units):,} tax units")
     
+    # Apply AGI adjustments and itemized deductions
+    from src.tax.adjustments.agi_adjustments import apply_agi_adjustments_to_dataframe
+    from src.tax.adjustments.itemized_deductions import ItemizedDeductionEstimator
+    
+    logger.info("\n🔧 Applying AGI adjustments...")
+    tax_units = apply_agi_adjustments_to_dataframe(
+        tax_units, 
+        income_col='income',
+        filing_status_col='filing_status'
+    )
+    
+    # Apply capital gains if enabled
+    if include_capital_gains:
+        from src.tax.adjustments.capital_gains import apply_capital_gains_to_dataframe
+        
+        logger.info("\n📈 Applying capital gains (Table 21)...")
+        logger.info("   Capital gains will be added to AGI for apples-to-apples DOTax comparison")
+        
+        # Store original AGI without capital gains
+        tax_units['agi_without_cap_gains'] = tax_units['agi']
+        
+        # Apply capital gains estimation
+        tax_units = apply_capital_gains_to_dataframe(
+            tax_units,
+            agi_col='agi',
+            taxable_income_col=None,  # Will estimate from AGI
+            include_random=True
+        )
+        
+        # Use AGI with capital gains as the primary AGI
+        tax_units['agi'] = tax_units['agi_with_cap_gains']
+        
+        # Log summary statistics
+        total_cap_gains = (tax_units['capital_gains'] * tax_units['weight']).sum() / 1_000_000
+        filers_with_cap_gains = (tax_units['capital_gains'] > 0).sum()
+        weighted_filers_with_cap_gains = ((tax_units['capital_gains'] > 0) * tax_units['weight']).sum()
+        
+        logger.info(f"   Total capital gains (weighted): ${total_cap_gains:,.1f}M")
+        logger.info(f"   Filers with capital gains: {weighted_filers_with_cap_gains:,.0f} ({weighted_filers_with_cap_gains/tax_units['weight'].sum()*100:.1f}%)")
+        logger.info(f"   Average cap gains per filer: ${total_cap_gains * 1_000_000 / weighted_filers_with_cap_gains:,.0f}")
+    else:
+        logger.info("\n⚠️  Capital gains EXCLUDED from this run")
+        tax_units['capital_gains'] = 0
+        tax_units['agi_without_cap_gains'] = tax_units['agi']
+    
+    logger.info("\n🏠 Applying itemized deductions...")
+    deduction_estimator = ItemizedDeductionEstimator()
+    
+    # Calculate itemized vs standard deductions
+    itemized_deductions = []
+    for _, row in tax_units.iterrows():
+        agi = row.get('agi', row.get('income', 0))
+        filing_status = row['filing_status']
+        
+        # Get standard deduction amount (2022 Hawaii)
+        standard_amounts = {
+            'single': 4400,
+            'married_filing_jointly': 8800,
+            'married_filing_separately': 4400,
+            'head_of_household': 6500,
+            'qualifying_widow': 8800
+        }
+        standard_deduction = standard_amounts.get(filing_status, 4400)
+        
+        # Get deduction (standard or itemized)
+        deduction_info = deduction_estimator.get_deduction(
+            agi, filing_status, standard_deduction
+        )
+        
+        itemized_deductions.append(deduction_info['amount'])
+    
+    tax_units['total_deductions'] = itemized_deductions
+    
     # Calculate Hawaii state taxes
     from src.tax.hawaii_calculator import HawaiiTaxCalculator
     
     logger.info("\n💵 Calculating Hawaii state taxes (2022)...")
     calculator = HawaiiTaxCalculator()
     tax_units = calculator.calculate_tax_units_batch(tax_units)
+    
+    # Apply deduction adjustments to reduce tax liability
+    logger.info("\n📉 Applying deduction-based tax reductions...")
+    
+    # Calculate effective deduction benefit (amount above standard deduction)
+    standard_amounts = {
+        'single': 4400,
+        'married_filing_jointly': 8800,
+        'married_filing_separately': 4400,
+        'head_of_household': 6500,
+        'qualifying_widow': 8800
+    }
+    
+    tax_units['standard_deduction_amount'] = tax_units['filing_status'].map(standard_amounts)
+    tax_units['deduction_benefit'] = tax_units['total_deductions'] - tax_units['standard_deduction_amount']
+    tax_units['deduction_benefit'] = tax_units['deduction_benefit'].clip(lower=0)
+    
+    # Apply marginal tax rate to deduction benefit to get tax reduction
+    # Use approximate marginal rates by income bracket
+    def get_marginal_rate(agi, filing_status):
+        if agi < 2400:
+            return 0.014
+        elif agi < 4800:
+            return 0.032
+        elif agi < 9600:
+            return 0.055
+        elif agi < 14400:
+            return 0.064
+        elif agi < 19200:
+            return 0.068
+        elif agi < 24000:
+            return 0.072
+        elif agi < 36000:
+            return 0.076
+        elif agi < 48000:
+            return 0.079
+        else:
+            return 0.0825
+    
+    tax_units['marginal_rate'] = tax_units.apply(
+        lambda row: get_marginal_rate(row.get('agi', row.get('income', 0)), row['filing_status']),
+        axis=1
+    )
+    
+    tax_units['deduction_tax_savings'] = tax_units['deduction_benefit'] * tax_units['marginal_rate']
+    
+    # Apply AGI adjustment tax savings (similar calculation)
+    tax_units['agi_adjustment_savings'] = tax_units.get('agi_adjustments', 0) * tax_units['marginal_rate']
+    
+    # Reduce Hawaii tax by total savings
+    tax_units['hi_state_tax_adjusted'] = (
+        tax_units['hi_state_tax'] - 
+        tax_units['deduction_tax_savings'] - 
+        tax_units['agi_adjustment_savings']
+    ).clip(lower=0)
+    
+    # Use adjusted tax as the final tax
+    tax_units['hi_state_tax'] = tax_units['hi_state_tax_adjusted']
+    
+    logger.info(f"  Average deduction benefit: ${tax_units['deduction_benefit'].mean():.0f}")
+    logger.info(f"  Average AGI adjustment: ${tax_units.get('agi_adjustments', pd.Series([0])).mean():.0f}")
+    logger.info(f"  Average tax reduction: ${(tax_units['deduction_tax_savings'] + tax_units['agi_adjustment_savings']).mean():.0f}")
     
     # Analyze filing status distribution
     logger.info("\n" + "="*80)

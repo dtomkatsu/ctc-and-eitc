@@ -30,66 +30,113 @@ class AGIAdjustmentEstimator:
     # SOI-based adjustment rates (as % of income)
     ADJUSTMENT_RATES = {
         'ira_contribution': {
-            'base_rate': 0.001,  # 0.1% of income on average
+            'base_rate': 0.003,  # 0.3% of income on average
             'income_threshold': 50000,
-            'max_rate': 0.015,  # Up to 1.5% for middle income
+            'max_rate': 0.02,   # Up to 2.0% for middle income
         },
         'self_employed_health': {
-            'base_rate': 0.002,  # 0.2% of income
-            'se_multiplier': 3.0,  # 3x for self-employed
+            'base_rate': 0.0035,  # 0.35% of income
+            'se_multiplier': 3.5,  # 3.5x for self-employed
         },
         'self_employed_retirement': {
-            'base_rate': 0.0007,  # 0.07% of income
-            'se_multiplier': 5.0,  # 5x for self-employed
+            'base_rate': 0.0012,  # 0.12% of income
+            'se_multiplier': 5.5,  # 5.5x for self-employed
         },
         'student_loan_interest': {
-            'base_rate': 0.0002,  # 0.02% of income
+            'base_rate': 0.0004,  # 0.04% of income
             'age_factor': True,  # Higher for younger filers
             'income_cap': 145000,  # Phase out above this
         },
         'educator_expenses': {
-            'flat_amount': 300,  # Average per educator
-            'educator_rate': 0.05,  # 5% of filers are educators
+            'flat_amount': 350,  # Average per educator
+            'educator_rate': 0.06,  # 6% of filers are educators
         }
     }
     
     def __init__(self):
         """Initialize with SOI-based rates"""
-        self.total_adjustment_rate = 0.0099  # 0.99% from SOI data
+        self.total_adjustment_rate = 0.015  # Target ~1.5% overall adjustments
     
     def estimate_ira_contribution(self, income: float, age: Optional[int] = None,
                                   filing_status: str = 'single') -> float:
         """
         Estimate IRA contribution deduction.
         
-        Higher for middle-income filers, phases out at high income.
+        Income-sensitive rates that peak in middle income.
+        Joint filers contribute more due to higher income limits.
         """
         if income < 20000:
             return 0
         
-        rates = self.ADJUSTMENT_RATES['ira_contribution']
-        
-        # Peak contribution rate for middle income
-        if 50000 <= income <= 120000:
-            rate = rates['max_rate']
+        # Moderate income-sensitive base rates
+        if income < 20000:
+            base_rate = 0.001
+        elif income < 30000:
+            base_rate = 0.003
         elif income < 50000:
-            # Scale up from base to max
-            rate = rates['base_rate'] + (rates['max_rate'] - rates['base_rate']) * (income - 20000) / 30000
+            base_rate = 0.015
+        elif income < 75000:
+            base_rate = 0.025  # Peak for middle income
+        elif income < 100000:
+            base_rate = 0.022
+        elif income < 150000:
+            base_rate = 0.018
+        elif income < 200000:
+            base_rate = 0.012
         else:
-            # Phase out for high income
-            rate = rates['max_rate'] * max(0, (200000 - income) / 80000)
+            base_rate = 0.005  # Phase out for high income
         
-        return income * rate
+        # Filing status adjustment
+        if filing_status in ['married_filing_jointly', 'qualifying_widow']:
+            multiplier = 1.4  # Joint filers have higher contribution limits
+        elif filing_status == 'head_of_household':
+            multiplier = 1.1
+        else:
+            multiplier = 1.0
+        
+        # Age adjustment - older filers contribute more
+        if age and age >= 50:
+            age_multiplier = 1.3  # Catch-up contributions
+        else:
+            age_multiplier = 1.0
+        
+        return income * base_rate * multiplier * age_multiplier
     
     def estimate_se_health_insurance(self, income: float, 
-                                     is_self_employed: bool = False) -> float:
-        """Estimate self-employed health insurance deduction"""
-        rates = self.ADJUSTMENT_RATES['self_employed_health']
-        base = income * rates['base_rate']
+                                     is_self_employed: bool = False,
+                                     filing_status: str = 'single') -> float:
+        """Estimate self-employed health insurance deduction with income sensitivity"""
+        # Moderate income-sensitive base rates
+        if income < 30000:
+            base_rate = 0.001
+        elif income < 50000:
+            base_rate = 0.003
+        elif income < 75000:
+            base_rate = 0.005
+        elif income < 100000:
+            base_rate = 0.007
+        elif income < 150000:
+            base_rate = 0.009
+        else:
+            base_rate = 0.011
         
+        base = income * base_rate
+        
+        # Self-employment multiplier
         if is_self_employed:
-            return base * rates['se_multiplier']
-        return base
+            se_multiplier = 4.0  # Much higher for actual self-employed
+        else:
+            se_multiplier = 1.0
+        
+        # Filing status adjustment - joint filers pay more for family coverage
+        if filing_status in ['married_filing_jointly', 'qualifying_widow']:
+            status_multiplier = 1.5
+        elif filing_status == 'head_of_household':
+            status_multiplier = 1.2
+        else:
+            status_multiplier = 1.0
+        
+        return base * se_multiplier * status_multiplier
     
     def estimate_se_retirement(self, income: float,
                                is_self_employed: bool = False) -> float:
@@ -141,7 +188,7 @@ class AGIAdjustmentEstimator:
         """
         adjustments = {
             'ira_contribution': self.estimate_ira_contribution(income, age, filing_status),
-            'se_health_insurance': self.estimate_se_health_insurance(income, is_self_employed),
+            'se_health_insurance': self.estimate_se_health_insurance(income, is_self_employed, filing_status),
             'se_retirement': self.estimate_se_retirement(income, is_self_employed),
             'student_loan_interest': self.estimate_student_loan_interest(income, age),
             'educator_expenses': self.estimate_educator_expenses(income),
