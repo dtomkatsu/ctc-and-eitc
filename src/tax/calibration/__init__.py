@@ -1,5 +1,9 @@
-"""Tax calibration modules for aligning PUMS estimates with SOI benchmarks."""
+"""Tax calibration modules."""
 
+from .orchestrator import (
+    CalibrationOrchestrator,
+    apply_systematic_calibration
+)
 from .dotax_soi_parser import DOTAXSOIParser
 from .ipf_calibration import IPFCalibrator, create_benchmarks_from_dotax, calibrate_pums_with_ipf
 from .irs_bracket_calibration import IRSBracketCalibrator, calibrate_with_irs_brackets
@@ -9,6 +13,8 @@ from .wage_growth_adjustment import WageGrowthAdjuster, generate_growth_rate_rep
 from .soi_calibration import SOICalibrator
 
 __all__ = [
+    'CalibrationOrchestrator',
+    'apply_systematic_calibration',
     'DOTAXSOIParser',
     'IPFCalibrator',
     'create_benchmarks_from_dotax',

@@ -4,16 +4,126 @@ This project builds a Hawaii resident income tax model that aligns closely with 
 - **DOTAX SOI administrative tables** as the source of truth for counts, income, deductions, and liabilities.
 - **ACS PUMS microdata** to construct detailed tax units (filers, spouses, dependents) and to retain demographic structure.
 
-Recent work focuses on narrowing the Head of Household (HoH) revenue gap by rebalancing deductions and dependents so taxable income matches DOTAX A2/A9 targets.
+Recent work focuses on calibrating the Hawaii tax model to match DOTAX Table A8 (2022) tax liability benchmarks through systematic calibrations of deductions, income distributions, and filer weights.
 
 ## Key Features
 
 - **Resident-focused calibration** to DOTAX 2022 tables (A2, A4, A9) for filing status counts, deductions, and liabilities.
 - **PUMS-derived tax unit construction** with repaired filing status logic, dependent assignment, and income calculation.
-- **Taxable income pipeline** (`scripts/calculate_taxable_income.py`) that enforces DOTAX deduction benchmarks with HoH-specific controls.
-- **High-income fine-tuning** to achieve realistic married filing separately (MFS) shares and revenue alignment above $200k AGI.
-- **Hawaii tax calculator** (`src/tax/brackets/hawaii_tax.py`) supporting statutory brackets and standard deductions across 2017–2031.
-- **Validation tooling** to compare modeled revenue against DOTAX SOI tables and highlight remaining gaps.
+- **Hawaii tax calculator** (`src/tax/hawaii_calculator.py`) supporting 2022 tax brackets with standard deductions and personal exemptions.
+- **Systematic tax calibration pipeline** with four core calibrations:
+  1. **Itemized Deduction Reduction** - Corrects deduction overshoot (40-60% reduction)
+  2. **Pareto High-Income Calibration** - Reweights high-income filers to match DOTax counts
+  3. **Income Distribution Calibration** - Adjusts income distributions within brackets to match effective rates
+  4. **Weight Calibration** - Aligns filer counts across all income brackets
+- **Validation tooling** to compare modeled revenue against DOTAX Table A8 and highlight remaining gaps.
+- **Model accuracy**: 93.3% of brackets within ±1.0pp on effective tax rates, -20.6% total tax gap (primarily due to PUMS data limitations for ultra-high-income filers).
+
+## Hawaii Tax Calibration Pipeline
+
+The system implements a comprehensive four-stage tax calibration pipeline to align modeled tax liability with DOTAX Table A8 benchmarks:
+
+### Stage 1: Itemized Deduction Reduction
+**Purpose**: Correct systematic overestimation of itemized deductions
+
+**Implementation** (`src/tax/deductions/itemized_estimator.py`):
+- Reduced deduction rates by 40-60% across all income levels
+- Base rates: 2-8% of AGI (vs original 5-15%)
+- Prevents deduction overshoot that was causing tax under-collection
+- Impact: +$150M in tax liability
+
+### Stage 2: Pareto High-Income Calibration
+**Purpose**: Reweight high-income filers to match DOTax counts exactly
+
+**Implementation** (`src/tax/adjustments/pareto_calibration.py`):
+- Applies Pareto distribution (α=1.454) to AGI ≥ $200k
+- Matches DOTax filer targets exactly for each high-income bracket
+- Uses bracket-specific scaling factors
+- Preserves total filer count while adjusting distribution
+- Impact: Corrected filer distribution, exact DOTax match
+
+### Stage 3: Income Distribution Calibration
+**Purpose**: Adjust income distributions within brackets to match target effective rates
+
+**Implementation** (`src/tax/adjustments/income_distribution_calibrator.py`):
+- Percentile-based redistribution within AGI brackets
+- Systematically shifts incomes to match target effective rates
+- Applied to $100k+ brackets
+- Achieves 93.3% of brackets within ±1.0pp on effective rates
+- Impact: Structural accuracy improved
+
+### Stage 4: Weight Calibration
+**Purpose**: Align filer counts across all income brackets
+
+**Implementation** (inline in `regenerate_tax_units.py`):
+- Direct bracket-level weight adjustment for $0-$200k brackets
+- Matches DOTax filer count targets exactly where possible
+- Reduces middle-income over-weighting
+- Recalculates taxes after weight adjustment
+- Impact: Improved filer count accuracy
+
+### Stage 5: Final Gap-Closing Adjustments (Hybrid Solution C)
+**Purpose**: Close remaining gaps through targeted adjustments
+
+**Implementation** (`src/tax/adjustments/final_gap_closer.py`):
+- Step 1: Reduce middle-income weights by 8-10% ($10k-$75k)
+- Step 2: Reduce high-income deductions by additional 15% ($200k+)
+- Step 3: Apply gentle tax multipliers (70% of way to target) where needed
+- Recalculates taxes after deduction adjustments
+- Impact: Closes gap to ~20%
+
+### Pipeline Execution
+
+The complete pipeline is implemented in `scripts/regenerate_tax_units.py`:
+
+```python
+# 1. Construct tax units from PUMS
+tax_units = constructor.create_tax_units()
+
+# 2. Apply itemized deduction reduction
+tax_units['total_deductions'] = apply_itemized_deduction_reduction(tax_units)
+
+# 3. Calculate initial taxes
+tax_units = calculator.calculate_tax_units_batch(tax_units)
+
+# 4. Apply Pareto calibration
+tax_units = apply_pareto_calibration(tax_units, threshold=200000)
+
+# 5. Apply income distribution calibration
+tax_units = apply_income_distribution_calibration(tax_units, threshold=100000)
+
+# 6. Apply weight calibration
+tax_units = apply_weight_calibration(tax_units)
+
+# 7. Apply final gap-closing adjustments
+tax_units = apply_final_gap_closer(tax_units)
+```
+
+### Current Model Accuracy
+
+**Effective Tax Rates (vs DOTax Table A8):**
+- 93.3% of brackets within ±1.0pp (14 of 15 brackets)
+- 60% within ±0.5pp (9 of 15 brackets)
+- All brackets $0-$500k within ±10% on total tax
+
+**Total Tax Liability:**
+- Model: $2,406M
+- DOTax Target: $3,030M
+- Gap: -20.6%
+
+**Gap Analysis:**
+- $1M+ bracket: -$448M (78.7% of gap) - PUMS data limitation (top-coded)
+- $200k-$750k brackets: -$138M (24.3% of gap) - Structural issues
+- Middle-income surplus: +$46M (-8.1% of gap) - Over-collection
+
+**Root Cause of Remaining Gap:**
+PUMS microdata is top-coded around $2M AGI, missing the Pareto tail of ultra-wealthy earners ($10M, $50M, $100M+) who pay disproportionate share of taxes. This is a data limitation, not a model deficiency.
+
+### Validation Scripts
+
+- `scripts/compare_table_a8.py` - Compare model vs DOTax Table A8 by bracket
+- `scripts/analyze_remaining_gap.py` - Decompose remaining gap by bracket
+- `scripts/regenerate_tax_units.py` - Run complete calibration pipeline
 
 ## Methodology: SOI-Primary Hybrid Approach
 

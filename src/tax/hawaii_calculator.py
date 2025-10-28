@@ -206,12 +206,27 @@ class HawaiiTaxCalculator:
         # Make a copy to avoid modifying original
         result = tax_units.copy()
         
+        if 'is_synthetic_ultra_high' in result.columns:
+            synthetic_mask = result['is_synthetic_ultra_high'] == True
+        else:
+            synthetic_mask = pd.Series(False, index=result.index)
+        
+        work_mask = ~synthetic_mask
+        
+        preserved_taxable = None
+        preserved_tax = None
+        if synthetic_mask.any():
+            logger.info(f"Preserving existing tax values for {synthetic_mask.sum()} synthetic ultra-high filers")
+            if 'hi_taxable_income' in result.columns:
+                preserved_taxable = result.loc[synthetic_mask, 'hi_taxable_income'].copy()
+            if 'hi_state_tax' in result.columns:
+                preserved_tax = result.loc[synthetic_mask, 'hi_state_tax'].copy()
+        
         # Ensure AGI column exists
         if 'agi' not in result.columns and 'adjusted_gross_income' in result.columns:
             result['agi'] = result['adjusted_gross_income']
         elif 'agi' not in result.columns:
             logger.warning("No AGI column found, calculating from income columns")
-            # Try to construct AGI from available income columns
             income_cols = [col for col in result.columns if 'income' in col.lower()]
             if income_cols:
                 result['agi'] = result[income_cols[0]]
@@ -227,28 +242,53 @@ class HawaiiTaxCalculator:
             lambda x: 2 if x == 'married_filing_jointly' else 1
         )
         
-        # Calculate taxable income
-        logger.info("Calculating taxable income...")
-        result['hi_taxable_income'] = result.apply(
-            lambda row: self.calculate_taxable_income(
-                row['agi'],
-                row['filing_status'],
-                row['num_dependents'],
-                row['num_adults'],
-                row.get('total_deductions', None)  # Use actual deductions if available
-            ),
-            axis=1
-        )
+        if work_mask.any():
+            logger.info("Calculating taxable income...")
+            result.loc[work_mask, 'hi_taxable_income'] = result.loc[work_mask].apply(
+                lambda row: self.calculate_taxable_income(
+                    row['agi'],
+                    row['filing_status'],
+                    row['num_dependents'],
+                    row['num_adults'],
+                    row.get('total_deductions', None)
+                ),
+                axis=1
+            )
         
-        # Calculate tax
-        logger.info("Calculating Hawaii state tax...")
-        result['hi_state_tax'] = result.apply(
-            lambda row: self.calculate_tax(
-                row['hi_taxable_income'],
-                row['filing_status']
-            ),
-            axis=1
-        )
+        if work_mask.any():
+            logger.info("Calculating Hawaii state tax...")
+            result.loc[work_mask, 'hi_state_tax'] = result.loc[work_mask].apply(
+                lambda row: self.calculate_tax(
+                    row['hi_taxable_income'],
+                    row['filing_status']
+                ),
+                axis=1
+            )
+        
+        if synthetic_mask.any():
+            if preserved_taxable is not None:
+                result.loc[synthetic_mask, 'hi_taxable_income'] = preserved_taxable
+            else:
+                result.loc[synthetic_mask, 'hi_taxable_income'] = result.loc[synthetic_mask].apply(
+                    lambda row: self.calculate_taxable_income(
+                        row['agi'],
+                        row['filing_status'],
+                        row['num_dependents'],
+                        row['num_adults'],
+                        row.get('total_deductions', None)
+                    ),
+                    axis=1
+                )
+            if preserved_tax is not None and preserved_tax.notna().any():
+                result.loc[synthetic_mask, 'hi_state_tax'] = preserved_tax
+            else:
+                result.loc[synthetic_mask, 'hi_state_tax'] = result.loc[synthetic_mask].apply(
+                    lambda row: self.calculate_tax(
+                        row['hi_taxable_income'],
+                        row['filing_status']
+                    ),
+                    axis=1
+                )
         
         # Calculate effective rate
         result['hi_effective_rate'] = np.where(
