@@ -153,14 +153,17 @@ def main(include_capital_gains: bool = True):
     
     tax_units['total_deductions'] = itemized_deductions
     
-    # Apply systematic calibration pipeline (industrial-grade ordering)
-    from src.tax.calibration import apply_systematic_calibration
-
-    logger.info("\n🔁 Running systematic calibration pipeline (TPC/CBO style)...")
-    tax_units = apply_systematic_calibration(
+    # Apply multi-stage IPF calibration (iterative proportional fitting)
+    from src.tax.calibration import apply_ipf_calibration
+    
+    logger.info("\n🔁 Running multi-stage IPF calibration (simultaneous target fitting)...")
+    tax_units = apply_ipf_calibration(
         tax_units,
-        max_iterations=5,
-        tolerance=0.05
+        max_iterations=20,
+        tolerance=0.02,  # 2% tolerance for IPF
+        calibrate_filer_counts=True,
+        calibrate_tax_totals=True,
+        calibrate_filing_status=True
     )
     
     # Apply deduction adjustments to reduce tax liability
