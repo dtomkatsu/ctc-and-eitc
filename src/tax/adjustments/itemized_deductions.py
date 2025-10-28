@@ -32,19 +32,21 @@ class ItemizedDeductionEstimator:
     """
     
     # SOI-based itemization rates by income
+    # REDUCED to match DOTax actual patterns (was causing 333% deduction overshoot)
     ITEMIZATION_RATES = {
-        'under_50k': 0.08,      # 8% itemize
-        '50k_to_100k': 0.25,    # 25% itemize
-        '100k_to_200k': 0.45,   # 45% itemize
-        '200k_plus': 0.65,      # 65% itemize
+        'under_50k': 0.05,      # 5% itemize (was 8%)
+        '50k_to_100k': 0.12,    # 12% itemize (was 25%)
+        '100k_to_200k': 0.20,   # 20% itemize (was 45%)
+        '200k_plus': 0.30,      # 30% itemize (was 65%)
     }
     
     # Average deductions by income level (from SOI patterns)
+    # REDUCED by 40% to match DOTax actual deduction levels
     AVG_DEDUCTIONS = {
-        'under_50k': 18000,
-        '50k_to_100k': 26000,
-        '100k_to_200k': 42000,
-        '200k_plus': 60000,
+        'under_50k': 10800,     # was 18000
+        '50k_to_100k': 15600,   # was 26000
+        '100k_to_200k': 25200,  # was 42000
+        '200k_plus': 36000,     # was 60000
     }
     
     def __init__(self):

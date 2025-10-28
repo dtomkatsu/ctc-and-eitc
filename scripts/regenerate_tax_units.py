@@ -153,6 +153,17 @@ def main(include_capital_gains: bool = True):
     
     tax_units['total_deductions'] = itemized_deductions
     
+    # Apply Pareto calibration to high-income filers
+    logger.info("\n📊 Calibrating high-income distribution (AGI >= $200k)...")
+    from src.tax.adjustments.pareto_calibration import apply_pareto_calibration
+    
+    tax_units = apply_pareto_calibration(
+        tax_units,
+        threshold=200000,
+        target_alpha=1.454,  # Calibrated to match DOTax Table A8
+        add_synthetic=False  # Can enable if needed for extreme high-income
+    )
+    
     # Calculate Hawaii state taxes
     from src.tax.hawaii_calculator import HawaiiTaxCalculator
     
