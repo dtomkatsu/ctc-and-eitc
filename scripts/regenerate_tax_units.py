@@ -269,15 +269,16 @@ def main(include_capital_gains: bool = True):
     
     logger.info(f"   Total tax after weight calibration: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
     
-    # 5. Ultra-High-Income Synthesis - ENHANCED v2 with Pareto optimization
+    # 5. Ultra-High-Income Synthesis - ENHANCED v2 with National IRS SOI Calibration
     logger.info("\n💎 Step 5: Ultra-high-income synthesis (redistribute $1M+ bracket)...")
     from src.tax.adjustments.ultra_high_income_synthesizer_v2 import UltraHighIncomeSynthesizerV2
     
-    # Use optimized parameters from sensitivity analysis
-    # alpha=1.3 with tail_mult=0.45 provides best improvement
+    # Use parameters calibrated from national IRS SOI 2022 data
+    # Pareto alpha=1.064 (from national $1M+ distribution)
+    # Tail multiplier=0.58 (for proper $50M+ representation)
     ultra_synthesizer = UltraHighIncomeSynthesizerV2(
-        pareto_alpha=1.3,        # Optimized from sensitivity analysis
-        tail_multiplier=0.45,    # Increased from 0.15 to boost $50M+ representation
+        pareto_alpha=1.064,      # Calibrated from national IRS SOI data
+        tail_multiplier=0.58,    # Calibrated for $50M+ weight factor
     )
     tax_units = ultra_synthesizer.redistribute_within_million_plus(tax_units, target_tax_m=663.0)
     
