@@ -29,14 +29,29 @@ class ParetoIncomeCalibrator:
       - Higher alpha (2.5) = less inequality
     """
     
-    # DOTax Table A8 high-income targets
-    DOTAX_HIGH_INCOME_TARGETS = {
-        (200000, 300000): {'filers': 18937, 'tax_m': 310.0},
-        (300000, 400000): {'filers': 6076, 'tax_m': 153.0},
-        (400000, 500000): {'filers': 2926, 'tax_m': 101.0},
-        (500000, 750000): {'filers': 2991, 'tax_m': 149.0},
-        (750000, 1000000): {'filers': 1134, 'tax_m': 85.0},
+    # DOTax Table A8 ALL BRACKET targets (SYNCHRONIZED with orchestrator.py)
+    DOTAX_ALL_BRACKET_TARGETS = {
+        (0, 10000): {'filers': 115285, 'tax_m': 3.0},
+        (10000, 20000): {'filers': 64160, 'tax_m': 21.0},
+        (20000, 30000): {'filers': 57835, 'tax_m': 51.0},
+        (30000, 40000): {'filers': 58135, 'tax_m': 92.0},
+        (40000, 50000): {'filers': 53555, 'tax_m': 116.0},
+        (50000, 75000): {'filers': 91459, 'tax_m': 293.0},
+        (75000, 100000): {'filers': 54976, 'tax_m': 261.0},
+        (100000, 150000): {'filers': 62065, 'tax_m': 438.0},
+        (150000, 200000): {'filers': 27976, 'tax_m': 294.0},
+        (200000, 300000): {'filers': 19015, 'tax_m': 310.0},
+        (300000, 400000): {'filers': 5729, 'tax_m': 153.0},
+        (400000, 500000): {'filers': 2856, 'tax_m': 101.0},
+        (500000, 750000): {'filers': 2549, 'tax_m': 149.0},
+        (750000, 1000000): {'filers': 1004, 'tax_m': 85.0},
         (1000000, float('inf')): {'filers': 1824, 'tax_m': 663.0},
+    }
+    
+    # Legacy high-income only targets (for backward compatibility)
+    DOTAX_HIGH_INCOME_TARGETS = {
+        k: v for k, v in DOTAX_ALL_BRACKET_TARGETS.items() 
+        if k[0] >= 200000
     }
     
     def __init__(self, threshold: float = 200000, target_alpha: float = 1.454):
@@ -131,6 +146,46 @@ class ParetoIncomeCalibrator:
         
         return result
     
+    def calibrate_all_brackets(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calibrate weights for ALL AGI brackets to match DOTAX targets.
+        
+        This is a comprehensive calibration that ensures filer counts match
+        across all brackets, not just high-income ones.
+        
+        Args:
+            df: DataFrame with tax units
+            
+        Returns:
+            DataFrame with calibrated weights for all brackets
+        """
+        result = df.copy()
+        
+        logger.info(f"Calibrating ALL AGI brackets to match DOTAX targets")
+        
+        # Calculate bracket-specific scale factors to match ALL DOTAX targets
+        for (min_agi, max_agi), targets in self.DOTAX_ALL_BRACKET_TARGETS.items():
+            bracket_mask = (result['agi'] >= min_agi) & (result['agi'] < max_agi)
+            
+            if bracket_mask.sum() == 0:
+                logger.warning(f"  No filers in ${min_agi:,.0f}-${max_agi:,.0f} bracket")
+                continue
+            
+            current_filers = result.loc[bracket_mask, 'weight'].sum()
+            target_filers = targets['filers']
+            
+            if current_filers > 0:
+                scale_factor = target_filers / current_filers
+                result.loc[bracket_mask, 'weight'] *= scale_factor
+                
+                bracket_label = f"${min_agi//1000:>3}k-${max_agi//1000 if max_agi != float('inf') else 'inf':>3}k"
+                logger.info(f"  {bracket_label}: {current_filers:>8,.0f} → {target_filers:>8,} (×{scale_factor:.3f})")
+        
+        total_filers = result['weight'].sum()
+        logger.info(f"  Total filers after calibration: {total_filers:,.0f}")
+        
+        return result
+    
     def add_synthetic_extreme_high_income(self, 
                                          df: pd.DataFrame,
                                          min_agi: float = 5000000) -> pd.DataFrame:
@@ -195,32 +250,43 @@ class ParetoIncomeCalibrator:
         return df
     
     def calibrate(self, df: pd.DataFrame, 
-                 add_synthetic: bool = False) -> pd.DataFrame:
+                 add_synthetic: bool = False,
+                 calibrate_all_brackets: bool = True) -> pd.DataFrame:
         """
         Main calibration method.
         
         Args:
             df: DataFrame with tax units
             add_synthetic: Whether to add synthetic extreme high-income filers
+            calibrate_all_brackets: Whether to calibrate ALL brackets (True) or just high-income (False)
             
         Returns:
-            DataFrame with calibrated high-income distribution
+            DataFrame with calibrated distribution
         """
         logger.info("=" * 80)
-        logger.info("PARETO HIGH-INCOME CALIBRATION")
+        if calibrate_all_brackets:
+            logger.info("COMPREHENSIVE BRACKET CALIBRATION (All AGI Brackets)")
+        else:
+            logger.info("PARETO HIGH-INCOME CALIBRATION (High-Income Only)")
         logger.info("=" * 80)
         
-        # Step 1: Calibrate existing high-income filers
-        result = self.calibrate_high_income_weights(df)
+        # Step 1: Calibrate brackets
+        if calibrate_all_brackets:
+            result = self.calibrate_all_brackets(df)
+        else:
+            result = self.calibrate_high_income_weights(df)
         
         # Step 2: Add synthetic filers if needed
         if add_synthetic:
             result = self.add_synthetic_extreme_high_income(result)
         
-        # Verify results
+        # Verify results - check ALL brackets if comprehensive calibration
         logger.info("")
         logger.info("Calibration results:")
-        for (min_agi, max_agi), targets in self.DOTAX_HIGH_INCOME_TARGETS.items():
+        
+        targets_to_check = self.DOTAX_ALL_BRACKET_TARGETS if calibrate_all_brackets else self.DOTAX_HIGH_INCOME_TARGETS
+        
+        for (min_agi, max_agi), targets in targets_to_check.items():
             mask = (result['agi'] >= min_agi) & (result['agi'] < max_agi)
             actual_filers = result[mask]['weight'].sum()
             target_filers = targets['filers']
@@ -237,18 +303,20 @@ class ParetoIncomeCalibrator:
 def apply_pareto_calibration(df: pd.DataFrame, 
                              threshold: float = 200000,
                              target_alpha: float = 1.454,
-                             add_synthetic: bool = False) -> pd.DataFrame:
+                             add_synthetic: bool = False,
+                             calibrate_all_brackets: bool = True) -> pd.DataFrame:
     """
-    Convenience function to apply Pareto calibration to high-income filers.
+    Convenience function to apply Pareto calibration.
     
     Args:
         df: DataFrame with tax units
         threshold: AGI threshold for calibration (default $200k)
         target_alpha: Target Pareto shape parameter (default 1.454 to match DOTax)
         add_synthetic: Whether to add synthetic extreme high-income filers
+        calibrate_all_brackets: Whether to calibrate ALL brackets (True) or just high-income (False)
         
     Returns:
         DataFrame with calibrated weights
     """
     calibrator = ParetoIncomeCalibrator(threshold=threshold, target_alpha=target_alpha)
-    return calibrator.calibrate(df, add_synthetic=add_synthetic)
+    return calibrator.calibrate(df, add_synthetic=add_synthetic, calibrate_all_brackets=calibrate_all_brackets)

@@ -161,8 +161,19 @@ class UltraHighIncomeSynthesizer:
                 if synthetic_filers:
                     synthetic_df = pd.DataFrame(synthetic_filers)
                     
-                    # Fill in missing columns
+                    # Fill in missing columns to match main DataFrame
                     synthetic_df['total_deductions'] = 0
+                    synthetic_df['filing_status_hawaii'] = 'Joint_Surviving_Spouse'  # MFJ mapping
+                    
+                    # Fill any other missing columns with defaults
+                    for col in result.columns:
+                        if col not in synthetic_df.columns:
+                            if col in ['weight', 'agi', 'filing_status', 'num_dependents', 'num_adults']:
+                                continue  # Already set
+                            elif 'tax' in col.lower():
+                                synthetic_df[col] = 0  # Will be recalculated
+                            else:
+                                synthetic_df[col] = 0  # Default to 0
                     
                     result = pd.concat([result, synthetic_df], ignore_index=True)
                     

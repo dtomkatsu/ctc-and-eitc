@@ -55,7 +55,7 @@ class CalibrationOrchestrator:
         (1000000, float('inf')): 663.0,
     }
     
-    # DOTax filer count targets
+    # DOTax filer count targets (CANONICAL TOTAL: 618,423)
     DOTAX_FILER_TARGETS = {
         (0, 10000): 115285,
         (10000, 20000): 64160,
@@ -72,6 +72,14 @@ class CalibrationOrchestrator:
         (500000, 750000): 2549,
         (750000, 1000000): 1004,
         (1000000, float('inf')): 1824,
+    }
+    
+    # DOTax filing status targets (adjusted to match filer count total of 618,423)
+    DOTAX_FILING_STATUS_TARGETS = {
+        'single': 326470,
+        'married_filing_jointly': 210724,
+        'head_of_household': 65638,
+        'married_filing_separately': 15591,
     }
     
     def __init__(self, max_iterations: int = 5, tolerance: float = 0.05):
