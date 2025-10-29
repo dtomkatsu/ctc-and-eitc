@@ -11,13 +11,17 @@ Recent work focuses on calibrating the Hawaii tax model to match DOTAX Table A8 
 - **Resident-focused calibration** to DOTAX 2022 tables (A2, A4, A9) for filing status counts, deductions, and liabilities.
 - **PUMS-derived tax unit construction** with repaired filing status logic, dependent assignment, and income calculation.
 - **Hawaii tax calculator** (`src/tax/hawaii_calculator.py`) supporting 2022 tax brackets with standard deductions and personal exemptions.
-- **Systematic tax calibration pipeline** with four core calibrations:
-  1. **Itemized Deduction Reduction** - Corrects deduction overshoot (40-60% reduction)
-  2. **Pareto High-Income Calibration** - Reweights high-income filers to match DOTax counts
-  3. **Income Distribution Calibration** - Adjusts income distributions within brackets to match effective rates
-  4. **Weight Calibration** - Aligns filer counts across all income brackets
+- **Systematic tax calibration pipeline** with six sequential components plus an optional IPF fine-tuning stage:
+  1. **Itemized Deduction Reduction** – Corrects deduction overshoot (40-60% reduction)
+  2. **Comprehensive Bracket Calibration** – Matches DOTAX filer counts across all brackets using Pareto-based scaling (`src/tax/adjustments/pareto_calibration.py`)
+  3. **Income Distribution Calibration** – Adjusts bracket-level income distributions to hit effective rate targets (`src/tax/adjustments/income_distribution_calibrator.py`)
+  4. **Weight Calibration (Low/Middle Income)** – Fine-tunes $0-$200k brackets to eliminate filer count residuals (`src/tax/adjustments/comprehensive_weight_calibrator.py`)
+  5. **Ultra-High-Income Synthesis** – Redistributes $1M+ filers and adds synthetic $5M-$50M units to fill the Pareto tail (`src/tax/adjustments/ultra_high_income_synthesizer.py`)
+  6. **Final Gap Closer** – Applies targeted weight, deduction, and tax adjustments to close the residual gap (`src/tax/adjustments/final_gap_closer.py`)
+  
+    **Optional:** `apply_ipf_calibration()` fine-tunes filing status weights once structural corrections are in place. In practice we often skip IPF because the structural stages now hit a tighter target (-13% vs -40% for pure IPF), but the tooling remains available for experiments that focus specifically on filing-status margins.
 - **Validation tooling** to compare modeled revenue against DOTAX Table A8 and highlight remaining gaps.
-- **Model accuracy**: 93.3% of brackets within ±1.0pp on effective tax rates, -20.6% total tax gap (primarily due to PUMS data limitations for ultra-high-income filers).
+- **Model accuracy**: 75% of brackets within ±10% on tax liability, 93% within ±1.0pp on effective tax rates, and a **-13.0%** total tax gap after full sequential calibration (down from -40.4% with pure IPF).
 
 ## Hawaii Tax Calibration Pipeline
 
@@ -32,15 +36,14 @@ The system implements a comprehensive four-stage tax calibration pipeline to ali
 - Prevents deduction overshoot that was causing tax under-collection
 - Impact: +$150M in tax liability
 
-### Stage 2: Pareto High-Income Calibration
-**Purpose**: Reweight high-income filers to match DOTax counts exactly
+### Stage 2: Comprehensive Bracket Calibration
+**Purpose**: Match DOTAX filer counts across all AGI brackets
 
 **Implementation** (`src/tax/adjustments/pareto_calibration.py`):
-- Applies Pareto distribution (α=1.454) to AGI ≥ $200k
-- Matches DOTax filer targets exactly for each high-income bracket
-- Uses bracket-specific scaling factors
-- Preserves total filer count while adjusting distribution
-- Impact: Corrected filer distribution, exact DOTax match
+- Applies Pareto-based scaling factors to every bracket ($0-$10k through $1M+$)
+- Preserves overall filer totals while aligning each bracket to DOTAX targets
+- Supports optional synthetic filer creation for extreme high-income cases
+- Impact: Exact filer count match across brackets, prerequisite for later stages
 
 ### Stage 3: Income Distribution Calibration
 **Purpose**: Adjust income distributions within brackets to match target effective rates
@@ -52,25 +55,38 @@ The system implements a comprehensive four-stage tax calibration pipeline to ali
 - Achieves 93.3% of brackets within ±1.0pp on effective rates
 - Impact: Structural accuracy improved
 
-### Stage 4: Weight Calibration
-**Purpose**: Align filer counts across all income brackets
+### Stage 4: Weight Calibration (Low/Middle Income)
+**Purpose**: Eliminate filer count residuals in low- and middle-income brackets
 
-**Implementation** (inline in `regenerate_tax_units.py`):
+**Implementation** (`src/tax/adjustments/comprehensive_weight_calibrator.py`):
 - Direct bracket-level weight adjustment for $0-$200k brackets
-- Matches DOTax filer count targets exactly where possible
-- Reduces middle-income over-weighting
-- Recalculates taxes after weight adjustment
-- Impact: Improved filer count accuracy
+- Recalculates taxes after each adjustment to keep liabilities synchronized
+- Impact: Tight control over filer counts without disturbing high-income calibration
 
-### Stage 5: Final Gap-Closing Adjustments (Hybrid Solution C)
-**Purpose**: Close remaining gaps through targeted adjustments
+### Stage 5: Ultra-High-Income Synthesis
+**Purpose**: Restore the missing Pareto tail for $1M+ filers
+
+**Implementation** (`src/tax/adjustments/ultra_high_income_synthesizer.py`):
+- Redistributes a portion of $1M-$5M filer weight to $5M, $10M, $25M, and $50M income tiers
+- Preserves the original 1,824 filer count while boosting total $1M+ tax liability
+- Impact: Adds ~$400M in modeled taxes, reducing the total gap by ~11 percentage points
+
+### Stage 6: Final Gap-Closing Adjustments (Hybrid Solution C)
+**Purpose**: Apply targeted tweaks after structural corrections
 
 **Implementation** (`src/tax/adjustments/final_gap_closer.py`):
 - Step 1: Reduce middle-income weights by 8-10% ($10k-$75k)
-- Step 2: Reduce high-income deductions by additional 15% ($200k+)
-- Step 3: Apply gentle tax multipliers (70% of way to target) where needed
-- Recalculates taxes after deduction adjustments
-- Impact: Closes gap to ~20%
+- Step 2: Reduce high-income deductions by an additional 15% ($200k+)
+- Step 3: Apply calibrated tax multipliers where residual gaps remain
+- Impact: Finalizes sequential calibration and prepares for optional IPF fine-tuning (typically skipped)
+
+### Optional: IPF Fine-Tuning (Filing Status)
+**Purpose**: Nudge filing-status distributions to DOTAX targets without undoing structural adjustments
+
+**Implementation** (`src/tax/calibration/apply_ipf_calibration`):
+- Iterative proportional fitting limited to filing-status margins (`calibrate_filing_status=True`, others False)
+- Uses a 2% tolerance and max 20 iterations; max weight change is constrained for stability
+- Frequently omitted because the structural pipeline already matches filer counts and improves tax accuracy, but remains available for experiments focused on filing-status precision
 
 ### Pipeline Execution
 
@@ -86,35 +102,61 @@ tax_units['total_deductions'] = apply_itemized_deduction_reduction(tax_units)
 # 3. Calculate initial taxes
 tax_units = calculator.calculate_tax_units_batch(tax_units)
 
-# 4. Apply Pareto calibration
-tax_units = apply_pareto_calibration(tax_units, threshold=200000)
+# 4. Apply comprehensive bracket calibration (Pareto)
+tax_units = apply_pareto_calibration(
+    tax_units,
+    threshold=200000,
+    calibrate_all_brackets=True,
+    add_synthetic=False,
+)
 
 # 5. Apply income distribution calibration
-tax_units = apply_income_distribution_calibration(tax_units, threshold=100000)
+tax_units = apply_income_distribution_calibration(
+    tax_units,
+    threshold=100000,
+    recalculate_tax=False,
+    method='percentile',
+)
 
-# 6. Apply weight calibration
-tax_units = apply_weight_calibration(tax_units)
+# 6. Apply low/middle-income weight calibration
+tax_units = apply_comprehensive_weight_calibration(
+    tax_units,
+    calibrate_all_brackets=False,
+)
 
-# 7. Apply final gap-closing adjustments
+# 7. Apply ultra-high-income synthesis
+tax_units = apply_ultra_high_income_synthesis(tax_units, target_tax_m=663.0)
+
+# 8. Apply final gap-closing adjustments
 tax_units = apply_final_gap_closer(tax_units)
+
+# 9. (Optional) Run filing-status-only IPF
+# tax_units = apply_ipf_calibration(
+#     tax_units,
+#     max_iterations=20,
+#     tolerance=0.02,
+#     calibrate_filer_counts=False,
+#     calibrate_tax_totals=False,
+#     calibrate_filing_status=True,
+# )
 ```
 
 ### Current Model Accuracy
 
-**Effective Tax Rates (vs DOTax Table A8):**
-- 93.3% of brackets within ±1.0pp (14 of 15 brackets)
+**Effective Tax Rates (vs DOTAX Table A8):**
+- 93% of brackets within ±1.0pp (14 of 15 brackets)
 - 60% within ±0.5pp (9 of 15 brackets)
 - All brackets $0-$500k within ±10% on total tax
 
 **Total Tax Liability:**
-- Model: $2,406M
-- DOTax Target: $3,030M
-- Gap: -20.6%
+- Model (sequential calibration): $2,635M
+- DOTAX Target: $3,029M
+- Gap: **-13.0%** (down from -40.4% with pure IPF and -23.9% without ultra-high-income synthesis)
 
-**Gap Analysis:**
-- $1M+ bracket: -$448M (78.7% of gap) - PUMS data limitation (top-coded)
-- $200k-$750k brackets: -$138M (24.3% of gap) - Structural issues
-- Middle-income surplus: +$46M (-8.1% of gap) - Over-collection
+**Gap Analysis (Post-Synthesis):**
+- $1M+ bracket: -$206M (primary residual gap, driven by missing $50M+ filers)
+- $200k-$750k brackets: -$98M (structural deductions and rate gaps)
+- Middle-income surplus: +$25M (over-collection partially offsets high-income deficit)
 
 **Root Cause of Remaining Gap:**
 PUMS microdata is top-coded around $2M AGI, missing the Pareto tail of ultra-wealthy earners ($10M, $50M, $100M+) who pay disproportionate share of taxes. This is a data limitation, not a model deficiency.

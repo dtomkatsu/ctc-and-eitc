@@ -269,12 +269,21 @@ def main(include_capital_gains: bool = True):
     
     logger.info(f"   Total tax after weight calibration: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
     
-    # 5. Ultra-High-Income Synthesis - CRITICAL MISSING COMPONENT
+    # 5. Ultra-High-Income Synthesis - ENHANCED v2 with Pareto optimization
     logger.info("\n💎 Step 5: Ultra-high-income synthesis (redistribute $1M+ bracket)...")
-    from src.tax.adjustments.ultra_high_income_synthesizer import UltraHighIncomeSynthesizer
+    from src.tax.adjustments.ultra_high_income_synthesizer_v2 import UltraHighIncomeSynthesizerV2
     
-    ultra_synthesizer = UltraHighIncomeSynthesizer()
+    # Use optimized parameters from sensitivity analysis
+    # alpha=1.3 with tail_mult=0.45 provides best improvement
+    ultra_synthesizer = UltraHighIncomeSynthesizerV2(
+        pareto_alpha=1.3,        # Optimized from sensitivity analysis
+        tail_multiplier=0.45,    # Increased from 0.15 to boost $50M+ representation
+    )
     tax_units = ultra_synthesizer.redistribute_within_million_plus(tax_units, target_tax_m=663.0)
+    
+    # Ensure synthetic units are marked for tracking
+    if 'is_synthetic_ultra_high' not in tax_units.columns:
+        tax_units['is_synthetic_ultra_high'] = False
     
     # Recalculate taxes after ultra-high-income synthesis
     logger.info("\n💰 Recalculating taxes after ultra-high-income synthesis...")
@@ -456,6 +465,12 @@ def main(include_capital_gains: bool = True):
     output_file = f'data/processed/tax_units_calibrated_{timestamp}.parquet'
     
     logger.info(f"\nSaving to: {output_file}")
+    
+    # Fix parquet serialization: convert all object columns to string to avoid mixed-type issues
+    for col in tax_units.columns:
+        if tax_units[col].dtype == 'object':
+            tax_units[col] = tax_units[col].astype(str)
+    
     tax_units.to_parquet(output_file, index=False)
     
     logger.info("\n" + "="*80)

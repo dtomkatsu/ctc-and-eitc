@@ -98,39 +98,55 @@ class FinalGapCloser:
     
     def step3_calculate_synthetic_taxes(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Step 3a: Calculate taxes for synthetic filers that have NaN values.
+        Step 3a: Calculate taxes for synthetic filers that have NaN or zero tax values.
         """
         logger.info("\nStep 3a: Calculating taxes for synthetic filers...")
         
         result = df.copy()
         
-        # Find synthetic filers with NaN tax
+        # Find synthetic filers with NaN or zero tax
         if 'is_synthetic_ultra_high' in result.columns:
-            synthetic_mask = (result['is_synthetic_ultra_high'] == True)
+            synthetic_mask = (result['is_synthetic_ultra_high'] == True) | (result['is_synthetic_ultra_high'] == 'True')
             logger.info(f"  Synthetic filers found: {synthetic_mask.sum()}")
         else:
             synthetic_mask = pd.Series([False] * len(result), index=result.index)
             logger.info(f"  No is_synthetic_ultra_high column")
         
+        # Check for NaN or zero tax
         nan_mask = result['hi_state_tax'].isna()
+        zero_mask = (result['hi_state_tax'] == 0) | (result['hi_state_tax'] == '0')
         logger.info(f"  Filers with NaN tax: {nan_mask.sum()}")
+        logger.info(f"  Filers with zero tax: {zero_mask.sum()}")
         
-        needs_calc = synthetic_mask & nan_mask
-        logger.info(f"  Synthetic filers with NaN tax: {needs_calc.sum()}")
+        needs_calc = synthetic_mask & (nan_mask | zero_mask)
+        logger.info(f"  Synthetic filers needing tax calculation: {needs_calc.sum()}")
         
         if needs_calc.sum() > 0:
             logger.info(f"  Calculating taxes for {needs_calc.sum()} synthetic filers...")
             
-            from src.tax.hawaii_calculator import HawaiiTaxCalculator
-            calculator = HawaiiTaxCalculator()
+            from src.tax.brackets import load_tax_data
+            calculator = load_tax_data()
             
             # Recalculate for these filers
             for idx in result[needs_calc].index:
                 row = result.loc[idx]
-                tax = calculator.calculate_tax(row['hi_taxable_income'], row['filing_status'])
-                result.loc[idx, 'hi_state_tax'] = tax
+                agi = float(row['agi'])
+                filing_status = str(row['filing_status_hawaii'])
                 
-                logger.info(f"    AGI ${row['agi']:>12,.0f}: tax = ${tax:>12,.2f}")
+                # Calculate tax using AGI and filing status
+                tax_result = calculator.calculate_tax(
+                    income=agi,
+                    year=2022,
+                    filing_status=filing_status
+                )
+                
+                tax = tax_result.get('tax_liability', 0)
+                result.loc[idx, 'hi_state_tax'] = tax
+                result.loc[idx, 'hi_tax_tax_liability'] = tax
+                result.loc[idx, 'hi_taxable_income'] = tax_result.get('taxable_income', agi - 25900)
+                result.loc[idx, 'hi_tax_taxable_income'] = tax_result.get('taxable_income', agi - 25900)
+                
+                logger.info(f"    AGI ${agi:>12,.0f}: tax = ${tax:>12,.0f} (effective rate: {tax/agi*100:.2f}%)")
         
         return result
     
