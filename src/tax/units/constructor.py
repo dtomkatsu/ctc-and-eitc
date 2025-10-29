@@ -781,7 +781,7 @@ class TaxUnitConstructor:
         """
         Identify potential joint filers and married filing separately couples within a household.
         
-        Uses strict RELSHIPP validation to identify actual married couples (householder + spouse).
+        Uses strict RELSHIPP validation first, then fallback relaxed validation for missed couples.
         
         Args:
             adults: DataFrame of adult household members
@@ -799,7 +799,8 @@ class TaxUnitConstructor:
         # Create a list of all adult IDs
         adult_ids = list(adults.index)
         
-        # Find all married couples using strict RELSHIPP validation
+        # PHASE 1: Find all married couples using strict RELSHIPP validation
+        logger.debug("Phase 1: Identifying married couples using strict RELSHIPP validation")
         for i in range(len(adult_ids)):
             id1 = adult_ids[i]
             if id1 in processed:
@@ -821,7 +822,7 @@ class TaxUnitConstructor:
                 
                 # Use strict validation: must be householder + spouse
                 if _are_married(person1, person2):
-                    logger.debug(f"Found married couple: {id1} (relshipp {person1.get('RELSHIPP')}) and "
+                    logger.debug(f"Found married couple (strict): {id1} (relshipp {person1.get('RELSHIPP')}) and "
                                 f"{id2} (relshipp {person2.get('RELSHIPP')})")
                     
                     # Check if they should file separately
@@ -835,9 +836,85 @@ class TaxUnitConstructor:
                     processed.update([id1, id2])
                     break  # Move to next person after finding a match
         
+        # PHASE 2: Fallback validation for married couples missed by strict RELSHIPP check
+        logger.debug("Phase 2: Identifying married couples using relaxed validation (fallback)")
+        remaining_married = [aid for aid in adult_ids 
+                            if aid not in processed 
+                            and adults.loc[aid].get('MAR') == 1]
+        
+        for i in range(len(remaining_married)):
+            id1 = remaining_married[i]
+            if id1 in processed:
+                continue
+            
+            person1 = adults.loc[id1]
+            
+            # Try to pair with another remaining married adult
+            for j in range(i+1, len(remaining_married)):
+                id2 = remaining_married[j]
+                if id2 in processed:
+                    continue
+                
+                person2 = adults.loc[id2]
+                
+                # Use relaxed validation
+                if self._could_be_married_couple(person1, person2):
+                    logger.debug(f"Found married couple (fallback): {id1} (relshipp {person1.get('RELSHIPP')}) and "
+                                f"{id2} (relshipp {person2.get('RELSHIPP')})")
+                    
+                    # Check if they should file separately
+                    if self._should_file_separately(person1, person2, hh_members):
+                        mfs_filers.append((id1, id2))
+                        logger.debug(f"  Identified MFS filers (fallback): {id1} and {id2}")
+                    else:
+                        joint_filers.append((id1, id2))
+                        logger.debug(f"  Identified joint filers (fallback): {id1} and {id2}")
+                    
+                    processed.update([id1, id2])
+                    break  # Move to next person after finding a match
+        
         logger.info(f"Identified {len(joint_filers)} joint filer pairs and {len(mfs_filers)} MFS pairs in household {hh_members['SERIALNO'].iloc[0] if not hh_members.empty else 'unknown'}")
         return joint_filers, mfs_filers
 
+    def _could_be_married_couple(self, person1: pd.Series, person2: pd.Series) -> bool:
+        """
+        Relaxed validation for married couples missed by strict RELSHIPP check.
+        Uses multiple signals to identify likely married couples.
+        
+        Args:
+            person1: First person
+            person2: Second person
+            
+        Returns:
+            bool: True if they could be a married couple
+        """
+        # Both must be marked as married (MAR=1)
+        if person1.get('MAR') != 1 or person2.get('MAR') != 1:
+            return False
+        
+        # Opposite sex (SEX: 1=male, 2=female)
+        sex1 = person1.get('SEX')
+        sex2 = person2.get('SEX')
+        if sex1 == sex2 or sex1 is None or sex2 is None:
+            return False
+        
+        # Age similarity (within 20 years)
+        age1 = person1.get('AGEP', 0)
+        age2 = person2.get('AGEP', 0)
+        age_diff = abs(age1 - age2)
+        if age_diff > 20:
+            return False
+        
+        # Both must be citizens/residents (CIT: 1-4 are eligible)
+        cit1 = person1.get('CIT', 1)
+        cit2 = person2.get('CIT', 1)
+        if cit1 > 4 or cit2 > 4:
+            return False
+        
+        logger.debug(f"Relaxed validation passed: {person1.name} (age {age1}, sex {sex1}) and "
+                    f"{person2.name} (age {age2}, sex {sex2})")
+        return True
+    
     def _should_file_separately(self, adult1: pd.Series, adult2: pd.Series, 
                               hh_members: pd.DataFrame) -> bool:
         """
@@ -933,11 +1010,11 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~70% of the time for score 7 couples
-            should_file_separately = random.random() < 0.70
+            # File separately ~80% of the time for score 7 couples (increased from 70%)
+            should_file_separately = random.random() < 0.80
             reason = f"very high MFS score ({mfs_score}), random: {should_file_separately}"
         elif mfs_score == 6:
-            # High score: file separately half the time
+            # High score: file separately most of the time
             serialno = str(adult1.get('SERIALNO', '0'))
             sporder1 = str(adult1.get('SPORDER', 0))
             sporder2 = str(adult2.get('SPORDER', 1))
@@ -948,11 +1025,11 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~50% of the time for score 6 couples (reduced from 75%)
-            should_file_separately = random.random() < 0.50
+            # File separately ~65% of the time for score 6 couples (increased from 50%)
+            should_file_separately = random.random() < 0.65
             reason = f"high MFS score ({mfs_score}), random: {should_file_separately}"
         elif mfs_score == 5:
-            # Medium-high score: file separately sometimes
+            # Medium-high score: file separately often
             serialno = str(adult1.get('SERIALNO', '0'))
             sporder1 = str(adult1.get('SPORDER', 0))
             sporder2 = str(adult2.get('SPORDER', 1))
@@ -963,11 +1040,11 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~35% of the time for score 5 couples (reduced from 60%)
-            should_file_separately = random.random() < 0.35
+            # File separately ~50% of the time for score 5 couples (increased from 35%)
+            should_file_separately = random.random() < 0.50
             reason = f"medium-high MFS score ({mfs_score}), random: {should_file_separately}"
         elif mfs_score == 4:
-            # Medium score: file separately occasionally
+            # Medium score: file separately sometimes
             serialno = str(adult1.get('SERIALNO', '0'))
             sporder1 = str(adult1.get('SPORDER', 0))
             sporder2 = str(adult2.get('SPORDER', 1))
@@ -978,11 +1055,11 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~15% of the time for score 4 couples (reduced from 30%)
-            should_file_separately = random.random() < 0.15
+            # File separately ~25% of the time for score 4 couples (increased from 15%)
+            should_file_separately = random.random() < 0.25
             reason = f"medium MFS score ({mfs_score}), random: {should_file_separately}"
         elif mfs_score == 3:
-            # Low-medium score: file separately rarely
+            # Low-medium score: file separately occasionally
             serialno = str(adult1.get('SERIALNO', '0'))
             sporder1 = str(adult1.get('SPORDER', 0))
             sporder2 = str(adult2.get('SPORDER', 1))
@@ -993,8 +1070,8 @@ class TaxUnitConstructor:
             import random
             random.seed(seed)
             
-            # File separately ~2% of the time for score 3 couples (reduced from 5%)
-            should_file_separately = random.random() < 0.02
+            # File separately ~5% of the time for score 3 couples (increased from 2%)
+            should_file_separately = random.random() < 0.05
             reason = f"low-medium MFS score ({mfs_score}), random: {should_file_separately}"
         
         if not should_file_separately:
