@@ -873,13 +873,20 @@ class TaxUnitConstructor:
                     processed.update([id1, id2])
                     break  # Move to next person after finding a match
         
-        logger.info(f"Identified {len(joint_filers)} joint filer pairs and {len(mfs_filers)} MFS pairs in household {hh_members['SERIALNO'].iloc[0] if not hh_members.empty else 'unknown'}")
+        # PHASE 3: Disabled - was creating false positives
+        # The fallback detection (Phase 2) with relaxed age is sufficient
+        
+        logger.info(f"Identified {len(joint_filers)} joint filer pairs and {len(mfs_filers)} MFS pairs in household {hh_members['SERIALNO'].iloc[0] if not hh_members.empty else 'unknown'} (Phase 1 & 2 only)")
         return joint_filers, mfs_filers
 
     def _could_be_married_couple(self, person1: pd.Series, person2: pd.Series) -> bool:
         """
         Relaxed validation for married couples missed by strict RELSHIPP check.
-        Uses multiple signals to identify likely married couples.
+        Uses multiple signals to identify likely married couples (Options 1&2).
+        
+        Implements:
+        - Option 1: Fallback detection with relaxed criteria (opposite sex, age ≤20 years, citizenship)
+        - Option 2: Increased MFS probabilities (in _should_file_separately)
         
         Args:
             person1: First person
@@ -898,7 +905,7 @@ class TaxUnitConstructor:
         if sex1 == sex2 or sex1 is None or sex2 is None:
             return False
         
-        # Age similarity (within 20 years)
+        # Age similarity (≤20 years)
         age1 = person1.get('AGEP', 0)
         age2 = person2.get('AGEP', 0)
         age_diff = abs(age1 - age2)
@@ -911,7 +918,10 @@ class TaxUnitConstructor:
         if cit1 > 4 or cit2 > 4:
             return False
         
-        logger.debug(f"Relaxed validation passed: {person1.name} (age {age1}, sex {sex1}) and "
+        # No additional income/employment criteria - keep simple
+        # The age and sex checks are sufficient for fallback detection
+        
+        logger.debug(f"Relaxed validation passed (Option F): {person1.name} (age {age1}, sex {sex1}) and "
                     f"{person2.name} (age {age2}, sex {sex2})")
         return True
     
