@@ -30,6 +30,63 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def apply_filing_status_weight_calibration(df: pd.DataFrame, weight_col: str = 'weight') -> pd.DataFrame:
+    """Apply DOTAX filing-status weight calibration to match target shares."""
+
+    targets = {
+        'Single': 0.5100,
+        'Joint': 0.3600,
+        'Head of Household': 0.0960,
+        'MFS': 0.0340,
+    }
+
+    status_map = {
+        'single': 'Single',
+        'Single': 'Single',
+        'married_filing_jointly': 'Joint',
+        'Married Filing Jointly': 'Joint',
+        'married_filing_separately': 'MFS',
+        'Married Filing Separately': 'MFS',
+        'head_of_household': 'Head of Household',
+        'Head of Household': 'Head of Household',
+        'Head Of Household': 'Head of Household',
+        'qualifying_widow': 'Joint',
+    }
+
+    if weight_col not in df.columns:
+        raise ValueError(f"Weight column '{weight_col}' not found during filing status calibration")
+
+    df = df.copy()
+    df['__fs_clean'] = df['filing_status'].map(status_map).fillna('Other')
+
+    total_weight = df[weight_col].sum()
+    if total_weight == 0:
+        logger.warning("Total weight is zero before filing status calibration; skipping adjustment")
+        df.drop(columns='__fs_clean', inplace=True)
+        return df
+
+    current_dist = df.groupby('__fs_clean')[weight_col].sum() / total_weight
+
+    factors = {}
+    for status, target_share in targets.items():
+        current_share = current_dist.get(status, 0)
+        if current_share > 0:
+            factors[status] = target_share / current_share
+        else:
+            logger.warning("No units found for status '%s' during calibration; leaving weights unchanged", status)
+            factors[status] = 1.0
+
+    logger.info("\n🔧 Applying filing status weight calibration to match DOTAX targets...")
+    for status, factor in factors.items():
+        logger.info("  %s factor: %.4f", status, factor)
+
+    df['__calibration_factor'] = df['__fs_clean'].map(factors).fillna(1.0)
+    df[weight_col] = df[weight_col] * df['__calibration_factor']
+
+    df.drop(columns=['__fs_clean', '__calibration_factor'], inplace=True)
+    return df
+
+
 def main(include_capital_gains: bool = True):
     """
     Main execution.
@@ -429,13 +486,16 @@ def main(include_capital_gains: bool = True):
     logger.info(f"  Average AGI adjustment: ${tax_units.get('agi_adjustments', pd.Series([0])).mean():.0f}")
     logger.info(f"  Average tax reduction: ${(tax_units['deduction_tax_savings'] + tax_units['agi_adjustment_savings']).mean():.0f}")
     
+    # Determine weight column
+    weight_col = 'weight' if 'weight' in tax_units.columns else 'PWGTP'
+
+    # Apply DOTAX filing status calibration (weights only)
+    tax_units = apply_filing_status_weight_calibration(tax_units, weight_col=weight_col)
+
     # Analyze filing status distribution
     logger.info("\n" + "="*80)
     logger.info("FILING STATUS DISTRIBUTION")
     logger.info("="*80)
-    
-    # Determine weight column
-    weight_col = 'weight' if 'weight' in tax_units.columns else 'PWGTP'
     
     status_counts = tax_units.groupby('filing_status')[weight_col].sum()
     total_filers = status_counts.sum()
@@ -463,7 +523,7 @@ def main(include_capital_gains: bool = True):
     
     # Save output
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_file = f'data/processed/tax_units_calibrated_{timestamp}.parquet'
+    output_file = f'data/processed/tax_units_filing_status_calibrated_{timestamp}.parquet'
     
     logger.info(f"\nSaving to: {output_file}")
     
