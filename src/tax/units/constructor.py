@@ -930,6 +930,9 @@ class TaxUnitConstructor:
         """
         Determine if a married couple should file separately using multi-factor scoring.
         
+        PRIORITY 1 FIX: Restrict MFS to high-income couples only (AGI > $150K)
+        to match DOTAX average AGI of $196,726 for MFS filers.
+        
         Args:
             adult1: First spouse
             adult2: Second spouse
@@ -938,9 +941,6 @@ class TaxUnitConstructor:
         Returns:
             bool: True if should file separately, False otherwise
         """
-        # Calculate MFS likelihood score based on multiple factors
-        mfs_score = 0
-        
         # Get basic info
         income1 = float(adult1.get('PINCP', 0) or 0)
         income2 = float(adult2.get('PINCP', 0) or 0)
@@ -948,6 +948,21 @@ class TaxUnitConstructor:
         age2 = int(adult2.get('AGEP', 30))
         rel1 = adult1.get('RELSHIPP', 0)
         rel2 = adult2.get('RELSHIPP', 0)
+        
+        # PRIORITY 1 FIX: Only allow MFS for high-income couples
+        # DOTAX data shows MFS filers have avg AGI of $196,726 (vs $45,702 in current model)
+        # This indicates MFS is primarily used by high-income couples for tax optimization
+        total_income = income1 + income2
+        
+        # Minimum income threshold for MFS eligibility
+        MIN_MFS_INCOME = 150000  # $150K combined income minimum
+        
+        if total_income < MIN_MFS_INCOME:
+            # Low-income couples should always file jointly
+            return False
+        
+        # Calculate MFS likelihood score based on multiple factors
+        mfs_score = 0
         
         # Factor 1: Income disparity (strongest predictor)
         if income1 > 0 and income2 > 0:
@@ -994,80 +1009,69 @@ class TaxUnitConstructor:
             mfs_score += 1
         
         # Factor 7: Very high total income (tax planning)
-        total_income = income1 + income2
-        if total_income > 200000:
-            mfs_score += 1
+        # Enhanced scoring for ultra-high-income couples
+        if total_income > 500000:
+            mfs_score += 3  # Ultra-high income: very likely MFS
+        elif total_income > 300000:
+            mfs_score += 2  # Very high income: likely MFS
+        elif total_income > 200000:
+            mfs_score += 1  # High income: possible MFS
         
         # Determine MFS threshold based on analysis
-        # Target: 6.9% of married couples should file MFS (DOTAX 2022 benchmark)
-        # Reduced probabilities by ~30-50% to better match DOTAX targets
+        # Target: 2.5% of married couples should file MFS (DOTAX 2022 resident benchmark)
+        # PRIORITY 1 FIX: Income-based probability for high-income couples only
         
         should_file_separately = False
+        
+        # Income-based MFS probability (higher income = higher probability)
+        # This ensures MFS filers have high average AGI matching DOTAX ($196,726)
+        income_based_probability = 0.0
+        
+        if total_income > 500000:
+            income_based_probability = 0.20  # 20% for ultra-high income
+        elif total_income > 400000:
+            income_based_probability = 0.15  # 15% for very high income
+        elif total_income > 300000:
+            income_based_probability = 0.10  # 10% for high income
+        elif total_income > 200000:
+            income_based_probability = 0.05  # 5% for upper-middle income
+        else:
+            income_based_probability = 0.02  # 2% for $150K-$200K
         
         if mfs_score >= 8:
             # Extremely high score: definitely file separately
             should_file_separately = True
             reason = f"extremely high MFS score ({mfs_score})"
-        elif mfs_score == 7:
-            # Very high score: file separately most of the time
+        elif mfs_score >= 6:
+            # High score: use income-based probability with boost
             serialno = str(adult1.get('SERIALNO', '0'))
             sporder1 = str(adult1.get('SPORDER', 0))
             sporder2 = str(adult2.get('SPORDER', 1))
-            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score7"
+            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score{mfs_score}"
             
             import hashlib
             seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
             import random
             random.seed(seed)
             
-            # File separately ~80% of the time for score 7 couples (increased from 70%)
-            should_file_separately = random.random() < 0.80
-            reason = f"very high MFS score ({mfs_score}), random: {should_file_separately}"
-        elif mfs_score == 6:
-            # High score: file separately most of the time
+            # Boost probability for high scores
+            boosted_probability = min(0.90, income_based_probability * (1 + mfs_score / 10))
+            should_file_separately = random.random() < boosted_probability
+            reason = f"high MFS score ({mfs_score}), income-based prob: {boosted_probability:.2f}"
+        elif mfs_score >= 4:
+            # Medium score: use income-based probability
             serialno = str(adult1.get('SERIALNO', '0'))
             sporder1 = str(adult1.get('SPORDER', 0))
             sporder2 = str(adult2.get('SPORDER', 1))
-            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score6"
+            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score{mfs_score}"
             
             import hashlib
             seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
             import random
             random.seed(seed)
             
-            # File separately ~65% of the time for score 6 couples (increased from 50%)
-            should_file_separately = random.random() < 0.65
-            reason = f"high MFS score ({mfs_score}), random: {should_file_separately}"
-        elif mfs_score == 5:
-            # Medium-high score: file separately often
-            serialno = str(adult1.get('SERIALNO', '0'))
-            sporder1 = str(adult1.get('SPORDER', 0))
-            sporder2 = str(adult2.get('SPORDER', 1))
-            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score5"
-            
-            import hashlib
-            seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
-            import random
-            random.seed(seed)
-            
-            # File separately ~50% of the time for score 5 couples (increased from 35%)
-            should_file_separately = random.random() < 0.50
-            reason = f"medium-high MFS score ({mfs_score}), random: {should_file_separately}"
-        elif mfs_score == 4:
-            # Medium score: file separately sometimes
-            serialno = str(adult1.get('SERIALNO', '0'))
-            sporder1 = str(adult1.get('SPORDER', 0))
-            sporder2 = str(adult2.get('SPORDER', 1))
-            seed_string = f"{serialno}_{sporder1}_{sporder2}_mfs_score4"
-            
-            import hashlib
-            seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
-            import random
-            random.seed(seed)
-            
-            # File separately ~25% of the time for score 4 couples (increased from 15%)
-            should_file_separately = random.random() < 0.25
-            reason = f"medium MFS score ({mfs_score}), random: {should_file_separately}"
+            should_file_separately = random.random() < income_based_probability
+            reason = f"medium MFS score ({mfs_score}), income-based prob: {income_based_probability:.2f}"
         elif mfs_score == 3:
             # Low-medium score: file separately occasionally
             serialno = str(adult1.get('SERIALNO', '0'))
