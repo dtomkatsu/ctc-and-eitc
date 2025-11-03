@@ -1,0 +1,4 @@
+scenario,total_revenue_millions,mfs_revenue_millions,notes,growth_from_baseline_pct
+Baseline (2022),2755.188432937019,264.4689169637574,Refined model with capital gains adjusted,0.0
+Uncapped Growth (2026),5082.980857854342,1530.459452357583,Using historical CAGR (MFS at 55%),84.4875942817423
+Capped Growth (2026) - RECOMMENDED,4015.079194197101,462.5577887003426,MFS capped at 15% CAGR,45.727934474414276
