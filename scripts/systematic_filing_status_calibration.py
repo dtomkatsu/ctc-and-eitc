@@ -254,8 +254,8 @@ def apply_filing_status_shares(df):
     df['__calibration_factor'] = df['filing_status_clean'].map(factors).fillna(1.0)
     df['weight'] = df['weight'] * df['__calibration_factor']
     
-    # Clean up
-    df = df.drop(columns=['filing_status_clean', '__calibration_factor'])
+    # Clean up temporary column only (keep filing_status_clean for next steps)
+    df = df.drop(columns=['__calibration_factor'])
     
     return df
 
@@ -397,9 +397,18 @@ def main(input_file=None):
     # Combine calibrated dataframes
     df_calibrated = pd.concat(calibrated_dfs, ignore_index=True)
     
-    # Step 2: Calibrate tax revenue for each filing status
+    # Step 2: Apply filing status shares FIRST (before tax revenue calibration)
+    # This ensures we have the correct number of returns for each status
     logger.info("\n" + "="*80)
-    logger.info("STEP 2: CALIBRATE TAX REVENUE")
+    logger.info("STEP 2: APPLY FILING STATUS SHARES (Before Tax Calibration)")
+    logger.info("="*80)
+    
+    df_calibrated = apply_filing_status_shares(df_calibrated)
+    
+    # Step 3: Calibrate tax revenue for each filing status
+    # Now that return counts are correct, we can accurately scale tax revenue
+    logger.info("\n" + "="*80)
+    logger.info("STEP 3: CALIBRATE TAX REVENUE (With Correct Return Counts)")
     logger.info("="*80)
     
     calibrated_dfs = []
@@ -419,16 +428,13 @@ def main(input_file=None):
         calibrated_dfs.append(status_df)
     
     # Combine calibrated dataframes
-    df_calibrated = pd.concat(calibrated_dfs, ignore_index=True)
-    
-    # Step 3: Apply filing status shares
-    logger.info("\n" + "="*80)
-    logger.info("STEP 3: APPLY FILING STATUS SHARES")
-    logger.info("="*80)
-    
-    df_final = apply_filing_status_shares(df_calibrated)
+    df_final = pd.concat(calibrated_dfs, ignore_index=True)
     
     # Step 4: Validate results
+    logger.info("\n" + "="*80)
+    logger.info("STEP 4: VALIDATE RESULTS")
+    logger.info("="*80)
+    
     validation_results = validate_results(df_final)
     
     # Save output
