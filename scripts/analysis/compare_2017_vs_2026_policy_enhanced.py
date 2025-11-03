@@ -21,6 +21,7 @@ import logging
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import argparse
 
 # Add src to path
 import sys
@@ -39,23 +40,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_projected_2026_incomes() -> pd.DataFrame:
-    """Load 2026 projected tax units from ensemble model."""
+def load_projected_2026_incomes(input_file: str = None) -> pd.DataFrame:
+    """Load 2026 projected tax units from ensemble model or specified input file."""
     
-    data_dir = Path('data/processed/projections')
-    ensemble_file = data_dir / 'tax_units_2026_ensemble.parquet'
+    if input_file:
+        # Use the specified input file
+        ensemble_file = Path(input_file)
+        logger.info(f"Loading tax units from specified input file: {ensemble_file}")
+    else:
+        # Default behavior: load from ensemble model
+        data_dir = Path('data/processed/projections')
+        ensemble_file = data_dir / 'tax_units_2026_ensemble.parquet'
+        logger.info(f"Loading 2026 projected incomes from {ensemble_file}")
     
     if not ensemble_file.exists():
         raise FileNotFoundError(
-            f"2026 ensemble projections not found at {ensemble_file}. "
-            "Run scripts/projection/project_to_2026.py first."
+            f"Tax units file not found at {ensemble_file}. "
+            "Check the file path or run projection script first."
         )
     
-    logger.info(f"Loading 2026 projected incomes from {ensemble_file}")
     tax_units = pd.read_parquet(ensemble_file)
     
     logger.info(f"Loaded {len(tax_units):,} tax units")
-    logger.info(f"Total projected income: ${tax_units['income'].sum():,.0f}")
+    if 'income' in tax_units.columns:
+        logger.info(f"Total projected income: ${tax_units['income'].sum():,.0f}")
     
     return tax_units
 
@@ -223,13 +231,20 @@ def analyze_enhanced_comparison(results_2017: pd.DataFrame, results_2026: pd.Dat
 def main():
     """Main enhanced analysis workflow."""
     
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Compare 2017 vs 2026 tax policies')
+    parser.add_argument('--input', type=str, help='Input tax units file (parquet)')
+    parser.add_argument('--output_dir', type=str, default='data/processed/policy_analysis', 
+                       help='Output directory for results')
+    args = parser.parse_args()
+    
     logger.info("=" * 80)
     logger.info("ENHANCED HAWAII TAX POLICY COMPARISON: 2017 vs 2026 DEDUCTIONS")
     logger.info("Following Standard Tax Scenario Calculation Protocol")
     logger.info("=" * 80)
     
     # Load 2026 projected incomes
-    tax_units_2026 = load_projected_2026_incomes()
+    tax_units_2026 = load_projected_2026_incomes(args.input)
     
     # Initialize tax calculator
     tax_calculator = load_tax_data()
@@ -288,7 +303,7 @@ def main():
     logger.info("SAVING ENHANCED RESULTS")
     logger.info("=" * 80)
     
-    output_dir = Path('data/processed/policy_analysis')
+    output_dir = Path(args.output_dir)
     output_dir.mkdir(exist_ok=True)
     
     # Save detailed results
