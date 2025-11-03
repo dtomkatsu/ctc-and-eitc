@@ -1,0 +1,19 @@
+Fiscal Year,Revenue ($ millions),Act 46 impact ($m),Act 58 impact ($m),Key notes,revenue_clean,fiscal_year,act46_impact,act58_impact,yoy_growth_pct,revenue_pre_policy
+FY 2010,"1,528",—,—,Pre-recession baseline,1528.0,2010,,,,1528.0
+FY 2011,"1,247",—,—,Delayed $186.1M prior-year refunds depressed collections,1247.0,2011,,,-18.39005235602095,1247.0
+FY 2012,"1,541",—,—,Includes $186.1M delayed refunds from FY 2010,1541.0,2012,,,23.576583801122688,1541.0
+FY 2013,"1,736",—,—,Recovery continues,1736.0,2013,,,12.654120700843619,1736.0
+FY 2014,"1,746",—,—,Minimal growth,1746.0,2014,,,0.5760368663594528,1746.0
+FY 2015,"1,988",—,—,Strong growth year,1988.0,2015,,,13.860252004581897,1988.0
+FY 2016,"2,117",—,—,High-income bracket sunset (Act 60 expired),2117.0,2016,,,6.488933601609648,2117.0
+FY 2017,"2,096",—,—,Slight decline; methodology update noted,2096.0,2017,,,-0.9919697685403905,2096.0
+FY 2018,"2,430",—,—,Strong growth,2430.0,2018,,,15.935114503816795,2430.0
+FY 2019,"2,569",—,—,Pre-COVID growth,2569.0,2019,,,5.720164609053491,2569.0
+FY 2020,"2,360",—,—,COVID impact + filing deadline shift to FY 2021,2360.0,2020,,,-8.135461268976252,2360.0
+FY 2021,"3,355",—,—,Includes ~$281.6M shifted from FY 2020,3355.0,2021,,,42.161016949152554,3355.0
+FY 2022,"3,760",—,—,Peak collections,3760.0,2022,,,12.071535022354695,3760.0
+FY 2023,"3,100",—,—,Includes one-time $311.7M constitutional refund,3100.0,2023,,,-17.553191489361698,3100.0
+FY 2024,"3,280",—,—,Actual revenue,3280.0,2024,,,5.8064516129032295,3280.0
+FY 2025,"3,288",-240.3,—,Actual FY total; Act 46 begins via withholding/standard deduction changes,3288.0,2025,-240.3,,0.24390243902439046,3288.0
+FY 2026,"2,721 (calc: 3,288.093 − 596.6 + 29.3)",-596.6,+29.3,Post-policy projection; Act 46 bracket/standard-deduction changes and Act 58 add-back,2721.0,2026,-596.6,29.3,-17.244525547445257,3288.2999999999997
+FY 2027,"2,907 (calc: 3,616.249 − 740.1 + 30.8)",-740.1,+30.8,Post-policy projection; Act 46 continues and Act 58 add-back,2907.0,2027,-740.1,30.8,6.835722160970237,3616.2999999999997

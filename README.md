@@ -1,8 +1,10 @@
 # Hawaii State-Wide Tax Estimation
 
-This project builds a Hawaii resident income tax model that aligns closely with Department of Taxation (DOTAX) Statistics of Income (SOI) benchmarks. We combine:
+This project builds a Hawaii **RESIDENT-ONLY** income tax model that aligns closely with Department of Taxation (DOTAX) Statistics of Income (SOI) benchmarks. We combine:
 - **DOTAX SOI administrative tables** as the source of truth for counts, income, deductions, and liabilities.
 - **ACS PUMS microdata** to construct detailed tax units (filers, spouses, dependents) and to retain demographic structure.
+
+⚠️ **CRITICAL**: This model estimates **RESIDENT-ONLY** revenue (~91.2% of total). Non-resident revenue (~8.8%) is not captured by PUMS data. All projections must specify resident vs total revenue.
 
 Recent work focuses on calibrating the Hawaii tax model to match DOTAX Table A8 (2022) tax liability benchmarks through systematic calibrations of deductions, income distributions, and filer weights.
 
@@ -21,7 +23,25 @@ Recent work focuses on calibrating the Hawaii tax model to match DOTAX Table A8 
   
     **Optional:** `apply_ipf_calibration()` fine-tunes filing status weights once structural corrections are in place. In practice we often skip IPF because the structural stages now hit a tighter target (-13% vs -40% for pure IPF), but the tooling remains available for experiments that focus specifically on filing-status margins.
 - **Validation tooling** to compare modeled revenue against DOTAX Table A8 and highlight remaining gaps.
-- **Model accuracy**: 75% of brackets within ±10% on tax liability, 93% within ±1.0pp on effective tax rates, and a **-13.0%** total tax gap after full sequential calibration (down from -40.4% with pure IPF).
+- **Model accuracy**: 
+  - **Resident Revenue**: $3,298M vs $2,999M target (+10% overestimate, needs recalibration)
+  - **Growth Rate**: 7.4% CAGR (too optimistic, target 2-3%)
+  - **Act 46 Impact**: -$657M vs -$597M official (-10% error)
+  - **Effective Tax Rates**: 93% of brackets within ±1.0pp
+  - **Post-Calibration Gap**: -13.0% (after full sequential calibration)
+
+## Current Calibration Status (November 2025)
+
+⚠️ **Model needs recalibration due to overestimated growth rates**:
+
+| Metric | Current | Target | Action Needed |
+|--------|---------|--------|---------------|
+| **Resident Revenue (2026)** | $3,298M | $2,999M | Reduce by 10% |
+| **Growth Rate (CAGR)** | 7.4% | 2-3% | Recalibrate ensemble weights |
+| **Act 46 Impact** | -$657M | -$597M | Use official -19.9% rate |
+| **Total Revenue** | $3,617M | $3,355M | Fix resident baseline first |
+
+See `docs/COMPREHENSIVE_CALIBRATION_PLAN.md` for detailed recalibration strategy.
 
 ## Hawaii Tax Calibration Pipeline
 

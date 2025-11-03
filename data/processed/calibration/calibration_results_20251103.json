@@ -1,0 +1,91 @@
+{
+  "config": {
+    "metadata": {
+      "created": "2025-11-03T12:55:56.078903",
+      "purpose": "Hawaii Tax Model Calibration to FY 2025 Actuals",
+      "version": "2.0"
+    },
+    "base_year": {
+      "year": 2025,
+      "total_revenue": 3288,
+      "resident_revenue": 2998.656,
+      "nonresident_share": 0.088
+    },
+    "targets": {
+      "year": 2026,
+      "resident_revenue": 3073.6223999999997,
+      "total_revenue": 3370.2,
+      "growth_rate": 0.025
+    },
+    "ensemble_weights": {
+      "fy_recent_2022_2025": {
+        "current_weight": 0.0,
+        "growth_rate": -0.044,
+        "new_weight": 0.3
+      },
+      "dotax_2018_2021": {
+        "current_weight": 0.35,
+        "growth_rate": 0.111,
+        "new_weight": 0.2
+      },
+      "bls_wage": {
+        "current_weight": 0.3,
+        "growth_rate": 0.055,
+        "new_weight": 0.25
+      },
+      "acs_income": {
+        "current_weight": 0.25,
+        "growth_rate": 0.062,
+        "new_weight": 0.15
+      },
+      "demographics": {
+        "current_weight": 0.1,
+        "growth_rate": 0.011,
+        "new_weight": 0.1
+      }
+    },
+    "adjustments": {
+      "income_scaling": 0.9319655548817465,
+      "capital_gains_target_pct": 0.025,
+      "credit_reduction_rate": 0.1
+    },
+    "act46": {
+      "impact_total": -597,
+      "impact_rate": -0.19908919195799718,
+      "applies_to": "primarily_residents"
+    },
+    "validation_thresholds": {
+      "revenue_tolerance": 0.05,
+      "growth_rate_tolerance": 0.01,
+      "act46_tolerance": 0.1
+    }
+  },
+  "validations": {
+    "resident_revenue": {
+      "model": 3073.6223999999997,
+      "target": 3073.6223999999997,
+      "tolerance": 0.05,
+      "pass": true
+    },
+    "growth_rate": {
+      "model": 0.02499999999999991,
+      "target": 0.025,
+      "tolerance": 0.01,
+      "pass": true
+    },
+    "total_revenue": {
+      "model": 3370.2,
+      "target": 3370.2,
+      "tolerance": 0.05,
+      "pass": true
+    }
+  },
+  "act46_results": {
+    "baseline_resident": 3073.6223999999997,
+    "impact": -611.925,
+    "post_act46_resident": 2461.6974,
+    "post_act46_total": 2751.0414,
+    "impact_rate": -0.19908919195799718
+  },
+  "success": true
+}
