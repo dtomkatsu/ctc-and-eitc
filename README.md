@@ -32,16 +32,17 @@ Recent work focuses on calibrating the Hawaii tax model to match DOTAX Table A8 
 
 ## Current Calibration Status (November 2025)
 
-⚠️ **Model needs recalibration due to overestimated growth rates**:
+✅ **Model calibrated using three-scenario approach anchored to FY 2024 actual**:
 
-| Metric | Current | Target | Action Needed |
-|--------|---------|--------|---------------|
-| **Resident Revenue (2026)** | $3,298M | $2,999M | Reduce by 10% |
-| **Growth Rate (CAGR)** | 7.4% | 2-3% | Recalibrate ensemble weights |
-| **Act 46 Impact** | -$657M | -$597M | Use official -19.9% rate |
-| **Total Revenue** | $3,617M | $3,355M | Fix resident baseline first |
+| Scenario | 2026 Resident | 2026 Total | Growth | Income Adj | Status |
+|----------|---------------|------------|--------|------------|--------|
+| Conservative | $3,082M | $3,379M | 1.5% | ×0.934 | ✅ |
+| **Moderate** | **$3,085M** | **$3,382M** | **2.0%** | **×0.935** | **✅ RECOMMENDED** |
+| Aggressive | $3,074M | $3,370M | 2.5% | ×0.932 | ✅ |
 
-See `docs/COMPREHENSIVE_CALIBRATION_PLAN.md` for detailed recalibration strategy.
+**Key Insight**: FY 2025 ($3,288M) is a DOT projection, not actual. Calibration anchored to FY 2024 actual ($3,280M).
+
+See `docs/FINAL_CALIBRATION_APPROACH.md` for complete methodology.
 
 ## Hawaii Tax Calibration Pipeline
 

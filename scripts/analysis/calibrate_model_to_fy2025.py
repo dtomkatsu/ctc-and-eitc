@@ -26,33 +26,70 @@ logger = logging.getLogger(__name__)
 class ModelCalibrator:
     """Calibrate Hawaii tax model to realistic growth rates and revenue targets."""
     
-    def __init__(self):
-        """Initialize calibrator with target parameters."""
+    def __init__(self, scenario='moderate'):
+        """Initialize calibrator with target parameters.
         
-        # FY 2025 Actuals (base year)
-        self.fy_2025_total = 3288  # Million, actual
+        Args:
+            scenario: 'conservative', 'moderate', or 'aggressive'
+        """
+        self.scenario = scenario
+        
+        # FY Actuals (confirmed data)
+        self.fy_2022_total = 3760  # Million, actual (peak)
+        self.fy_2023_total = 3100  # Million, actual (with refund)
+        self.fy_2023_adjusted = 3412  # Million, actual (add back $311.7M refund)
+        self.fy_2024_total = 3280  # Million, ACTUAL (last confirmed)
+        
+        # FY 2025 is a PROJECTION, not actual
+        self.fy_2025_estimate = 3288  # Million, DOT projection
+        
         self.nonresident_share = 0.088  # 8.8% of total
-        self.fy_2025_resident = self.fy_2025_total * (1 - self.nonresident_share)  # $2,999M
         
-        # Target growth rates
-        self.target_growth_rate = 0.025  # 2.5% CAGR (middle of 2-3% range)
+        # Calculate resident portions
+        self.fy_2024_resident = self.fy_2024_total * (1 - self.nonresident_share)  # $2,991M
+        self.fy_2025_resident_estimate = self.fy_2025_estimate * (1 - self.nonresident_share)  # $2,999M
+        
+        # Scenario-based targets
+        if scenario == 'conservative':
+            # Base on FY 2024 actual only, 1.5% growth over 2 years
+            self.base_year = 2024
+            self.base_resident = self.fy_2024_resident
+            self.target_growth_rate = 0.015
+            self.years_forward = 2
+        elif scenario == 'moderate':
+            # Blend FY 2024 + FY 2025 estimate, 2% growth
+            self.base_year = 2024.5  # Conceptual blend
+            self.base_resident = (self.fy_2024_resident + self.fy_2025_resident_estimate) / 2
+            self.target_growth_rate = 0.020
+            self.years_forward = 1.5  # Average
+        elif scenario == 'aggressive':
+            # Trust FY 2025 estimate, 2.5% growth
+            self.base_year = 2025
+            self.base_resident = self.fy_2025_resident_estimate
+            self.target_growth_rate = 0.025
+            self.years_forward = 1
+        else:
+            raise ValueError(f"Unknown scenario: {scenario}")
         
         # 2026 Targets
-        self.fy_2026_resident_target = self.fy_2025_resident * (1 + self.target_growth_rate)
+        self.fy_2026_resident_target = self.base_resident * (1 + self.target_growth_rate) ** self.years_forward
         self.fy_2026_total_target = self.fy_2026_resident_target / (1 - self.nonresident_share)
         
-        # Act 46 parameters
+        # Act 46 parameters (based on FY 2025 estimate)
         self.act46_impact_total = -597  # Million (official estimate)
-        self.act46_impact_rate = self.act46_impact_total / self.fy_2025_resident  # -19.9% of resident
+        self.act46_impact_rate = self.act46_impact_total / self.fy_2025_resident_estimate  # -19.9% of resident
         
         # Current model performance (to be updated)
         self.current_resident_revenue = 3298  # Million (our ensemble estimate)
         self.current_growth_rate = 0.074  # 7.4% CAGR
         
-        logger.info("Calibrator initialized with targets:")
-        logger.info(f"  FY 2025 Resident: ${self.fy_2025_resident:,.0f}M")
+        logger.info(f"Calibrator initialized with {scenario.upper()} scenario:")
+        logger.info(f"  Base Year: {self.base_year}")
+        logger.info(f"  FY 2024 Resident (ACTUAL): ${self.fy_2024_resident:,.0f}M")
+        logger.info(f"  FY 2025 Resident (ESTIMATE): ${self.fy_2025_resident_estimate:,.0f}M")
+        logger.info(f"  Base Resident: ${self.base_resident:,.0f}M")
         logger.info(f"  FY 2026 Resident Target: ${self.fy_2026_resident_target:,.0f}M")
-        logger.info(f"  Target Growth Rate: {self.target_growth_rate:.1%}")
+        logger.info(f"  Target Growth Rate: {self.target_growth_rate:.1%} over {self.years_forward:.1f} years")
         logger.info(f"  Act 46 Impact Rate: {self.act46_impact_rate:.1%}")
     
     def calculate_ensemble_weights(self):
@@ -60,32 +97,48 @@ class ModelCalibrator:
         
         # Component growth rates
         components = {
-            'fy_recent_2022_2025': {
+            'fy_actual_2022_2024': {
                 'current_weight': 0.00,
-                'growth_rate': -0.044,  # -4.4% CAGR
-                'new_weight': 0.30
+                'growth_rate': (self.fy_2024_total / self.fy_2023_adjusted - 1),  # Actual post-peak
+                'new_weight': 0.30 if self.scenario != 'aggressive' else 0.20,
+                'note': 'FY 2023 (adj) → FY 2024 actual'
+            },
+            'fy_2025_estimate': {
+                'current_weight': 0.00,
+                'growth_rate': (self.fy_2025_estimate / self.fy_2024_total - 1),  # DOT projection
+                'new_weight': 0.10 if self.scenario == 'moderate' else (0.30 if self.scenario == 'aggressive' else 0.00),
+                'note': 'FY 2024 → FY 2025 estimate (PROJECTION)'
             },
             'dotax_2018_2021': {
                 'current_weight': 0.35,
                 'growth_rate': 0.111,  # 11.1% CAGR
-                'new_weight': 0.20
+                'new_weight': 0.20,
+                'note': 'Pre-peak historical growth'
             },
             'bls_wage': {
                 'current_weight': 0.30,
                 'growth_rate': 0.055,  # 5.5%
-                'new_weight': 0.25
+                'new_weight': 0.25,
+                'note': 'Wage growth trends'
             },
             'acs_income': {
                 'current_weight': 0.25,
                 'growth_rate': 0.062,  # 6.2%
-                'new_weight': 0.15
+                'new_weight': 0.10 if self.scenario != 'conservative' else 0.15,
+                'note': 'ACS income trends'
             },
             'demographics': {
                 'current_weight': 0.10,
                 'growth_rate': 0.011,  # 1.1%
-                'new_weight': 0.10
+                'new_weight': 0.05 if self.scenario != 'conservative' else 0.10,
+                'note': 'Demographic factors'
             }
         }
+        
+        # Normalize weights to sum to 1.0
+        total_weight = sum(c['new_weight'] for c in components.values())
+        for comp in components.values():
+            comp['new_weight'] = comp['new_weight'] / total_weight
         
         # Calculate current weighted growth
         current_weighted_growth = sum(
@@ -165,7 +218,7 @@ class ModelCalibrator:
                 'pass': False
             },
             'growth_rate': {
-                'model': (calibrated_revenue / self.fy_2025_resident - 1),
+                'model': (calibrated_revenue / self.base_resident - 1) / self.years_forward,
                 'target': self.target_growth_rate,
                 'tolerance': 0.01,  # ±1pp
                 'pass': False
@@ -231,7 +284,7 @@ class ModelCalibrator:
         logger.info(f"Post-Act 46 (residents): ${post_act46_official:,.0f}M")
         
         # Add non-residents for total
-        post_act46_total = post_act46_official + (self.fy_2025_total * self.nonresident_share)
+        post_act46_total = post_act46_official + (self.fy_2025_estimate * self.nonresident_share)
         official_post_total = 2691  # From FY data
         
         logger.info(f"\nTotal revenue comparison:")
@@ -258,10 +311,11 @@ class ModelCalibrator:
                 'version': '2.0'
             },
             'base_year': {
-                'year': 2025,
-                'total_revenue': self.fy_2025_total,
-                'resident_revenue': self.fy_2025_resident,
-                'nonresident_share': self.nonresident_share
+                'year': self.base_year,
+                'total_revenue': self.base_resident / (1 - self.nonresident_share),
+                'resident_revenue': self.base_resident,
+                'nonresident_share': self.nonresident_share,
+                'note': f'Using {self.scenario} scenario base'
             },
             'targets': {
                 'year': 2026,
@@ -345,7 +399,7 @@ class ModelCalibrator:
             },
             'Post-Calibration': {
                 'Resident Revenue': f"${calibrated_revenue:,.0f}M",
-                'Growth Rate': f"{(calibrated_revenue / self.fy_2025_resident - 1) * 100:.1%}",
+                'Growth Rate': f"{((calibrated_revenue / self.base_resident - 1) / self.years_forward) * 100:.1%}",
                 'Error vs Target': f"{(calibrated_revenue / self.fy_2026_resident_target - 1) * 100:+.1f}%"
             },
             'Act 46 Analysis': {
@@ -378,8 +432,42 @@ class ModelCalibrator:
 def main():
     """Main execution."""
     
-    calibrator = ModelCalibrator()
-    results = calibrator.run_full_calibration()
+    # Run all three scenarios
+    scenarios = ['conservative', 'moderate', 'aggressive']
+    all_results = {}
+    
+    for scenario in scenarios:
+        logger.info("\n" + "="*80)
+        logger.info(f"RUNNING {scenario.upper()} SCENARIO")
+        logger.info("="*80 + "\n")
+        
+        calibrator = ModelCalibrator(scenario=scenario)
+        results = calibrator.run_full_calibration()
+        all_results[scenario] = results
+    
+    # Summary comparison
+    logger.info("\n" + "="*80)
+    logger.info("SCENARIO COMPARISON")
+    logger.info("="*80)
+    
+    logger.info(f"\n{'Scenario':<15} {'Target':<12} {'Growth':<10} {'Act 46':<12} {'Post-Act46':<12}")
+    logger.info("-" * 80)
+    
+    for scenario in scenarios:
+        res = all_results[scenario]
+        logger.info(
+            f"{scenario.capitalize():<15} "
+            f"${res['config']['targets']['resident_revenue']:,.0f}M{'':<2} "
+            f"{res['config']['targets']['growth_rate']:.1%}{'':<5} "
+            f"${res['act46_results']['impact']:,.0f}M{'':<3} "
+            f"${res['act46_results']['post_act46_total']:,.0f}M"
+        )
+    
+    logger.info("\n" + "="*80)
+    logger.info("RECOMMENDED: Use MODERATE scenario for balanced approach")
+    logger.info("="*80)
+    
+    return all_results
     
     # Save results
     output_dir = Path('data/processed/calibration')
