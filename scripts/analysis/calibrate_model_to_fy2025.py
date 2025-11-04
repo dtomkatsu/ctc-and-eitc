@@ -18,6 +18,12 @@ from pathlib import Path
 import logging
 from datetime import datetime
 import json
+import sys
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from config import ModelConfig
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,55 +39,38 @@ class ModelCalibrator:
             scenario: 'conservative', 'moderate', or 'aggressive'
         """
         self.scenario = scenario
+        self.config = ModelConfig()
         
-        # FY Actuals (confirmed data)
-        self.fy_2022_total = 3760  # Million, actual (peak)
-        self.fy_2023_total = 3100  # Million, actual (with refund)
-        self.fy_2023_adjusted = 3412  # Million, actual (add back $311.7M refund)
-        self.fy_2024_total = 3280  # Million, ACTUAL (last confirmed)
+        # Load parameters from centralized config
+        self.fy_2022_total = self.config.FY_2022_TOTAL
+        self.fy_2023_total = self.config.FY_2023_TOTAL
+        self.fy_2023_adjusted = self.config.FY_2023_ADJUSTED
+        self.fy_2024_total = self.config.FY_2024_TOTAL
+        self.fy_2025_estimate = self.config.FY_2025_ESTIMATE
         
-        # FY 2025 is a PROJECTION, not actual
-        self.fy_2025_estimate = 3288  # Million, DOT projection
-        
-        self.nonresident_share = 0.088  # 8.8% of total
+        self.nonresident_share = self.config.NONRESIDENT_SHARE
         
         # Calculate resident portions
-        self.fy_2024_resident = self.fy_2024_total * (1 - self.nonresident_share)  # $2,991M
-        self.fy_2025_resident_estimate = self.fy_2025_estimate * (1 - self.nonresident_share)  # $2,999M
+        self.fy_2024_resident = self.config.FY_2024_RESIDENT
+        self.fy_2025_resident_estimate = self.config.FY_2025_RESIDENT_ESTIMATE
         
-        # Scenario-based targets
-        if scenario == 'conservative':
-            # Base on FY 2024 actual only, 1.5% growth over 2 years
-            self.base_year = 2024
-            self.base_resident = self.fy_2024_resident
-            self.target_growth_rate = 0.015
-            self.years_forward = 2
-        elif scenario == 'moderate':
-            # Blend FY 2024 + FY 2025 estimate, 2% growth
-            self.base_year = 2024.5  # Conceptual blend
-            self.base_resident = (self.fy_2024_resident + self.fy_2025_resident_estimate) / 2
-            self.target_growth_rate = 0.020
-            self.years_forward = 1.5  # Average
-        elif scenario == 'aggressive':
-            # Trust FY 2025 estimate, 2.5% growth
-            self.base_year = 2025
-            self.base_resident = self.fy_2025_resident_estimate
-            self.target_growth_rate = 0.025
-            self.years_forward = 1
-        else:
-            raise ValueError(f"Unknown scenario: {scenario}")
+        # Load scenario parameters from config
+        params = self.config.get_scenario_params(scenario)
         
-        # 2026 Targets
-        self.fy_2026_resident_target = self.base_resident * (1 + self.target_growth_rate) ** self.years_forward
-        self.fy_2026_total_target = self.fy_2026_resident_target / (1 - self.nonresident_share)
+        self.base_year = params['base_year']
+        self.base_resident = params['base_resident']
+        self.target_growth_rate = params['growth_rate']
+        self.years_forward = params['years_forward']
+        self.fy_2026_resident_target = params['target_resident']
+        self.fy_2026_total_target = params['target_total']
         
-        # Act 46 parameters (based on FY 2025 estimate)
-        self.act46_impact_total = -597  # Million (official estimate)
-        self.act46_impact_rate = self.act46_impact_total / self.fy_2025_resident_estimate  # -19.9% of resident
+        # Act 46 parameters from config
+        self.act46_impact_total = self.config.ACT46_IMPACT_TOTAL
+        self.act46_impact_rate = self.config.ACT46_IMPACT_RATE
         
-        # Current model performance (to be updated)
-        self.current_resident_revenue = 3298  # Million (our ensemble estimate)
-        self.current_growth_rate = 0.074  # 7.4% CAGR
+        # Current model performance
+        self.current_resident_revenue = self.config.CURRENT_RESIDENT_REVENUE
+        self.current_growth_rate = self.config.CURRENT_GROWTH_RATE
         
         logger.info(f"Calibrator initialized with {scenario.upper()} scenario:")
         logger.info(f"  Base Year: {self.base_year}")
@@ -95,50 +84,26 @@ class ModelCalibrator:
     def calculate_ensemble_weights(self):
         """Calculate new ensemble weights to achieve target growth rate."""
         
-        # Component growth rates
-        components = {
-            'fy_actual_2022_2024': {
-                'current_weight': 0.00,
-                'growth_rate': (self.fy_2024_total / self.fy_2023_adjusted - 1),  # Actual post-peak
-                'new_weight': 0.30 if self.scenario != 'aggressive' else 0.20,
-                'note': 'FY 2023 (adj) → FY 2024 actual'
-            },
-            'fy_2025_estimate': {
-                'current_weight': 0.00,
-                'growth_rate': (self.fy_2025_estimate / self.fy_2024_total - 1),  # DOT projection
-                'new_weight': 0.10 if self.scenario == 'moderate' else (0.30 if self.scenario == 'aggressive' else 0.00),
-                'note': 'FY 2024 → FY 2025 estimate (PROJECTION)'
-            },
-            'dotax_2018_2021': {
-                'current_weight': 0.35,
-                'growth_rate': 0.111,  # 11.1% CAGR
-                'new_weight': 0.20,
-                'note': 'Pre-peak historical growth'
-            },
-            'bls_wage': {
-                'current_weight': 0.30,
-                'growth_rate': 0.055,  # 5.5%
-                'new_weight': 0.25,
-                'note': 'Wage growth trends'
-            },
-            'acs_income': {
-                'current_weight': 0.25,
-                'growth_rate': 0.062,  # 6.2%
-                'new_weight': 0.10 if self.scenario != 'conservative' else 0.15,
-                'note': 'ACS income trends'
-            },
-            'demographics': {
-                'current_weight': 0.10,
-                'growth_rate': 0.011,  # 1.1%
-                'new_weight': 0.05 if self.scenario != 'conservative' else 0.10,
-                'note': 'Demographic factors'
-            }
-        }
+        # Get weights and growth rates from config
+        weights = self.config.get_ensemble_weights(self.scenario)
+        growth_rates = self.config.GROWTH_RATES
         
-        # Normalize weights to sum to 1.0
+        # Build components dict with config values
+        components = {}
+        for component_name, new_weight in weights.items():
+            components[component_name] = {
+                'current_weight': 0.00,  # Baseline (before calibration)
+                'growth_rate': growth_rates[component_name],
+                'new_weight': new_weight,
+                'note': f'{component_name} from config'
+            }
+        
+        # Weights already normalized in config, but verify
         total_weight = sum(c['new_weight'] for c in components.values())
-        for comp in components.values():
-            comp['new_weight'] = comp['new_weight'] / total_weight
+        if not (0.99 <= total_weight <= 1.01):
+            logger.warning(f"Weights sum to {total_weight}, normalizing...")
+            for comp in components.values():
+                comp['new_weight'] = comp['new_weight'] / total_weight
         
         # Calculate current weighted growth
         current_weighted_growth = sum(

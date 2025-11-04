@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "created": "2025-11-03T13:49:55.678953",
+    "created": "2025-11-03T14:37:43.136960",
     "purpose": "Hawaii Tax Model Calibration to FY 2025 Actuals",
     "version": "2.0"
   },
@@ -13,56 +13,56 @@
   },
   "targets": {
     "year": 2026,
-    "resident_revenue": 3073.6223999999997,
-    "total_revenue": 3370.2,
+    "resident_revenue": 3074,
+    "total_revenue": 3371,
     "growth_rate": 0.025
   },
   "ensemble_weights": {
     "fy_actual_2022_2024": {
       "current_weight": 0.0,
       "growth_rate": -0.0386869871043376,
-      "new_weight": 0.18181818181818182,
-      "note": "FY 2023 (adj) \u2192 FY 2024 actual"
+      "new_weight": 0.2,
+      "note": "fy_actual_2022_2024 from config"
     },
     "fy_2025_estimate": {
       "current_weight": 0.0,
       "growth_rate": 0.0024390243902439046,
-      "new_weight": 0.2727272727272727,
-      "note": "FY 2024 \u2192 FY 2025 estimate (PROJECTION)"
+      "new_weight": 0.3,
+      "note": "fy_2025_estimate from config"
     },
     "dotax_2018_2021": {
-      "current_weight": 0.35,
+      "current_weight": 0.0,
       "growth_rate": 0.111,
-      "new_weight": 0.18181818181818182,
-      "note": "Pre-peak historical growth"
+      "new_weight": 0.2,
+      "note": "dotax_2018_2021 from config"
     },
     "bls_wage": {
-      "current_weight": 0.3,
+      "current_weight": 0.0,
       "growth_rate": 0.055,
-      "new_weight": 0.22727272727272727,
-      "note": "Wage growth trends"
+      "new_weight": 0.2,
+      "note": "bls_wage from config"
     },
     "acs_income": {
-      "current_weight": 0.25,
+      "current_weight": 0.0,
       "growth_rate": 0.062,
-      "new_weight": 0.09090909090909091,
-      "note": "ACS income trends"
+      "new_weight": 0.05,
+      "note": "acs_income from config"
     },
     "demographics": {
-      "current_weight": 0.1,
+      "current_weight": 0.0,
       "growth_rate": 0.011,
-      "new_weight": 0.045454545454545456,
-      "note": "Demographic factors"
+      "new_weight": 0.05,
+      "note": "demographics from config"
     }
   },
   "adjustments": {
-    "income_scaling": 0.9319655548817465,
+    "income_scaling": 0.9320800485142511,
     "capital_gains_target_pct": 0.025,
     "credit_reduction_rate": 0.1
   },
   "act46": {
     "impact_total": -597,
-    "impact_rate": -0.19908919195799718,
+    "impact_rate": -0.199,
     "applies_to": "primarily_residents"
   },
   "validation_thresholds": {
