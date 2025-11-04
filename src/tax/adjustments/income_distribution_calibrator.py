@@ -7,10 +7,30 @@ DOTax effective tax rates using principled statistical methods.
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Import AGI benchmarks from validation module
+try:
+    from src.tax.validation.agi_calibration import AGI_BENCHMARKS
+except ImportError:
+    # Fallback if import fails
+    AGI_BENCHMARKS = [
+        (0, 10000, 129376),
+        (10000, 20000, 64160),
+        (20000, 30000, 57835),
+        (30000, 40000, 59827),
+        (40000, 50000, 53555),
+        (50000, 75000, 91459),
+        (75000, 100000, 54976),
+        (100000, 150000, 62065),
+        (150000, 200000, 27976),
+        (200000, 300000, 18937),
+        (300000, 400000, 6076),
+        (400000, float('inf'), 8875),
+    ]
 
 
 class IncomeDistributionCalibrator:
@@ -40,14 +60,16 @@ class IncomeDistributionCalibrator:
         (1000000, float('inf')): {'filers': 1824, 'tax_m': 663.0, 'eff_rate': 9.9},
     }
     
-    def __init__(self, threshold: float = 100000):
+    def __init__(self, threshold: float = 100000, calibrate_agi_first: bool = True):
         """
         Initialize calibrator.
         
         Args:
-            threshold: AGI threshold above which to apply calibration (default $100k)
+            threshold: AGI threshold above which to apply effective rate calibration (default $100k)
+            calibrate_agi_first: If True, calibrate AGI targets first before effective rates
         """
         self.threshold = threshold
+        self.calibrate_agi_first = calibrate_agi_first
         
     def calculate_current_rate(self, df_bracket: pd.DataFrame) -> float:
         """Calculate current effective tax rate for a bracket."""
@@ -257,10 +279,91 @@ class IncomeDistributionCalibrator:
         
         return result
     
+    def assign_agi_bracket_idx(self, agi: float) -> int:
+        """Assign AGI to bracket index for AGI_BENCHMARKS."""
+        for i, (min_agi, max_agi, _) in enumerate(AGI_BENCHMARKS):
+            if max_agi == float('inf'):
+                if agi >= min_agi:
+                    return i
+            else:
+                if min_agi <= agi < max_agi:
+                    return i
+        return len(AGI_BENCHMARKS) - 1  # Default to highest bracket
+    
+    def calibrate_agi_targets(self, df: pd.DataFrame, weight_col: str = 'weight') -> pd.DataFrame:
+        """
+        Calibrate weights to match DOTAX Table 12A AGI bracket targets.
+        
+        This is the primary calibration step that ensures we match the official
+        AGI distribution before any effective rate adjustments.
+        """
+        logger.info("\n" + "="*80)
+        logger.info("PRIMARY AGI TARGET CALIBRATION (DOTAX Table 12A)")
+        logger.info("="*80)
+        logger.info("Calibrating weights to match official AGI bracket return counts...\n")
+        
+        result = df.copy()
+        
+        # Assign AGI brackets
+        result['agi_bracket_idx'] = result['agi'].apply(self.assign_agi_bracket_idx)
+        
+        # Calculate current counts by bracket
+        current_counts = result.groupby('agi_bracket_idx')[weight_col].sum()
+        
+        # Calculate calibration factors
+        factors = {}
+        for i, (min_agi, max_agi, target_count) in enumerate(AGI_BENCHMARKS):
+            current = current_counts.get(i, 0)
+            
+            if current > 0 and target_count > 0:
+                factor = target_count / current
+                factors[i] = factor
+            else:
+                factors[i] = 1.0
+                if current == 0 and target_count > 0:
+                    logger.warning(f"  No filers in bracket ${min_agi//1000}k-${max_agi//1000 if max_agi != float('inf') else 'inf'}k but target is {target_count:,}")
+        
+        # Apply factors
+        result['agi_calibration_factor'] = result['agi_bracket_idx'].map(factors)
+        result[weight_col] = result[weight_col] * result['agi_calibration_factor']
+        
+        # Log results
+        logger.info(f"{'Bracket':<20} {'Before':>12} {'After':>12} {'Target':>12} {'Factor':>8}")
+        logger.info("-"*70)
+        
+        new_counts = result.groupby('agi_bracket_idx')[weight_col].sum()
+        
+        for i, (min_agi, max_agi, target_count) in enumerate(AGI_BENCHMARKS):
+            before = current_counts.get(i, 0)
+            after = new_counts.get(i, 0)
+            factor = factors[i]
+            
+            if max_agi == float('inf'):
+                label = f"${min_agi//1000}k+"
+            else:
+                label = f"${min_agi//1000}k-${max_agi//1000}k"
+            
+            logger.info(f"{label:<20} {before:>12,.0f} {after:>12,.0f} {target_count:>12,} {factor:>8.3f}")
+        
+        total_before = current_counts.sum()
+        total_after = new_counts.sum()
+        total_target = sum(target for _, _, target in AGI_BENCHMARKS)
+        
+        logger.info("-"*70)
+        logger.info(f"{'TOTAL':<20} {total_before:>12,.0f} {total_after:>12,.0f} {total_target:>12,} {'':>8}")
+        
+        # Clean up temporary columns
+        result.drop(columns=['agi_bracket_idx', 'agi_calibration_factor'], inplace=True)
+        
+        logger.info(f"\n✅ AGI target calibration complete. Total filers: {total_after:,.0f}")
+        
+        return result
+    
     def calibrate(self, 
                  df: pd.DataFrame,
                  recalculate_tax: bool = True,
-                 method: str = 'percentile') -> pd.DataFrame:
+                 method: str = 'percentile',
+                 apply_effective_rate_calibration: bool = True) -> pd.DataFrame:
         """
         Main calibration method - systematically adjust income distributions.
         
@@ -275,11 +378,27 @@ class IncomeDistributionCalibrator:
         logger.info("=" * 80)
         logger.info("SYSTEMATIC INCOME DISTRIBUTION CALIBRATION")
         logger.info("=" * 80)
+        logger.info(f"AGI Target Calibration: {'ENABLED' if self.calibrate_agi_first else 'DISABLED'}")
+        logger.info(f"Effective Rate Calibration: {'ENABLED' if apply_effective_rate_calibration else 'DISABLED'}")
         logger.info(f"Method: {method}")
         logger.info(f"Threshold: AGI >= ${self.threshold:,.0f}")
         logger.info("")
         
         result = df.copy()
+        
+        # Step 1: Calibrate to AGI targets first (if enabled)
+        if self.calibrate_agi_first:
+            result = self.calibrate_agi_targets(result)
+        
+        # Step 2: Apply effective rate calibration (if enabled)
+        if not apply_effective_rate_calibration:
+            logger.info("\n⚠️  Skipping effective rate calibration as requested")
+            return result
+        
+        logger.info("\n" + "="*80)
+        logger.info("SECONDARY EFFECTIVE RATE CALIBRATION (High-Income Only)")
+        logger.info("="*80)
+        logger.info(f"Applying effective rate calibration to brackets >= ${self.threshold:,.0f}...\n")
         
         # Apply calibration to each high-income bracket
         for (bracket_min, bracket_max), targets in self.DOTAX_TARGETS.items():
@@ -330,18 +449,23 @@ class IncomeDistributionCalibrator:
 def apply_income_distribution_calibration(df: pd.DataFrame,
                                           threshold: float = 100000,
                                           method: str = 'percentile',
-                                          recalculate_tax: bool = True) -> pd.DataFrame:
+                                          recalculate_tax: bool = True,
+                                          calibrate_agi_first: bool = True,
+                                          apply_effective_rate_calibration: bool = True) -> pd.DataFrame:
     """
     Convenience function to apply systematic income distribution calibration.
     
     Args:
         df: DataFrame with tax units
-        threshold: AGI threshold above which to calibrate (default $100k)
+        threshold: AGI threshold above which to calibrate effective rates (default $100k)
         method: 'percentile' or 'lognormal'
         recalculate_tax: Whether to recalculate taxes after adjustment
+        calibrate_agi_first: Whether to calibrate AGI targets first
+        apply_effective_rate_calibration: Whether to apply effective rate calibration
         
     Returns:
         DataFrame with calibrated income distributions
     """
-    calibrator = IncomeDistributionCalibrator(threshold=threshold)
-    return calibrator.calibrate(df, recalculate_tax=recalculate_tax, method=method)
+    calibrator = IncomeDistributionCalibrator(threshold=threshold, calibrate_agi_first=calibrate_agi_first)
+    return calibrator.calibrate(df, recalculate_tax=recalculate_tax, method=method, 
+                               apply_effective_rate_calibration=apply_effective_rate_calibration)

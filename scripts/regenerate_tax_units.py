@@ -269,15 +269,17 @@ def main(include_capital_gains: bool = True):
     
     logger.info(f"   Initial total tax: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
     
-    # 3. Income Distribution Calibration (shift incomes within brackets to match effective rates)
-    logger.info("\n📈 Step 3: Income distribution calibration (shift incomes within brackets)...")
+    # 3. Income Distribution Calibration (AGI targets first, then optional effective rates)
+    logger.info("\n📈 Step 3: Income distribution calibration (AGI targets + optional effective rates)...")
     from src.tax.adjustments.income_distribution_calibrator import IncomeDistributionCalibrator
     
-    income_calibrator = IncomeDistributionCalibrator(threshold=100000)
+    # Test both approaches: AGI-only vs AGI + effective rates
+    income_calibrator = IncomeDistributionCalibrator(threshold=100000, calibrate_agi_first=True)
     tax_units = income_calibrator.calibrate(
         tax_units,
         recalculate_tax=False,  # We'll recalculate ourselves with our tax calculator
-        method='percentile'
+        method='percentile',
+        apply_effective_rate_calibration=False  # Start with AGI-only to test accuracy
     )
     
     logger.info(f"   Mean AGI after income shifting: ${tax_units['agi'].mean():,.0f}")
@@ -490,9 +492,14 @@ def main(include_capital_gains: bool = True):
     # Determine weight column
     weight_col = 'weight' if 'weight' in tax_units.columns else 'PWGTP'
 
-    # Apply filing status weight calibration to match DOTAX targets
-    logger.info("\n🎯 Applying filing status weight calibration to match DOTAX benchmarks...")
-    tax_units = apply_filing_status_weight_calibration(tax_units, weight_col=weight_col)
+    # SKIP filing status weight calibration - the Oct 27 calibrated file already has excellent distribution
+    # (Single 53.1%, Joint 34.1%, HoH 10.6%, MFS 2.2% - all within 2.1pp of targets)
+    # Applying additional calibration would artificially reduce total filers from 635k to 585k
+    logger.info("\n⚠️  SKIPPING filing status weight calibration")
+    logger.info("    Tax unit construction already produces distribution close to DOTAX targets")
+    if False:  # Set to True to re-enable if needed
+        logger.info("\n🎯 Applying filing status weight calibration to match DOTAX benchmarks...")
+        tax_units = apply_filing_status_weight_calibration(tax_units, weight_col=weight_col)
 
     # Analyze filing status distribution
     logger.info("\n" + "="*80)
