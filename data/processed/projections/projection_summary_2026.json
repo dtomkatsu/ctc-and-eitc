@@ -1,5 +1,5 @@
 {
-  "total_units": 34887,
+  "total_units": 41857,
   "base_year": "2023",
   "projection_year": "2026",
   "years_forward": "3",
@@ -8,14 +8,14 @@
   "avg_annual_growth": 0.03638247447035736,
   "match_quality": {
     "state_wide": {
-      "count": 34887,
+      "count": 41857,
       "percent": 100.0
     }
   },
   "avg_confidence": 0.4000000000000001,
   "income_change": {
-    "base_total": 3109856423.2765517,
-    "projected_total": 3461788412.123237,
-    "total_growth_pct": 11.316663567248831
+    "base_total": 3221936069.0683336,
+    "projected_total": 3586551734.35664,
+    "total_growth_pct": 11.316663567248852
   }
 }

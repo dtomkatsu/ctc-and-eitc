@@ -1,0 +1,13 @@
+filing_status,income_min,income_max,rate_2024_pre_act46,rate_2026_post_act46,rate_2026_adjusted,rate_increase_from_2026,still_below_2024,scaling_factor,total_revenue_increase
+Joint_Surviving_Spouse,450000,550000.0,9.0,8.25,21.75,13.5,False,27.0,241.57061585826386
+Joint_Surviving_Spouse,550000,650000.0,10.0,9.0,22.5,13.5,False,27.0,241.57061585826386
+Joint_Surviving_Spouse,650000,800000.0,11.0,10.0,23.5,13.5,False,27.0,241.57061585826386
+Joint_Surviving_Spouse,800000,inf,11.0,11.0,24.5,13.5,False,27.0,241.57061585826386
+Head_of_Household,337500,412500.0,9.0,8.25,21.75,13.5,False,27.0,241.57061585826386
+Head_of_Household,412500,487500.0,10.0,9.0,22.5,13.5,False,27.0,241.57061585826386
+Head_of_Household,487500,600000.0,11.0,10.0,23.5,13.5,False,27.0,241.57061585826386
+Head_of_Household,600000,inf,11.0,11.0,24.5,13.5,False,27.0,241.57061585826386
+Single_Married_Separate,225000,275000.0,9.0,8.25,21.75,13.5,False,27.0,241.57061585826386
+Single_Married_Separate,275000,325000.0,10.0,9.0,22.5,13.5,False,27.0,241.57061585826386
+Single_Married_Separate,325000,400000.0,11.0,10.0,23.5,13.5,False,27.0,241.57061585826386
+Single_Married_Separate,400000,inf,11.0,11.0,24.5,13.5,False,27.0,241.57061585826386

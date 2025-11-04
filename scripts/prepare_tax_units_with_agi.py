@@ -27,11 +27,15 @@ def main():
     
     # Find latest tax units file
     data_dir = project_root / 'data' / 'processed'
-    files = sorted(data_dir.glob('tax_units_regenerated_*.parquet'))
+    
+    # Look for calibrated files first, then regenerated files
+    files = sorted(data_dir.glob('tax_units_filing_status_calibrated_*.parquet'))
+    if not files:
+        files = sorted(data_dir.glob('tax_units_regenerated_*.parquet'))
     
     if not files:
         print("\nERROR: No tax units files found!")
-        print("Please run: python scripts/generate_tax_units.py")
+        print("Please run: python scripts/regenerate_tax_units.py")
         return
     
     tax_units_file = files[-1]

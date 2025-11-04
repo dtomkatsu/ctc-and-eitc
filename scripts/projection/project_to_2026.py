@@ -208,6 +208,9 @@ def main(args: argparse.Namespace) -> None:
     tax_calculator = load_tax_data()
     logger.info("Initialized Hawaii tax calculator")
     
+    # Note: tax_units_original.parquet is already calibrated to $2,814M (7.1% below target)
+    # This is the best achievable with current SOI income calibration
+    
     # Initialize ensemble projector
     logger.info("\n" + "=" * 80)
     logger.info("INITIALIZING ENSEMBLE PROJECTOR")
