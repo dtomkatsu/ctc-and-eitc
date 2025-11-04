@@ -42,10 +42,12 @@ class Act46RollbackAnalyzer:
         scenario: str = "moderate",
         tax_units_path: Optional[Path] = None,
         projection_year: int = 2026,
+        top_bracket_count: int = 5,
     ) -> None:
         self.config = ModelConfig()
         self.scenario = scenario
         self.projection_year = projection_year
+        self.top_bracket_count = top_bracket_count
 
         # Act 46 targets
         self.act46_total_loss = 597.0  # Million (official)
@@ -127,15 +129,22 @@ class Act46RollbackAnalyzer:
         if status_brackets.empty:
             raise ValueError(f"No brackets found for filing status {filing_status}")
         status_brackets = status_brackets.sort_values("income_min", ascending=False)
-        return status_brackets.head(4).sort_values("income_min")
+        return status_brackets.head(self.top_bracket_count).sort_values("income_min")
 
     def calculate_rate_adjustments(self, adjustment_strategy: str = "progressive") -> Dict[int, float]:
         if adjustment_strategy == "uniform":
-            return {i: 0.5 for i in range(4)}
+            return {i: 0.5 for i in range(self.top_bracket_count)}
         if adjustment_strategy == "progressive":
-            return {0: 0.25, 1: 0.5, 2: 0.75, 3: 1.0}
+            base_step = 0.25
+            return {i: base_step * (i + 1) for i in range(self.top_bracket_count)}
         if adjustment_strategy == "aggressive":
-            return {0: 0.25, 1: 0.5, 2: 1.0, 3: 1.5}
+            increments = [0.25, 0.5]
+            while len(increments) < self.top_bracket_count:
+                if len(increments) == 2:
+                    increments.append(1.0)
+                else:
+                    increments.append(increments[-1] + 0.5)
+            return {i: increments[i] for i in range(self.top_bracket_count)}
         raise ValueError(f"Unknown adjustment strategy: {adjustment_strategy}")
 
     def create_adjusted_brackets(self, adjustment_strategy: str, scaling_factor: float) -> pd.DataFrame:
