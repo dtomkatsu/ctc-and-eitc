@@ -165,6 +165,43 @@ def main(include_capital_gains: bool = True):
     # Ensure synthetic units are marked for tracking
     if 'is_synthetic_ultra_high' not in tax_units.columns:
         tax_units['is_synthetic_ultra_high'] = False
+    
+    # Calculate taxes for synthetic units immediately after creation
+    logger.info("\n💰 Step 2a.5: Calculate taxes for synthetic units...")
+    from src.tax.brackets import load_tax_data
+    
+    calculator = load_tax_data()
+    filing_status_map = {
+        'single': 'Single_Married_Separate',
+        'married_filing_jointly': 'Joint_Surviving_Spouse',
+        'married_filing_separately': 'Single_Married_Separate',
+        'head_of_household': 'Head_of_Household',
+        'qualifying_widow': 'Joint_Surviving_Spouse'
+    }
+    
+    # Ensure filing_status_hawaii column exists for ALL units
+    # Update or create it to ensure synthetics are included
+    tax_units['filing_status_hawaii'] = tax_units['filing_status'].map(filing_status_map)
+    
+    # Calculate taxes for all units (including synthetics)
+    tax_results = calculator.calculate_tax_for_dataframe(
+        tax_units,
+        income_col='agi',
+        filing_status_col='filing_status_hawaii',
+        year=2017
+    )
+    
+    # Update tax columns
+    for col in tax_results.columns:
+        tax_units[col] = tax_results[col]
+    
+    if 'hi_tax_tax_liability' in tax_units.columns:
+        tax_units['hi_state_tax'] = tax_units['hi_tax_tax_liability']
+    
+    synthetic_mask = tax_units.get('is_synthetic_ultra_high', False) == True
+    synthetic_tax = (tax_units.loc[synthetic_mask, 'hi_state_tax'] * tax_units.loc[synthetic_mask, 'weight']).sum() / 1_000_000
+    logger.info(f"   Synthetic ultra-high-income tax: ${synthetic_tax:,.1f}M")
+    logger.info(f"   Total tax (all units): ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
 
     # Apply capital gains if enabled (now includes synthetic units)
     if include_capital_gains:
@@ -197,6 +234,27 @@ def main(include_capital_gains: bool = True):
         logger.info(f"   Total capital gains (weighted): ${total_cap_gains:,.1f}M")
         logger.info(f"   Filers with capital gains: {weighted_filers_with_cap_gains:,.0f} ({weighted_filers_with_cap_gains/tax_units['weight'].sum()*100:.1f}%)")
         logger.info(f"   Average cap gains per filer: ${total_cap_gains * 1_000_000 / weighted_filers_with_cap_gains:,.0f}")
+        
+        # Recalculate taxes with updated AGI (including capital gains)
+        logger.info("\n💰 Step 2b.5: Recalculate taxes after capital gains...")
+        tax_results = calculator.calculate_tax_for_dataframe(
+            tax_units,
+            income_col='agi',
+            filing_status_col='filing_status_hawaii',
+            year=2017
+        )
+        
+        # Update tax columns
+        for col in tax_results.columns:
+            tax_units[col] = tax_results[col]
+        
+        if 'hi_tax_tax_liability' in tax_units.columns:
+            tax_units['hi_state_tax'] = tax_units['hi_tax_tax_liability']
+        
+        synthetic_mask = tax_units.get('is_synthetic_ultra_high', False) == True
+        synthetic_tax = (tax_units.loc[synthetic_mask, 'hi_state_tax'] * tax_units.loc[synthetic_mask, 'weight']).sum() / 1_000_000
+        logger.info(f"   Synthetic ultra-high-income tax (after cap gains): ${synthetic_tax:,.1f}M")
+        logger.info(f"   Total tax (all units, after cap gains): ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
     else:
         logger.info("\n⚠️  Capital gains EXCLUDED from this run")
         tax_units['capital_gains'] = 0

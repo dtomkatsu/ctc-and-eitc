@@ -147,81 +147,152 @@ class UltraHighIncomeSynthesizerV2:
         logger.info("")
         logger.info(f"Total weight to redistribute: {total_weight_to_move:.0f} filers")
         
-        # Reduce weight of lower $1M+ filers proportionally
+        # Reduce weight from existing high-income filers by filing status
+        # Cascade through sub-brackets to ensure conservation
         if total_weight_to_move > 0:
-            # Find filers in $1M-$5M range to reduce
-            mask_1m_to_5m = (df['agi'] >= 1_000_000) & (df['agi'] < 5_000_000)
-            weight_1m_to_5m = df.loc[mask_1m_to_5m, 'weight'].sum()
+            result = df.copy()
             
-            if weight_1m_to_5m > total_weight_to_move:
-                # Reduce proportionally
-                reduction_factor = (weight_1m_to_5m - total_weight_to_move) / weight_1m_to_5m
+            # Group synthetic weight by filing status
+            synthetic_weight_by_status = {}
+            for spec in synthetic_filers:
+                status = spec['filing_status']
+                synthetic_weight_by_status[status] = synthetic_weight_by_status.get(status, 0) + spec['weight']
+            
+            logger.info("\nReducing weight from existing filers by filing status:")
+            
+            # Define high-income sub-brackets to cascade through
+            sub_brackets = [
+                (1_000_000, 5_000_000, "$1M-$5M"),
+                (5_000_000, 10_000_000, "$5M-$10M"),
+                (10_000_000, 25_000_000, "$10M-$25M"),
+                (25_000_000, 50_000_000, "$25M-$50M"),
+                (50_000_000, float('inf'), "$50M+"),
+            ]
+            
+            # Process each filing status separately to preserve A2-2 totals
+            for status, synthetic_weight_needed in synthetic_weight_by_status.items():
+                logger.info(f"\n  {status}: Need to remove {synthetic_weight_needed:.1f} filers")
                 
-                result = df.copy()
-                result.loc[mask_1m_to_5m, 'weight'] *= reduction_factor
+                # Track cumulative reduction for this status
+                total_removed = 0
+                remaining_to_remove = synthetic_weight_needed
                 
-                logger.info(f"Reduced $1M-$5M filer weight by {(1-reduction_factor)*100:.1f}%")
-                
-                # Add synthetic ultra-high-income filers
-                if synthetic_filers:
-                    synthetic_df = pd.DataFrame(synthetic_filers)
+                # Cascade through sub-brackets
+                for min_agi, max_agi, label in sub_brackets:
+                    if remaining_to_remove <= 0.01:  # Floating point tolerance
+                        break
                     
-                    # Fill in any missing columns with appropriate defaults
-                    for col in result.columns:
-                        if col not in synthetic_df.columns:
-                            if col in ['weight', 'agi', 'filing_status', 'num_dependents', 'num_adults', 
-                                      'filing_status_hawaii', 'is_synthetic_ultra_high', 'total_deductions']:
-                                continue  # Already set
-                            elif 'tax' in col.lower():
-                                synthetic_df[col] = 0  # Will be recalculated
-                            elif col in ['income', 'agi_without_cap_gains', 'agi_with_cap_gains']:
-                                # Set income fields to AGI for synthetic units
-                                synthetic_df[col] = synthetic_df['agi']
-                            elif col in ['standard_deduction', 'standard_deduction_amount']:
-                                # MFJ standard deduction for 2022: $25,900
-                                synthetic_df[col] = 25900
-                            elif col in ['taxable_income', 'hi_taxable_income', 'hi_tax_taxable_income']:
-                                # Taxable income = AGI - standard deduction
-                                synthetic_df[col] = synthetic_df['agi'] - 25900
-                            elif col in ['has_capital_gains', 'capital_gains', 'agi_adjustments']:
-                                synthetic_df[col] = 0
-                            elif col in ['bracket']:
-                                # Highest bracket for ultra-high earners
-                                synthetic_df[col] = '1000000+'
-                            elif col in ['PUMA', 'PUMA10']:
-                                # Use most common PUMA from existing data
-                                synthetic_df[col] = result[col].mode()[0] if len(result[col].mode()) > 0 else '100'
-                            elif col in ['filer_id', 'primary_filer_id', 'SERIALNO', 'hh_id']:
-                                # Generate unique IDs for synthetic units
-                                synthetic_df[col] = [f'SYNTH_{i}' for i in range(len(synthetic_df))]
-                            elif col in ['secondary_filer_id']:
-                                # MFJ has secondary filer
-                                synthetic_df[col] = [f'SYNTH_{i}_SPOUSE' for i in range(len(synthetic_df))]
-                            elif col in ['dependents']:
-                                # Empty list for dependents
-                                synthetic_df[col] = [[] for _ in range(len(synthetic_df))]
-                            elif col in ['hh_weight', 'person_weight_sum', 'weight_original', 'weight_calibrated']:
-                                # Use same as weight
-                                synthetic_df[col] = synthetic_df['weight']
-                            elif col in ['calibration_factor']:
-                                synthetic_df[col] = 1.0
-                            else:
-                                synthetic_df[col] = 0  # Default to 0 for other fields
+                    # Find filers in this sub-bracket with this status
+                    if max_agi == float('inf'):
+                        mask = (result['agi'] >= min_agi) & (result['filing_status'] == status)
+                    else:
+                        mask = (result['agi'] >= min_agi) & (result['agi'] < max_agi) & (result['filing_status'] == status)
                     
-                    result = pd.concat([result, synthetic_df], ignore_index=True)
+                    available_weight = result.loc[mask, 'weight'].sum()
                     
-                    logger.info(f"Added {len(synthetic_df)} ultra-high-income levels")
-                    logger.info(f"Total synthetic weight: {synthetic_df['weight'].sum():,.0f}")
+                    if available_weight < 0.01:
+                        logger.info(f"    {label}: {available_weight:.1f} available (skipping)")
+                        continue
+                    
+                    # Calculate how much to remove from this bracket
+                    to_remove = min(remaining_to_remove, available_weight)
+                    reduction_factor = (available_weight - to_remove) / available_weight
+                    
+                    # Apply reduction
+                    result.loc[mask, 'weight'] *= reduction_factor
+                    
+                    total_removed += to_remove
+                    remaining_to_remove -= to_remove
+                    
+                    logger.info(f"    {label}: Removed {to_remove:.1f} of {available_weight:.1f} available ({(1-reduction_factor)*100:.1f}% reduction)")
                 
-                # Verify total filer count preserved
-                new_total_1m = result.loc[result['agi'] >= 1_000_000, 'weight'].sum()
-                logger.info("")
-                logger.info(f"Final $1M+ filer count: {new_total_1m:,.0f} (target: {current_filers:,.0f})")
+                if remaining_to_remove > 0.01:
+                    logger.warning(f"  ⚠️  Could not remove full {synthetic_weight_needed:.1f} for {status}")
+                    logger.warning(f"     Only removed {total_removed:.1f}, shortfall of {remaining_to_remove:.1f}")
+                else:
+                    logger.info(f"  ✅ Successfully removed {total_removed:.1f} filers for {status}")
+            
+            # Add synthetic ultra-high-income filers (after all reductions)
+            if synthetic_filers:
+                synthetic_df = pd.DataFrame(synthetic_filers)
                 
-                return result
+                # Fill in any missing columns with appropriate defaults
+                for col in result.columns:
+                    if col not in synthetic_df.columns:
+                        if col in ['weight', 'agi', 'filing_status', 'num_dependents', 'num_adults', 
+                                  'filing_status_hawaii', 'is_synthetic_ultra_high', 'total_deductions']:
+                            continue  # Already set
+                        elif 'tax' in col.lower():
+                            synthetic_df[col] = 0  # Will be recalculated
+                        elif col in ['income', 'agi_without_cap_gains', 'agi_with_cap_gains']:
+                            # Set income fields to AGI for synthetic units
+                            synthetic_df[col] = synthetic_df['agi']
+                        elif col in ['standard_deduction', 'standard_deduction_amount']:
+                            # MFJ standard deduction for 2022: $25,900
+                            synthetic_df[col] = 25900
+                        elif col in ['taxable_income', 'hi_taxable_income', 'hi_tax_taxable_income']:
+                            # Taxable income = AGI - standard deduction
+                            synthetic_df[col] = synthetic_df['agi'] - 25900
+                        elif col in ['has_capital_gains', 'capital_gains', 'agi_adjustments']:
+                            synthetic_df[col] = 0
+                        elif col in ['bracket']:
+                            # Highest bracket for ultra-high earners
+                            synthetic_df[col] = '1000000+'
+                        elif col in ['PUMA', 'PUMA10']:
+                            # Use most common PUMA from existing data
+                            synthetic_df[col] = result[col].mode()[0] if len(result[col].mode()) > 0 else '100'
+                        elif col in ['filer_id', 'primary_filer_id', 'SERIALNO', 'hh_id']:
+                            # Generate unique IDs for synthetic units
+                            synthetic_df[col] = [f'SYNTH_{i}' for i in range(len(synthetic_df))]
+                        elif col in ['secondary_filer_id']:
+                            # MFJ has secondary filer
+                            synthetic_df[col] = [f'SYNTH_{i}_SPOUSE' for i in range(len(synthetic_df))]
+                        elif col in ['dependents']:
+                            # Empty list for dependents
+                            synthetic_df[col] = [[] for _ in range(len(synthetic_df))]
+                        elif col in ['hh_weight', 'person_weight_sum', 'weight_original', 'weight_calibrated']:
+                            # Use same as weight
+                            synthetic_df[col] = synthetic_df['weight']
+                        elif col in ['calibration_factor']:
+                            synthetic_df[col] = 1.0
+                        else:
+                            synthetic_df[col] = 0  # Default to 0 for other fields
+                
+                result = pd.concat([result, synthetic_df], ignore_index=True)
+                
+                logger.info(f"\nAdded {len(synthetic_df)} ultra-high-income levels")
+                logger.info(f"Total synthetic weight: {synthetic_df['weight'].sum():,.0f}")
+                
+            # Verify total filer count preserved by filing status and overall
+            logger.info("\n" + "="*80)
+            logger.info("WEIGHT CONSERVATION VERIFICATION")
+            logger.info("="*80)
+            
+            # Check $400k+ by filing status (A2-2 targets)
+            logger.info("\n$400k+ bracket by filing status:")
+            for status in ['single', 'married_filing_jointly', 'head_of_household', 'married_filing_separately']:
+                before_400k = df.loc[(df['agi'] >= 400_000) & (df['filing_status'] == status), 'weight'].sum()
+                after_400k = result.loc[(result['agi'] >= 400_000) & (result['filing_status'] == status), 'weight'].sum()
+                diff = after_400k - before_400k
+                status_label = status.replace('_', ' ').title()
+                logger.info(f"  {status_label:<25} Before: {before_400k:>8.1f}  After: {after_400k:>8.1f}  Diff: {diff:>+7.1f}")
+            
+            # Check $1M+ overall (A9 target)
+            before_1m = df.loc[df['agi'] >= 1_000_000, 'weight'].sum()
+            after_1m = result.loc[result['agi'] >= 1_000_000, 'weight'].sum()
+            diff_1m = after_1m - before_1m
+            
+            logger.info("\n$1M+ bracket overall:")
+            logger.info(f"  Before: {before_1m:,.1f}")
+            logger.info(f"  After:  {after_1m:,.1f}")
+            logger.info(f"  Diff:   {diff_1m:+,.1f}")
+            
+            if abs(diff_1m) < 0.1:
+                logger.info("  ✅ Conservation verified: $1M+ totals preserved")
             else:
-                logger.warning("Not enough $1M-$5M filers to redistribute")
-                return df
+                logger.warning(f"  ⚠️  Conservation violated: $1M+ totals changed by {diff_1m:.1f}")
+            
+            return result
         
         return df
     
