@@ -169,10 +169,18 @@ class Act46RollbackAnalyzer:
         liabilities = []
         filing_status_col = "filing_status_clean"
         weights = tax_units["weight"].values
-        incomes = tax_units["income_projected"].values
+        
+        # Use taxable income if available (accounts for itemized deductions)
+        # Otherwise fall back to income_projected
+        if "taxable_income" in tax_units.columns:
+            incomes = tax_units["taxable_income"].values
+            use_taxable = True
+        else:
+            incomes = tax_units["income_projected"].values
+            use_taxable = False
 
         for income, status in zip(incomes, tax_units[filing_status_col]):
-            tax_info = calculator.calculate_tax(income, self.projection_year, status)
+            tax_info = calculator.calculate_tax(income, self.projection_year, status, use_taxable_income=use_taxable)
             liabilities.append(tax_info["tax_liability"])
 
         liabilities = np.array(liabilities)
