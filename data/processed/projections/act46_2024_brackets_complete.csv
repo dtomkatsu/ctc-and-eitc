@@ -1,0 +1,37 @@
+Filing Status,Income Min,Income Max,Rate (%)
+Joint/Surviving Spouse,$0,"$19,200",1.4
+Joint/Surviving Spouse,"$19,200","$28,800",3.2
+Joint/Surviving Spouse,"$28,800","$38,400",5.5
+Joint/Surviving Spouse,"$38,400","$48,000",6.4
+Joint/Surviving Spouse,"$48,000","$72,000",6.8
+Joint/Surviving Spouse,"$72,000","$96,000",7.2
+Joint/Surviving Spouse,"$96,000","$250,000",7.6
+Joint/Surviving Spouse,"$250,000","$350,000",7.9
+Joint/Surviving Spouse,"$350,000","$450,000",8.25
+Joint/Surviving Spouse,"$450,000","$550,000",9.0
+Joint/Surviving Spouse,"$550,000","$650,000",10.0
+Joint/Surviving Spouse,"$650,000",No limit,11.0
+Head of Household,$0,"$14,400",1.4
+Head of Household,"$14,400","$21,600",3.2
+Head of Household,"$21,600","$28,800",5.5
+Head of Household,"$28,800","$36,000",6.4
+Head of Household,"$36,000","$54,000",6.8
+Head of Household,"$54,000","$72,000",7.2
+Head of Household,"$72,000","$187,500",7.6
+Head of Household,"$187,500","$262,500",7.9
+Head of Household,"$262,500","$337,500",8.25
+Head of Household,"$337,500","$412,500",9.0
+Head of Household,"$412,500","$487,500",10.0
+Head of Household,"$487,500",No limit,11.0
+Single/MFS,$0,"$9,600",1.4
+Single/MFS,"$9,600","$14,400",3.2
+Single/MFS,"$14,400","$19,200",5.5
+Single/MFS,"$19,200","$24,000",6.4
+Single/MFS,"$24,000","$36,000",6.8
+Single/MFS,"$36,000","$48,000",7.2
+Single/MFS,"$48,000","$125,000",7.6
+Single/MFS,"$125,000","$175,000",7.9
+Single/MFS,"$175,000","$225,000",8.25
+Single/MFS,"$225,000","$275,000",9.0
+Single/MFS,"$275,000","$325,000",10.0
+Single/MFS,"$325,000",No limit,11.0

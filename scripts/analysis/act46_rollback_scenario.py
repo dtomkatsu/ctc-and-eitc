@@ -145,6 +145,16 @@ class Act46RollbackAnalyzer:
                 else:
                     increments.append(increments[-1] + 0.5)
             return {i: increments[i] for i in range(self.top_bracket_count)}
+        if adjustment_strategy == "targeted":
+            # Fixed increases: Top 2 brackets +0.5pp, next 3 brackets +0.25pp
+            # No scaling - these are the actual increases we want
+            return {
+                0: 0.25,  # 3rd highest bracket: +0.25pp
+                1: 0.25,  # 4th highest bracket: +0.25pp  
+                2: 0.25,  # 5th highest bracket: +0.25pp
+                3: 0.5,   # 2nd highest bracket: +0.5pp
+                4: 0.5    # Highest bracket: +0.5pp
+            }
         raise ValueError(f"Unknown adjustment strategy: {adjustment_strategy}")
 
     def create_adjusted_brackets(self, adjustment_strategy: str, scaling_factor: float) -> pd.DataFrame:
@@ -155,7 +165,12 @@ class Act46RollbackAnalyzer:
             top_brackets = self.identify_top_brackets(status)
             for i, (_, row) in enumerate(top_brackets.iterrows()):
                 idx = row.name
-                increase = adjustments[i] * scaling_factor
+                if adjustment_strategy == "targeted":
+                    # For targeted strategy, use fixed increases (no scaling)
+                    increase = adjustments[i]
+                else:
+                    # For other strategies, apply scaling
+                    increase = adjustments[i] * scaling_factor
                 adjusted.loc[idx, "rate"] = adjusted.loc[idx, "rate"] + increase
                 adjusted.loc[idx, "rate_increase"] = increase
                 adjusted.loc[idx, "adjusted"] = True
@@ -264,8 +279,15 @@ class Act46RollbackAnalyzer:
         return best_scaling, best_impact
 
     def generate_report(self, adjustment_strategy: str, output_file: Optional[Path] = None) -> pd.DataFrame:
-        scaling, impact = self.find_optimal_scaling(adjustment_strategy)
-        adjusted = self.create_adjusted_brackets(adjustment_strategy, scaling)
+        if adjustment_strategy == "targeted":
+            # For targeted strategy, use fixed scaling of 1.0 (no optimization needed)
+            scaling = 1.0
+            adjusted = self.create_adjusted_brackets(adjustment_strategy, scaling)
+            impact = self.estimate_revenue(adjusted)
+        else:
+            # For other strategies, find optimal scaling
+            scaling, impact = self.find_optimal_scaling(adjustment_strategy)
+            adjusted = self.create_adjusted_brackets(adjustment_strategy, scaling)
 
         logger.info("Revenue Impact Summary")
         logger.info("  Baseline revenue : $%.1fM", impact.baseline_revenue)
@@ -319,7 +341,7 @@ class Act46RollbackAnalyzer:
 
 def main() -> None:
     analyzer = Act46RollbackAnalyzer()
-    strategies = ["progressive", "uniform", "aggressive"]
+    strategies = ["progressive", "uniform", "aggressive"]  # Run all strategies to see impact
 
     for strategy in strategies:
         logger.info("\n%s\nStrategy: %s\n%s", "=" * 80, strategy.upper(), "=" * 80)
