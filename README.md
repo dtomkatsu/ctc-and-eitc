@@ -91,6 +91,7 @@ The system implements a comprehensive four-stage tax calibration pipeline to ali
 - Redistributes a portion of $1M-$5M filer weight to $5M, $10M, $25M, and $50M income tiers
 - Preserves the original 1,824 filer count while boosting total $1M+ tax liability
 - Impact: Adds ~$400M in modeled taxes, reducing the total gap by ~11 percentage points
+- **Current configuration (as of 2025-11-05)**: Manually tuned “Iteration 9 – Final Balance” allocation (MFJ 35%/28%/22%/15%, Single 20%/15%/10%, HoH 4%/3%, MFS 10%/6%). This calibration must be re-run manually whenever new data or updated DOTAX/SOI targets are introduced.
 
 ### Stage 6: Final Gap-Closing Adjustments (Hybrid Solution C)
 **Purpose**: Apply targeted tweaks after structural corrections
