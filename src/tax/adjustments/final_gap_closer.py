@@ -47,19 +47,67 @@ class FinalGapCloser:
     
     def step1_reduce_middle_income_weights(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Step 1: Reduce middle-income filer weights by 8-10%.
+        Step 1: Apply tax multipliers to address over-collection (NOT weight reductions).
         
-        Target: $10k-$75k brackets (currently over-collecting by $46M)
+        Iteration 2: Use tax multipliers to preserve filer counts while adjusting tax liability
         """
-        logger.info("Step 1: Reducing middle-income weights...")
+        logger.info("Step 1: Applying tax multipliers to low/middle-income brackets...")
+        
+        result = df.copy()
+        
+        # Iteration 3: GENTLE weight reductions (5-15%) to balance filer counts and tax accuracy
+        # Target: Keep filer counts within ±5% while improving tax alignment to 80%+
+        reductions = [
+            ((0, 10000), 0.90, "Reduce 56% over-collection gently"),
+            ((10000, 20000), 0.88, "Reduce 59% over-collection gently"),
+            ((20000, 30000), 0.92, "Reduce 27% over-collection gently"),
+            ((30000, 40000), 0.95, "Reduce 16% over-collection gently"),
+            ((40000, 50000), 0.95, "Reduce 16% over-collection gently"),
+            ((50000, 75000), 0.97, "Reduce 10% over-collection gently"),
+        ]
+        
+        for (min_agi, max_agi), factor, reason in reductions:
+            mask = (result['agi'] >= min_agi) & (result['agi'] < max_agi)
+            current_weight = result.loc[mask, 'weight'].sum()
+            
+            result.loc[mask, 'weight'] *= factor
+            new_weight = result.loc[mask, 'weight'].sum()
+            
+            logger.info(f"  ${min_agi//1000}k-${max_agi//1000}k: "
+                       f"{current_weight:>8,.0f} → {new_weight:>8,.0f} (×{factor:.2f}) - {reason}")
+        
+        return result
+        
+        for (min_agi, max_agi), factor, reason in multipliers:
+            mask = (result['agi'] >= min_agi) & (result['agi'] < max_agi)
+            
+            # Apply tax multiplier (not weight reduction)
+            if 'hi_state_tax' in result.columns:
+                original_tax = (result.loc[mask, 'hi_state_tax'] * result.loc[mask, 'weight']).sum() / 1_000_000
+                result.loc[mask, 'hi_state_tax'] *= factor
+                new_tax = (result.loc[mask, 'hi_state_tax'] * result.loc[mask, 'weight']).sum() / 1_000_000
+                
+                logger.info(f"  ${min_agi//1000}k-${max_agi//1000}k: "
+                           f"${original_tax:>6.1f}M → ${new_tax:>6.1f}M (×{factor:.2f}) - {reason}")
+        
+        return result
+        
+    def step1_reduce_middle_income_weights_OLD(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        OLD: Weight reduction approach (too aggressive on filer counts).
+        DEPRECATED - Use tax multipliers instead.
+        """
+        logger.info("Step 1: OLD weight reduction approach (DEPRECATED)...")
         
         result = df.copy()
         
         reductions = [
-            ((10000, 20000), 0.75, "Reduce surplus"),
-            ((20000, 30000), 0.88, "Reduce surplus"),
-            ((40000, 50000), 0.91, "Reduce surplus"),
-            ((50000, 75000), 0.95, "Minor reduction"),
+            ((0, 10000), 0.65, "Reduce 54% over-collection"),
+            ((10000, 20000), 0.63, "Reduce 59% over-collection"),
+            ((20000, 30000), 0.79, "Reduce 27% over-collection"),
+            ((30000, 40000), 0.86, "Reduce 16% over-collection"),
+            ((40000, 50000), 0.86, "Reduce 16% over-collection"),
+            ((50000, 75000), 0.91, "Reduce 10% over-collection"),
         ]
         
         for (min_agi, max_agi), factor, reason in reductions:

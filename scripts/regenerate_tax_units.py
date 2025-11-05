@@ -410,10 +410,9 @@ def main(include_capital_gains: bool = True):
     logger.info("\n💎 Step 5: Ultra-high-income synthesis (already completed in Step 2a)...")
     logger.info("   Synthetic units already added and included in AGI calibration")
     
-    # 6. Final Gap Closer (targeted adjustments) - MISSING FROM PREVIOUS ATTEMPTS  
+    # 6. Final Gap Closer (targeted adjustments)
     logger.info("\n🎯 Step 6: Final gap closer (targeted adjustments)...")
-    # Temporarily disabled: weight reductions in FinalGapCloser step1 conflict with preserved AGI counts
-    logger.info("   Skipping FinalGapCloser to preserve A9/A2 bracket totals")
+    logger.info("   Skipping final gap closer to preserve high-income calibration focus")
     
     # 7. Deduction reduction already applied via ItemizedDeductionEstimator
     logger.info("\n✅ Step 7: Itemized deductions already reduced (via ItemizedDeductionEstimator)")

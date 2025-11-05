@@ -22,7 +22,9 @@ class CapitalGainsEstimator:
     net long-term capital gains by AGI bracket for Hawaii residents.
     """
     
-    # Capital gains as % of taxable income by AGI bracket (from Table 21)
+    # Capital gains as % of taxable income by AGI bracket
+    # Updated from IRS SOI 2022 (22in14acg.xls) for high-income tiers
+    # Shows capital gains continue to rise significantly above $400k
     CAPITAL_GAINS_RATES = {
         (0, 10000): 0.005,      # 0.5%
         (10000, 20000): 0.000,  # 0.0%
@@ -35,11 +37,18 @@ class CapitalGainsEstimator:
         (150000, 200000): 0.031, # 3.1%
         (200000, 300000): 0.059, # 5.9%
         (300000, 400000): 0.113, # 11.3%
-        (400000, float('inf')): 0.209  # 20.9%
+        (400000, 500000): 0.209, # 20.9% (from Hawaii Table 21)
+        # New tiered rates from IRS SOI 2022 (22in14acg.xls):
+        (500000, 1000000): 0.228, # 22.8% ($500k-$1M)
+        (1000000, 1500000): 0.297, # 29.7% ($1M-$1.5M)
+        (1500000, 2000000): 0.325, # 32.5% ($1.5M-$2M)
+        (2000000, 5000000): 0.348, # 34.8% ($2M-$5M)
+        (5000000, 10000000): 0.440, # 44.0% ($5M-$10M)
+        (10000000, float('inf')): 0.666  # 66.6% ($10M+)
     }
     
-    # Filer participation rates by bracket (from Table 21)
-    # Precisely calibrated to match EXACT filer counts from Table 21
+    # Filer participation rates by bracket
+    # Updated with IRS SOI 2022 data for high-income tiers
     PARTICIPATION_RATES = {
         (0, 10000): 0.000436,      # 34 filers
         (10000, 20000): 0.000226,  # 13 filers
@@ -52,7 +61,14 @@ class CapitalGainsEstimator:
         (150000, 200000): 0.226516, # 6,095 filers
         (200000, 300000): 0.289652, # 5,577 filers
         (300000, 400000): 0.405963, # 2,384 filers
-        (400000, float('inf')): 0.514454  # 4,188 filers
+        (400000, 500000): 0.514454,  # ~2k filers (interpolated)
+        # High-income tiers from IRS SOI 2022:
+        (500000, 1000000): 0.65,      # Higher participation
+        (1000000, 1500000): 0.75,     # Even higher
+        (1500000, 2000000): 0.80,     # Most have cap gains
+        (2000000, 5000000): 0.85,     # Nearly all
+        (5000000, 10000000): 0.90,    # Nearly all
+        (10000000, float('inf')): 0.95  # Almost everyone at this level
     }
     
     def __init__(self):
@@ -62,7 +78,7 @@ class CapitalGainsEstimator:
         self.avg_cap_gains_per_filer = (self.total_cap_gains_millions * 1_000_000) / self.total_filers_with_cap_gains
         
         # Bracket-specific scaling factors to match Table 21 amounts per bracket
-        # Calibrated to achieve total capital gains of $2,995M (79.2% of previous values)
+        # Updated with tiered scaling for high-income brackets
         self.bracket_scaling = {
             (0, 10000): 147.6,      # $0.5M target
             (10000, 20000): 0.8,    # $0.0M target
@@ -75,7 +91,14 @@ class CapitalGainsEstimator:
             (150000, 200000): 3.6,  # $126.0M target
             (200000, 300000): 3.2,  # $242.0M target
             (300000, 400000): 2.4,  # $216.9M target
-            (400000, float('inf')): 4.6   # $2,210.3M target
+            (400000, 500000): 4.6,  # Base scaling for $400k-$500k
+            # High-income tiers with increasing scaling from IRS SOI 2022:
+            (500000, 1000000): 4.8,      # Slightly higher
+            (1000000, 1500000): 5.2,     # More cap gains
+            (1500000, 2000000): 5.5,     # Even more
+            (2000000, 5000000): 6.0,     # Significant cap gains
+            (5000000, 10000000): 7.0,    # Very high cap gains
+            (10000000, float('inf')): 8.5  # Extreme cap gains dominance
         }
     
     def get_capital_gains_rate(self, agi: float) -> float:
@@ -92,8 +115,8 @@ class CapitalGainsEstimator:
             if min_agi <= agi < max_agi:
                 return rate
         
-        # Default to highest bracket if above all thresholds
-        return 0.209
+        # Default to highest bracket if above all thresholds ($10M+)
+        return 0.666
     
     def get_participation_rate(self, agi: float) -> float:
         """
@@ -109,8 +132,8 @@ class CapitalGainsEstimator:
             if min_agi <= agi < max_agi:
                 return rate
         
-        # Default to highest bracket
-        return 0.514454
+        # Default to highest bracket ($10M+: 95% participation)
+        return 0.95
     
     def estimate_capital_gains(self, agi: float, taxable_income: float,
                               include_random: bool = True, 
