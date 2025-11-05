@@ -104,12 +104,51 @@ class UltraHighIncomeSynthesizerV2:
             logger.info("No gap to fill, skipping redistribution")
             return df
         
-        # Enhanced ultra-high-income levels with higher tail allocation
+        # Calculate donor weight by filing status
+        # MFJ: Use $1M+ donors (they exist in PUMS)
+        # Single/MFS: Use $400k-$1M donors (no Single/MFS in $1M+ in PUMS)
+        donor_weight_by_status = {}
+        
+        # MFJ: Use $1M+ donors
+        for status in ['married_filing_jointly']:
+            status_mask = mask_1m & (df['filing_status'] == status)
+            donor_weight_by_status[status] = df.loc[status_mask, 'weight'].sum()
+            if donor_weight_by_status[status] > 0:
+                logger.info(f"$1M+ donor weight for {status}: {donor_weight_by_status[status]:.1f} filers")
+        
+        # Single, HoH, and MFS: Use $400k-$1M donors (since $1M+ has none)
+        mask_400k_1m = (df['agi'] >= 400_000) & (df['agi'] < 1_000_000)
+        for status in ['single', 'head_of_household', 'married_filing_separately']:
+            status_mask = mask_400k_1m & (df['filing_status'] == status)
+            donor_weight_by_status[status] = df.loc[status_mask, 'weight'].sum()
+            if donor_weight_by_status[status] > 0:
+                logger.info(f"$400k-$1M donor weight for {status}: {donor_weight_by_status[status]:.1f} filers")
+        
+        logger.info("")
+        
+        # Enhanced ultra-high-income levels with status-specific allocation
+        # Iteration 9: FINAL BALANCE - Manual tuning (best performing)
+        # - MFJ: 35%/28%/22%/15% from $1M+ donors
+        # - Single: 20%/15%/10% from $400k-$1M donors  
+        # - HoH: 4%/3% from $400k-$1M donors
+        # - MFS: 10%/6% from $400k-$1M donors
+        # Results: Joint +6.6%, Single -1.1%, HoH +5.6%, Total tax -3.7%
         ultra_high_specs = [
-            {'agi': 5_000_000, 'est_tax': 525_000, 'filing_status': 'married_filing_jointly', 'weight_factor': 0.10},
-            {'agi': 10_000_000, 'est_tax': 1_070_000, 'filing_status': 'married_filing_jointly', 'weight_factor': 0.08},
-            {'agi': 25_000_000, 'est_tax': 2_675_000, 'filing_status': 'married_filing_jointly', 'weight_factor': 0.05},
-            {'agi': 50_000_000, 'est_tax': 5_350_000, 'filing_status': 'married_filing_jointly', 'weight_factor': self.tail_multiplier},
+            # MFJ synthetics (from $1M+ donors) - FINAL BALANCE
+            {'agi': 5_000_000, 'est_tax': 525_000, 'filing_status': 'married_filing_jointly', 'weight_factor': 0.35, 'status_specific': True, 'use_pareto': False},
+            {'agi': 10_000_000, 'est_tax': 1_070_000, 'filing_status': 'married_filing_jointly', 'weight_factor': 0.28, 'status_specific': True, 'use_pareto': False},
+            {'agi': 25_000_000, 'est_tax': 2_675_000, 'filing_status': 'married_filing_jointly', 'weight_factor': 0.22, 'status_specific': True, 'use_pareto': False},
+            {'agi': 50_000_000, 'est_tax': 5_350_000, 'filing_status': 'married_filing_jointly', 'weight_factor': 0.15, 'status_specific': True, 'use_pareto': False},
+            # Single synthetics (from $400k-$1M donors) - FINAL BALANCE
+            {'agi': 1_500_000, 'est_tax': 161_000, 'filing_status': 'single', 'weight_factor': 0.20, 'status_specific': True, 'use_pareto': False},
+            {'agi': 3_000_000, 'est_tax': 323_000, 'filing_status': 'single', 'weight_factor': 0.15, 'status_specific': True, 'use_pareto': False},
+            {'agi': 5_000_000, 'est_tax': 537_000, 'filing_status': 'single', 'weight_factor': 0.10, 'status_specific': True, 'use_pareto': False},
+            # HoH synthetics (from $400k-$1M donors) - FINAL BALANCE
+            {'agi': 1_500_000, 'est_tax': 161_000, 'filing_status': 'head_of_household', 'weight_factor': 0.04, 'status_specific': True, 'use_pareto': False},
+            {'agi': 3_000_000, 'est_tax': 323_000, 'filing_status': 'head_of_household', 'weight_factor': 0.03, 'status_specific': True, 'use_pareto': False},
+            # MFS synthetics (from $400k-$1M donors)
+            {'agi': 1_500_000, 'est_tax': 161_000, 'filing_status': 'married_filing_separately', 'weight_factor': 0.10, 'status_specific': True, 'use_pareto': False},
+            {'agi': 3_000_000, 'est_tax': 323_000, 'filing_status': 'married_filing_separately', 'weight_factor': 0.06, 'status_specific': True, 'use_pareto': False},
         ]
         
         total_weight_to_move = 0
@@ -118,22 +157,54 @@ class UltraHighIncomeSynthesizerV2:
         logger.info("Calculating synthetic filer allocation:")
         
         for spec in ultra_high_specs:
-            # Pareto probability relative to $1M threshold
-            prob = self.calculate_pareto_probability(spec['agi'], threshold=1_000_000)
+            # Allocate weight using status-specific donor pool
+            status = spec['filing_status']
+            donor_weight = donor_weight_by_status.get(status, 0)
             
-            # Allocate weight using Pareto and weight factor
-            weight_at_level = current_filers * prob * spec['weight_factor']
+            if donor_weight < 0.1:
+                logger.info(f"  ${spec['agi']/1_000_000:.1f}M {status}: no donor weight available (skipped)")
+                continue
+            
+            # Calculate weight based on whether we use Pareto
+            if spec.get('use_pareto', True):
+                # MFJ: Use Pareto probability relative to $1M threshold
+                prob = self.calculate_pareto_probability(spec['agi'], threshold=1_000_000)
+                weight_at_level = donor_weight * prob * spec['weight_factor']
+            else:
+                # Single/MFS: Direct allocation without Pareto (different donor base)
+                # Just use donor_weight * weight_factor
+                weight_at_level = donor_weight * spec['weight_factor']
+                prob = 1.0  # For logging
             
             if weight_at_level < 0.1:
                 logger.info(f"  ${spec['agi']/1_000_000:.0f}M: {weight_at_level:.2f} filers (below threshold, skipped)")
                 continue
             
+            # Map filing status to Hawaii filing status
+            fs_map = {
+                'married_filing_jointly': 'Joint_Surviving_Spouse',
+                'single': 'Single_Married_Separate',
+                'married_filing_separately': 'Single_Married_Separate',
+                'head_of_household': 'Head_of_Household',
+            }
+            
+            # Set adults/dependents based on status
+            if spec['filing_status'] == 'married_filing_jointly':
+                num_adults = 2
+                num_dependents = 2
+            elif spec['filing_status'] == 'head_of_household':
+                num_adults = 1
+                num_dependents = 1
+            else:  # single or MFS
+                num_adults = 1
+                num_dependents = 0
+            
             synthetic_filers.append({
                 'agi': spec['agi'],
                 'filing_status': spec['filing_status'],
-                'filing_status_hawaii': 'Joint_Surviving_Spouse',  # MFJ mapping
-                'num_dependents': 2,
-                'num_adults': 2,
+                'filing_status_hawaii': fs_map[spec['filing_status']],
+                'num_dependents': num_dependents,
+                'num_adults': num_adults,
                 'weight': weight_at_level,
                 'is_synthetic_ultra_high': True,
                 'total_deductions': 0,
@@ -141,8 +212,13 @@ class UltraHighIncomeSynthesizerV2:
             
             total_weight_to_move += weight_at_level
             
-            logger.info(f"  ${spec['agi']/1_000_000:.0f}M: {weight_at_level:.1f} filers "
-                       f"(prob={prob:.4f}, factor={spec['weight_factor']:.2f})")
+            status_short = spec['filing_status'].replace('married_filing_', 'M').replace('_', '').replace('single', 'S').replace('headofhousehold', 'HoH')
+            if spec.get('use_pareto', True):
+                logger.info(f"  ${spec['agi']/1_000_000:.1f}M {status_short}: {weight_at_level:.1f} filers "
+                           f"(prob={prob:.4f}, factor={spec['weight_factor']:.2f}, donor={donor_weight:.1f})")
+            else:
+                logger.info(f"  ${spec['agi']/1_000_000:.1f}M {status_short}: {weight_at_level:.1f} filers "
+                           f"(factor={spec['weight_factor']:.2f}, donor={donor_weight:.1f} from $400k-$1M)")
         
         logger.info("")
         logger.info(f"Total weight to redistribute: {total_weight_to_move:.0f} filers")
@@ -160,15 +236,6 @@ class UltraHighIncomeSynthesizerV2:
             
             logger.info("\nReducing weight from existing filers by filing status:")
             
-            # Define high-income sub-brackets to cascade through
-            sub_brackets = [
-                (1_000_000, 5_000_000, "$1M-$5M"),
-                (5_000_000, 10_000_000, "$5M-$10M"),
-                (10_000_000, 25_000_000, "$10M-$25M"),
-                (25_000_000, 50_000_000, "$25M-$50M"),
-                (50_000_000, float('inf'), "$50M+"),
-            ]
-            
             # Process each filing status separately to preserve A2-2 totals
             for status, synthetic_weight_needed in synthetic_weight_by_status.items():
                 logger.info(f"\n  {status}: Need to remove {synthetic_weight_needed:.1f} filers")
@@ -176,6 +243,24 @@ class UltraHighIncomeSynthesizerV2:
                 # Track cumulative reduction for this status
                 total_removed = 0
                 remaining_to_remove = synthetic_weight_needed
+                
+                # Define sub-brackets based on filing status
+                # MFJ: Use $1M+ brackets (where they have donor weight)
+                # Single/HoH/MFS: Use $400k-$1M brackets (where they have donor weight)
+                if status in ['married_filing_jointly']:
+                    sub_brackets = [
+                        (1_000_000, 5_000_000, "$1M-$5M"),
+                        (5_000_000, 10_000_000, "$5M-$10M"),
+                        (10_000_000, 25_000_000, "$10M-$25M"),
+                        (25_000_000, 50_000_000, "$25M-$50M"),
+                        (50_000_000, float('inf'), "$50M+"),
+                    ]
+                else:  # single, head_of_household, married_filing_separately
+                    sub_brackets = [
+                        (400_000, 500_000, "$400k-$500k"),
+                        (500_000, 750_000, "$500k-$750k"),
+                        (750_000, 1_000_000, "$750k-$1M"),
+                    ]
                 
                 # Cascade through sub-brackets
                 for min_agi, max_agi, label in sub_brackets:
@@ -228,11 +313,30 @@ class UltraHighIncomeSynthesizerV2:
                             # Set income fields to AGI for synthetic units
                             synthetic_df[col] = synthetic_df['agi']
                         elif col in ['standard_deduction', 'standard_deduction_amount']:
-                            # MFJ standard deduction for 2022: $25,900
-                            synthetic_df[col] = 25900
+                            # Status-specific standard deduction for 2022
+                            def get_std_ded(status):
+                                if status == 'married_filing_jointly':
+                                    return 25900
+                                elif status == 'head_of_household':
+                                    return 19400
+                                else:  # single or MFS
+                                    return 12950
+                            synthetic_df[col] = synthetic_df['filing_status'].apply(get_std_ded)
                         elif col in ['taxable_income', 'hi_taxable_income', 'hi_tax_taxable_income']:
-                            # Taxable income = AGI - standard deduction
-                            synthetic_df[col] = synthetic_df['agi'] - 25900
+                            # Taxable income = AGI - standard deduction (status-specific)
+                            def calc_taxable(row):
+                                std_ded = get_std_ded(row['filing_status']) if 'filing_status' in row else 12950
+                                return row['agi'] - std_ded
+                            
+                            def get_std_ded(status):
+                                if status == 'married_filing_jointly':
+                                    return 25900
+                                elif status == 'head_of_household':
+                                    return 19400
+                                else:
+                                    return 12950
+                            
+                            synthetic_df[col] = synthetic_df.apply(calc_taxable, axis=1)
                         elif col in ['has_capital_gains', 'capital_gains', 'agi_adjustments']:
                             synthetic_df[col] = 0
                         elif col in ['bracket']:
@@ -245,8 +349,9 @@ class UltraHighIncomeSynthesizerV2:
                             # Generate unique IDs for synthetic units
                             synthetic_df[col] = [f'SYNTH_{i}' for i in range(len(synthetic_df))]
                         elif col in ['secondary_filer_id']:
-                            # MFJ has secondary filer
-                            synthetic_df[col] = [f'SYNTH_{i}_SPOUSE' for i in range(len(synthetic_df))]
+                            # MFJ has secondary filer, others don't
+                            synthetic_df[col] = [f'SYNTH_{i}_SPOUSE' if row['filing_status'] == 'married_filing_jointly' else None 
+                                               for i, row in synthetic_df.iterrows()]
                         elif col in ['dependents']:
                             # Empty list for dependents
                             synthetic_df[col] = [[] for _ in range(len(synthetic_df))]
