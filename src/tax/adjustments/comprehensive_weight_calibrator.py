@@ -150,23 +150,50 @@ class ComprehensiveWeightCalibrator:
     }
 
     def __init__(self, apply_to_all: bool = True, n_percentiles: int = 5, 
-                 multiplier_cap: float = 0.3, min_sample_size: int = 10):
+                 multiplier_cap: float = 0.6, min_sample_size: int = 10,
+                 max_iterations: int = 3, convergence_tol: float = 0.01):
         """
         Initialize calibrator.
 
         Args:
             apply_to_all: Backward compatibility flag (currently unused; retained for API).
             n_percentiles: Number of sub-clusters within each bracket (default 5 = quintiles)
-            multiplier_cap: Maximum deviation from 1.0 for tax multipliers (default 0.3 = ±30%)
+            multiplier_cap: Maximum deviation from 1.0 for tax multipliers (default 0.6 = ±60%)
             min_sample_size: Minimum records needed for sub-clustering (default 10)
+            max_iterations: Maximum passes over all brackets (default 3)
+            convergence_tol: Convergence tolerance as a fraction (default 0.01 = 1%)
         """
         self.apply_to_all = apply_to_all
         self.n_percentiles = n_percentiles
         self.multiplier_cap = multiplier_cap
         self.min_sample_size = min_sample_size
-        
+        self.max_iterations = max_iterations
+        self.convergence_tol = convergence_tol
+
         # Load hybrid targets (A9 detailed + A2-2 high-income)
         self.tax_targets = self._load_hybrid_targets()
+
+    def _max_gap_percentage(self, df: pd.DataFrame) -> float:
+        """Compute maximum percentage gap between model and targets."""
+        max_gap = 0.0
+        for filing_status, targets in self.tax_targets.items():
+            for bracket, target_tax_m in targets.items():
+                bracket_min, bracket_max = bracket
+                mask = (
+                    (df['filing_status'] == filing_status)
+                    & (df['agi'] >= bracket_min)
+                    & (df['agi'] < bracket_max)
+                )
+
+                if mask.sum() == 0 or target_tax_m <= 0:
+                    continue
+
+                model_tax_m = (df.loc[mask, 'hi_state_tax'] * df.loc[mask, 'weight']).sum() / 1_000_000
+                if target_tax_m > 0:
+                    gap_pct = ((model_tax_m - target_tax_m) / target_tax_m) * 100
+                    max_gap = max(max_gap, abs(gap_pct))
+
+        return max_gap
 
     def _format_bracket_label(self, bracket_min: float, bracket_max: float) -> str:
         if bracket_max == float('inf'):
@@ -238,9 +265,9 @@ class ComprehensiveWeightCalibrator:
                                 (1 - smoothing_weight) * bracket_multiplier)
             
             # Apply caps
-            capped_multiplier = np.clip(blended_multiplier, 
-                                      1.0 - self.multiplier_cap, 
-                                      1.0 + self.multiplier_cap)
+            lower_bound = max(0.2, 1.0 - self.multiplier_cap)
+            upper_bound = 1.0 + self.multiplier_cap
+            capped_multiplier = np.clip(blended_multiplier, lower_bound, upper_bound)
             
             cluster_multipliers[cluster] = capped_multiplier
         
@@ -295,7 +322,7 @@ class ComprehensiveWeightCalibrator:
 
         if abs(current_tax - target_tax_m) / target_tax_m < 0.01:
             logger.info(
-                "  %s %s: %.2fM ≈ %.2fM ✅",
+                "  %s %s: %.2fM ≈ %.2fM ",
                 self.STATUS_LABELS.get(filing_status, filing_status),
                 self._format_bracket_label(bracket_min, bracket_max),
                 current_tax,
@@ -352,6 +379,7 @@ class ComprehensiveWeightCalibrator:
         logger.info(f"Sub-bracket clustering: {self.n_percentiles} percentiles")
         logger.info(f"Multiplier caps: ±{self.multiplier_cap*100:.0f}%")
         logger.info(f"Minimum sample size: {self.min_sample_size}")
+        logger.info(f"Max iterations: {self.max_iterations} (tol {self.convergence_tol*100:.1f}% max gap)")
         logger.info("")
 
         result = df.copy()
@@ -360,19 +388,34 @@ class ComprehensiveWeightCalibrator:
         logger.info(f"Original total weighted filers: {original_weight:,.0f}")
         logger.info("")
 
-        for filing_status, targets in self.tax_targets.items():
-            logger.info(
-                "Filing status: %s",
-                self.STATUS_LABELS.get(filing_status, filing_status)
-            )
-            for bracket, target_tax_m in targets.items():
-                # Optionally skip high-income brackets if apply_to_all is False
-                if not self.apply_to_all and bracket[0] >= 200_000:
-                    continue
+        converged = False
+        for iteration in range(1, self.max_iterations + 1):
+            logger.info("--- Iteration %d/%d ---", iteration, self.max_iterations)
 
-                result = self._calibrate_group(result, filing_status, bracket, target_tax_m)
+            for filing_status, targets in self.tax_targets.items():
+                logger.info(
+                    "Filing status: %s",
+                    self.STATUS_LABELS.get(filing_status, filing_status)
+                )
+                for bracket, target_tax_m in targets.items():
+                    # Optionally skip high-income brackets if apply_to_all is False
+                    if not self.apply_to_all and bracket[0] >= 200_000:
+                        continue
 
-            logger.info("")
+                    result = self._calibrate_group(result, filing_status, bracket, target_tax_m)
+
+                logger.info("")
+
+            max_gap_pct = self._max_gap_percentage(result)
+            logger.info("Max gap after iteration %d: %.2f%%", iteration, max_gap_pct)
+
+            if max_gap_pct <= self.convergence_tol * 100:
+                logger.info("Converged within tolerance; stopping early")
+                converged = True
+                break
+
+        if not converged and self.max_iterations > 1:
+            logger.info("Reached max iterations without meeting tolerance")
 
         # Summary diagnostics
         final_weight = result['weight'].sum()

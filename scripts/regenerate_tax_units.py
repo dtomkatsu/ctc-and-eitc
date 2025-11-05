@@ -147,11 +147,30 @@ def main(include_capital_gains: bool = True):
         filing_status_col='filing_status'
     )
     
-    # Apply capital gains if enabled
+    # Ensure tax liability column exists for synthesizer calculations
+    if 'hi_state_tax' not in tax_units.columns:
+        tax_units['hi_state_tax'] = 0.0
+
+    # First add ultra-high-income synthetic filers before AGI/capital gains calibration
+    logger.info("\n💎 Step 2a: Ultra-high-income synthesis (before AGI calibration)...")
+    from src.tax.adjustments.ultra_high_income_synthesizer_v2 import UltraHighIncomeSynthesizerV2
+    
+    # Use parameters calibrated from national IRS SOI 2022 data
+    ultra_synthesizer = UltraHighIncomeSynthesizerV2(
+        pareto_alpha=1.064,      # Calibrated from national IRS SOI data
+        tail_multiplier=0.58,    # Calibrated for $50M+ weight factor
+    )
+    tax_units = ultra_synthesizer.redistribute_within_million_plus(tax_units, target_tax_m=663.0)
+    
+    # Ensure synthetic units are marked for tracking
+    if 'is_synthetic_ultra_high' not in tax_units.columns:
+        tax_units['is_synthetic_ultra_high'] = False
+
+    # Apply capital gains if enabled (now includes synthetic units)
     if include_capital_gains:
         from src.tax.adjustments.capital_gains import apply_capital_gains_to_dataframe
         
-        logger.info("\n📈 Applying capital gains (Table 21)...")
+        logger.info("\n📈 Step 2b: Applying capital gains (Table 21) - includes synthetic units...")
         logger.info("   Capital gains added to AGI → affects taxable income → affects tax liability")
         logger.info("   Comparing AMOUNTS of capital gains (not tax on them) to Table 21")
         
@@ -230,8 +249,8 @@ def main(include_capital_gains: bool = True):
     logger.info("\n📊 Step 1: Comprehensive bracket calibration (ALL AGI brackets)...")
     from src.tax.adjustments.pareto_calibration import ParetoIncomeCalibrator
     
-    pareto_calibrator = ParetoIncomeCalibrator(threshold=200000, target_alpha=1.454)
-    tax_units = pareto_calibrator.calibrate(tax_units, add_synthetic=False, calibrate_all_brackets=True)
+    pareto_calibrator = ParetoIncomeCalibrator(threshold=400000, target_alpha=1.454)
+    tax_units = pareto_calibrator.calibrate(tax_units, add_synthetic=False, calibrate_all_brackets=False)
     
     logger.info(f"   High-income filers ($200k+): {(tax_units['agi'] >= 200000).sum():,} units")
     logger.info(f"   Weighted count: {tax_units[tax_units['agi'] >= 200000]['weight'].sum():,.0f}")
@@ -329,49 +348,14 @@ def main(include_capital_gains: bool = True):
     
     logger.info(f"   Total tax after weight calibration: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
     
-    # 5. Ultra-High-Income Synthesis - ENHANCED v2 with National IRS SOI Calibration
-    logger.info("\n💎 Step 5: Ultra-high-income synthesis (redistribute $1M+ bracket)...")
-    from src.tax.adjustments.ultra_high_income_synthesizer_v2 import UltraHighIncomeSynthesizerV2
-    
-    # Use parameters calibrated from national IRS SOI 2022 data
-    # Pareto alpha=1.064 (from national $1M+ distribution)
-    # Tail multiplier=0.58 (for proper $50M+ representation)
-    ultra_synthesizer = UltraHighIncomeSynthesizerV2(
-        pareto_alpha=1.064,      # Calibrated from national IRS SOI data
-        tail_multiplier=0.58,    # Calibrated for $50M+ weight factor
-    )
-    tax_units = ultra_synthesizer.redistribute_within_million_plus(tax_units, target_tax_m=663.0)
-    
-    # Ensure synthetic units are marked for tracking
-    if 'is_synthetic_ultra_high' not in tax_units.columns:
-        tax_units['is_synthetic_ultra_high'] = False
-    
-    # Recalculate taxes after ultra-high-income synthesis
-    logger.info("\n💰 Recalculating taxes after ultra-high-income synthesis...")
-    tax_results = calculator.calculate_tax_for_dataframe(
-        tax_units,
-        income_col='agi',
-        filing_status_col='filing_status_hawaii',
-        year=2017  # Use 2017 rates to match $3,029M benchmark
-    )
-    
-    # Merge updated tax results
-    for col in tax_results.columns:
-        tax_units[col] = tax_results[col]
-    
-    if 'hi_tax_tax_liability' in tax_units.columns:
-        tax_units['hi_state_tax'] = tax_results['hi_tax_tax_liability']
-    
-    logger.info(f"   Total tax after ultra-high synthesis: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
+    # Step 5: Ultra-high-income synthesis already completed in Step 2a
+    logger.info("\n💎 Step 5: Ultra-high-income synthesis (already completed in Step 2a)...")
+    logger.info("   Synthetic units already added and included in AGI calibration")
     
     # 6. Final Gap Closer (targeted adjustments) - MISSING FROM PREVIOUS ATTEMPTS  
     logger.info("\n🎯 Step 6: Final gap closer (targeted adjustments)...")
-    from src.tax.adjustments.final_gap_closer import FinalGapCloser
-    
-    gap_closer = FinalGapCloser()
-    tax_units = gap_closer.calibrate(tax_units)
-    
-    logger.info(f"   Total tax after gap closer: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
+    # Temporarily disabled: weight reductions in FinalGapCloser step1 conflict with preserved AGI counts
+    logger.info("   Skipping FinalGapCloser to preserve A9/A2 bracket totals")
     
     # 7. Deduction reduction already applied via ItemizedDeductionEstimator
     logger.info("\n✅ Step 7: Itemized deductions already reduced (via ItemizedDeductionEstimator)")
