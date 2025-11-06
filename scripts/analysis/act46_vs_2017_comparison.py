@@ -92,8 +92,8 @@ def main():
     logger.info("  Using 2017 tax brackets and deductions...")
     revenue_2017_system = calculate_revenue_by_year(tax_units, 2017)
     
-    # 2024/2025 Act 46 system (corrected with proper deductions and exemptions)
-    logger.info("  Using Act 46 (2024 brackets, 2025 deductions, personal exemptions)...")
+    # 2024 Act 46 system (corrected with proper deductions and exemptions)
+    logger.info("  Using Act 46 (2024 brackets, 2024 deductions, 2025 personal exemptions)...")
     revenue_2026_system = calculate_revenue_by_year(tax_units, 2026, use_corrected_act46=True)
     
     # Results
@@ -114,10 +114,10 @@ def main():
     
     # Key differences between systems
     logger.info(f"\nKey Tax System Differences (2017 → Act 46):")
-    logger.info(f"  Standard Deductions (2017 → 2025):")
-    logger.info(f"    Joint: $4,400 → $12,400 (+$8,000)")
-    logger.info(f"    Single: $2,200 → $6,200 (+$4,000)")
-    logger.info(f"    HoH: $3,212 → $9,212 (+$6,000)")
+    logger.info(f"  Standard Deductions (2017 → 2024):")
+    logger.info(f"    Joint: $4,400 → $8,800 (+$4,400)")
+    logger.info(f"    Single: $2,200 → $4,400 (+$2,200)")
+    logger.info(f"    HoH: $3,212 → $6,424 (+$3,212)")
     
     logger.info(f"\n  Personal Exemptions:")
     logger.info(f"    2017: $1,144 per person")

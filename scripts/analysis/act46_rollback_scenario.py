@@ -146,14 +146,14 @@ class Act46RollbackAnalyzer:
                     increments.append(increments[-1] + 0.5)
             return {i: increments[i] for i in range(self.top_bracket_count)}
         if adjustment_strategy == "targeted":
-            # Fixed increases: Top 2 brackets +0.5pp, next 3 brackets +0.25pp
+            # Fixed increases: Top bracket +1.0pp, 2nd bracket +0.5pp, next 3 brackets +0.25pp
             # No scaling - these are the actual increases we want
             return {
                 0: 0.25,  # 3rd highest bracket: +0.25pp
                 1: 0.25,  # 4th highest bracket: +0.25pp  
                 2: 0.25,  # 5th highest bracket: +0.25pp
                 3: 0.5,   # 2nd highest bracket: +0.5pp
-                4: 0.5    # Highest bracket: +0.5pp
+                4: 1.0    # Highest bracket: +1.0pp
             }
         raise ValueError(f"Unknown adjustment strategy: {adjustment_strategy}")
 
@@ -180,7 +180,17 @@ class Act46RollbackAnalyzer:
     # ------------------------------------------------------------------
     # Revenue calculation
     # ------------------------------------------------------------------
-    def _calculate_revenue(self, calculator: HawaiiTaxCalculator, tax_units: pd.DataFrame) -> float:
+    def _calculate_revenue(self, calculator: HawaiiTaxCalculator, tax_units: pd.DataFrame, use_corrected_baseline: bool = False) -> float:
+        # Use corrected Act 46 calculation for baseline only
+        if use_corrected_baseline:
+            from pathlib import Path
+            act46_path = Path("data/processed/projections/tax_units_2026_act46_corrected.parquet")
+            if act46_path.exists():
+                df_act46 = pd.read_parquet(act46_path)
+                revenue = (df_act46['tax_liability_act46'] * df_act46['weight']).sum() / 1e6
+                return revenue
+        
+        # Standard calculation for adjusted scenarios
         liabilities = []
         filing_status_col = "filing_status_clean"
         weights = tax_units["weight"].values
@@ -205,7 +215,7 @@ class Act46RollbackAnalyzer:
     def estimate_revenue(self, adjusted_brackets: pd.DataFrame) -> RevenueImpact:
         calculator_adjusted = HawaiiTaxCalculator(adjusted_brackets, self.deductions_df)
 
-        baseline_revenue = self._calculate_revenue(self.calculator_baseline, self.tax_units)
+        baseline_revenue = self._calculate_revenue(self.calculator_baseline, self.tax_units, use_corrected_baseline=True)
         adjusted_revenue = self._calculate_revenue(calculator_adjusted, self.tax_units)
 
         total_increase = adjusted_revenue - baseline_revenue
@@ -341,7 +351,7 @@ class Act46RollbackAnalyzer:
 
 def main() -> None:
     analyzer = Act46RollbackAnalyzer()
-    strategies = ["progressive", "uniform", "aggressive"]  # Run all strategies to see impact
+    strategies = ["targeted"]  # Run only the targeted strategy with fixed increases
 
     for strategy in strategies:
         logger.info("\n%s\nStrategy: %s\n%s", "=" * 80, strategy.upper(), "=" * 80)

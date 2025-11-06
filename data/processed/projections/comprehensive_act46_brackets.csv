@@ -1,0 +1,37 @@
+Filing Status,Income Range,Act 46 Rate (%),New Rate (%),Increase (pp),Notes
+Joint/Surviving Spouse,"$0 - $19,200",1.40%,1.40%,0.00,No change
+Joint/Surviving Spouse,"$19,200 - $28,800",3.20%,3.20%,0.00,No change
+Joint/Surviving Spouse,"$28,800 - $38,400",5.50%,5.50%,0.00,No change
+Joint/Surviving Spouse,"$38,400 - $48,000",6.40%,6.40%,0.00,No change
+Joint/Surviving Spouse,"$48,000 - $72,000",6.80%,6.80%,0.00,No change
+Joint/Surviving Spouse,"$72,000 - $96,000",7.20%,7.20%,0.00,No change
+Joint/Surviving Spouse,"$96,000 - $250,000",7.60%,7.60%,0.00,No change
+Joint/Surviving Spouse,"$250,000 - $350,000",7.90%,8.15%,+0.25,5th highest
+Joint/Surviving Spouse,"$350,000 - $450,000",8.25%,8.50%,+0.25,4th highest
+Joint/Surviving Spouse,"$450,000 - $550,000",9.00%,9.25%,+0.25,3rd highest
+Joint/Surviving Spouse,"$550,000 - $650,000",10.00%,10.50%,+0.50,2nd highest
+Joint/Surviving Spouse,"$650,000+ - No limit",11.00%,12.00%,+1.00,Highest
+Head of Household,"$0 - $14,400",1.40%,1.40%,0.00,No change
+Head of Household,"$14,400 - $21,600",3.20%,3.20%,0.00,No change
+Head of Household,"$21,600 - $28,800",5.50%,5.50%,0.00,No change
+Head of Household,"$28,800 - $36,000",6.40%,6.40%,0.00,No change
+Head of Household,"$36,000 - $54,000",6.80%,6.80%,0.00,No change
+Head of Household,"$54,000 - $72,000",7.20%,7.20%,0.00,No change
+Head of Household,"$72,000 - $187,500",7.60%,7.60%,0.00,No change
+Head of Household,"$187,500 - $262,500",7.90%,8.15%,+0.25,5th highest
+Head of Household,"$262,500 - $337,500",8.25%,8.50%,+0.25,4th highest
+Head of Household,"$337,500 - $412,500",9.00%,9.25%,+0.25,3rd highest
+Head of Household,"$412,500 - $487,500",10.00%,10.50%,+0.50,2nd highest
+Head of Household,"$487,500+ - No limit",11.00%,12.00%,+1.00,Highest
+Single/MFS,"$0 - $9,600",1.40%,1.40%,0.00,No change
+Single/MFS,"$9,600 - $14,400",3.20%,3.20%,0.00,No change
+Single/MFS,"$14,400 - $19,200",5.50%,5.50%,0.00,No change
+Single/MFS,"$19,200 - $24,000",6.40%,6.40%,0.00,No change
+Single/MFS,"$24,000 - $36,000",6.80%,6.80%,0.00,No change
+Single/MFS,"$36,000 - $48,000",7.20%,7.20%,0.00,No change
+Single/MFS,"$48,000 - $125,000",7.60%,7.60%,0.00,No change
+Single/MFS,"$125,000 - $175,000",7.90%,8.15%,+0.25,5th highest
+Single/MFS,"$175,000 - $225,000",8.25%,8.50%,+0.25,4th highest
+Single/MFS,"$225,000 - $275,000",9.00%,9.25%,+0.25,3rd highest
+Single/MFS,"$275,000 - $325,000",10.00%,10.50%,+0.50,2nd highest
+Single/MFS,"$325,000+ - No limit",11.00%,12.00%,+1.00,Highest

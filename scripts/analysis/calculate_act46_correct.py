@@ -19,19 +19,19 @@ if str(PROJECT_ROOT) not in sys.path:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# 2025 standard deductions (interpolated between 2024 and 2026)
-STANDARD_DEDUCTIONS_2025 = {
-    'single': 6200,
-    'married_filing_jointly': 12400,
-    'married_filing_separately': 6200,
-    'head_of_household': 9212,
-    'qualifying_widow': 12400
+# 2024 standard deductions (Act 46 for taxable years beginning after December 31, 2024)
+STANDARD_DEDUCTIONS_2024 = {
+    'single': 4400,
+    'married_filing_jointly': 8800,
+    'married_filing_separately': 4400,
+    'head_of_household': 6424,
+    'qualifying_widow': 8800
 }
 
 # Personal exemption for 2025 (indexed from 2022's $1,144)
 PERSONAL_EXEMPTION_2025 = 1200
 
-# 2024 Act 46 tax brackets (correct top bracket at $650k, not $800k)
+# Act 46 tax brackets for taxable years beginning after December 31, 2024 (i.e., 2025 tax year)
 TAX_BRACKETS_2024 = {
     'married_filing_jointly': [
         (0, 19200, 0.014),
@@ -121,7 +121,7 @@ def calculate_tax_act46(income: float, filing_status: str, num_exemptions: int =
         Dict with tax calculation details
     """
     # Get standard deduction for this filing status
-    std_deduction = STANDARD_DEDUCTIONS_2025.get(filing_status, 0)
+    std_deduction = STANDARD_DEDUCTIONS_2024.get(filing_status, 0)
     
     # Calculate personal exemptions
     personal_exemptions = num_exemptions * PERSONAL_EXEMPTION_2025
@@ -150,7 +150,7 @@ def main():
     
     logger.info("Act 46 Revenue Calculation (Corrected)")
     logger.info("="*80)
-    logger.info("Tax System: 2024 brackets/rates, 2025 standard deductions, personal exemptions")
+    logger.info("Tax System: Act 46 (2024 brackets/rates, 2024 standard deductions, 2025 personal exemptions)")
     logger.info("="*80)
     
     # Load 2026 tax units
