@@ -28,6 +28,10 @@ class TaxSystemConfig:
     # Optional: bracket adjustments (for rollback scenarios)
     bracket_adjustments: Optional[Dict[str, List[Tuple[float, float]]]] = None
     # Format: {'filing_status': [(income_threshold, rate_adjustment_pp), ...]}
+    
+    # Optional: income surcharges
+    surcharges: Optional[Dict[str, Dict[str, float]]] = None
+    # Format: {'filing_status': {'threshold': 1000000, 'rate': 0.01}}
 
 
 class TaxSystemRegistry:
@@ -234,12 +238,41 @@ class TaxCalculator:
                 if taxable_income <= bracket_max:
                     break
         
+        # Apply surcharges if configured
+        surcharge_amount = 0.0
+        if config.surcharges:
+            # Handle mapped status for config lookup
+            status_map = {
+                'single': 'Single_Married_Separate',
+                'married_filing_jointly': 'Joint_Surviving_Spouse',
+                'married_filing_separately': 'Single_Married_Separate',
+                'head_of_household': 'Head_of_Household',
+                'qualifying_widow': 'Joint_Surviving_Spouse'
+            }
+            # Try both original and mapped status
+            status_keys = [filing_status, status_map.get(filing_status, filing_status)]
+            
+            for status_key in status_keys:
+                if status_key in config.surcharges:
+                    surcharge_config = config.surcharges[status_key]
+                    threshold = surcharge_config['threshold']
+                    rate = surcharge_config['rate']
+                    
+                    # Surcharge applies to taxable income above threshold
+                    if taxable_income > threshold:
+                        surcharge = (taxable_income - threshold) * rate
+                        surcharge_amount += surcharge
+                        tax += surcharge
+                        marginal_rate += rate
+                    break  # Apply only one matching surcharge config
+
         return {
             'gross_income': income,
             'standard_deduction': std_deduction,
             'personal_exemptions': personal_exemptions,
             'taxable_income': taxable_income,
             'tax_liability': tax,
+            'surcharge_amount': surcharge_amount,
             'marginal_rate': marginal_rate * 100,  # Convert to percentage
             'effective_rate': (tax / income * 100) if income > 0 else 0
         }
