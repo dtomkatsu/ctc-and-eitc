@@ -28,7 +28,11 @@ class TaxSystemConfig:
     # Optional: bracket adjustments (for rollback scenarios)
     bracket_adjustments: Optional[Dict[str, List[Tuple[float, float]]]] = None
     # Format: {'filing_status': [(income_threshold, rate_adjustment_pp), ...]}
-    
+
+    # Optional: bracket scenario tag (matches 'scenario' column in bracket CSV)
+    # Leave None to use baseline rows (scenario == '')
+    bracket_scenario: Optional[str] = None
+
     # Optional: income surcharges
     surcharges: Optional[Dict[str, Dict[str, float]]] = None
     # Format: {'filing_status': {'threshold': 1000000, 'rate': 0.01}}
@@ -72,14 +76,18 @@ class TaxSystemRegistry:
     
     @classmethod
     def get_act46_2027_system(cls) -> TaxSystemConfig:
-        """Act 46 tax system for 2027 tax year."""
+        """Act 46 tax system for 2027 tax year.
+
+        Act 46 (2024) has a FIXED bracket schedule for all years 2025+.
+        There is no phase-in to 2027 — the brackets are identical to 2025.
+        """
         return TaxSystemConfig(
             name="act46_2027",
             year=2027,
-            bracket_year=2027,  # Future Act 46 brackets
-            standard_deduction_year=2027,  # Future standard deductions
-            personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
-            description="Act 46 (future projections for 2027 tax year)"
+            bracket_year=2025,  # Act 46 brackets (fixed for 2025+, no phase-in)
+            standard_deduction_year=2025,
+            personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2025, 1200),
+            description="Act 46 (2024) — fixed brackets for 2025+ (applies to TY2027)"
         )
     
     @classmethod
@@ -97,6 +105,47 @@ class TaxSystemRegistry:
                 'Single_Married_Separate': {'threshold': 1_000_000, 'rate': surcharge_rate},
                 'Head_of_Household': {'threshold': 1_000_000, 'rate': surcharge_rate},
             }
+        )
+
+    @classmethod
+    def get_sb3125_original_2027_system(cls) -> TaxSystemConfig:
+        """SB3125 original proposal (2026 session, before SD1 amendments).
+
+        Alternative to Act 46 with bracket expansion for TY2027+.
+        Wider low/middle brackets compared to Act 46.
+        Top brackets: $350k-$450k at 7.90%, etc.
+        """
+        return TaxSystemConfig(
+            name="sb3125_original_2027",
+            year=2027,
+            bracket_year=2027,
+            standard_deduction_year=2027,
+            personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
+            description="SB3125 original (2026) — bracket expansion for TY2027",
+            bracket_scenario='',  # Use baseline (original SB3125) rows
+        )
+
+    @classmethod
+    def get_sb3125_sd1_2027_system(cls) -> TaxSystemConfig:
+        """SB3125 SD1 (2026 session) bracket schedule effective TY2027.
+
+        Changes vs existing 2027 baseline (SB3125 original):
+          - Joint/Surviving Spouse: top brackets above $350k shift from 7.9%→8.25% at $350k,
+            collapsing the $650k-$800k tier (top rate now at $650k instead of $800k)
+          - Head of Household: top brackets above $262.5k shift one level up,
+            collapsing the $487.5k-$600k tier (top rate at $487.5k instead of $600k)
+          - Single/MFS: top brackets above $175k shift one level up,
+            collapsing the $325k-$400k tier (top rate at $325k instead of $400k)
+        Lower brackets are unchanged from the SB3125 original schedule.
+        """
+        return TaxSystemConfig(
+            name="sb3125_sd1_2027",
+            year=2027,
+            bracket_year=2027,
+            standard_deduction_year=2027,
+            personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
+            description="SB3125 SD1 (2026 session) — higher top bracket rates effective TY2027",
+            bracket_scenario='sb3125_sd1',
         )
 
     @classmethod
@@ -135,9 +184,14 @@ class TaxCalculator:
         logger.info(f"Loaded brackets for years: {sorted(self.all_brackets['year'].unique())}")
         logger.info(f"Loaded deductions for years: {sorted(self.all_deductions['Year'].unique())}")
     
-    def get_brackets(self, year: int, filing_status: str) -> pd.DataFrame:
-        """Get tax brackets for a specific year and filing status."""
-        # Standardize filing status names
+    def get_brackets(self, year: int, filing_status: str,
+                     scenario: Optional[str] = None) -> pd.DataFrame:
+        """Get tax brackets for a specific year, filing status, and optional scenario.
+
+        Args:
+            scenario: If None, loads baseline rows (scenario column is blank/NaN).
+                      If set (e.g. 'sb3125_sd1'), loads rows with that scenario tag.
+        """
         status_map = {
             'single': 'Single_Married_Separate',
             'married_filing_jointly': 'Joint_Surviving_Spouse',
@@ -145,17 +199,23 @@ class TaxCalculator:
             'head_of_household': 'Head_of_Household',
             'qualifying_widow': 'Joint_Surviving_Spouse'
         }
-        
+
         mapped_status = status_map.get(filing_status, filing_status)
-        
-        brackets = self.all_brackets[
-            (self.all_brackets['year'] == year) & 
-            (self.all_brackets['filing_status'] == mapped_status)
-        ].copy()
-        
+
+        df = self.all_brackets
+        mask = (df['year'] == year) & (df['filing_status'] == mapped_status)
+
+        if scenario:
+            mask &= (df['scenario'].fillna('') == scenario)
+        else:
+            mask &= (df['scenario'].fillna('') == '')
+
+        brackets = df[mask].copy()
+
         if brackets.empty:
-            raise ValueError(f"No brackets found for year {year}, status {mapped_status}")
-        
+            raise ValueError(f"No brackets found for year={year}, status={mapped_status}, "
+                             f"scenario={scenario!r}")
+
         return brackets.sort_values('income_min').reset_index(drop=True)
     
     def get_standard_deduction(self, year: int, filing_status: str) -> float:
@@ -232,8 +292,9 @@ class TaxCalculator:
         # Calculate taxable income
         taxable_income = max(0, income - std_deduction - personal_exemptions)
         
-        # Get brackets
-        brackets = self.get_brackets(config.bracket_year, filing_status)
+        # Get brackets (with optional scenario tag)
+        brackets = self.get_brackets(config.bracket_year, filing_status,
+                                     scenario=config.bracket_scenario)
         
         # Apply adjustments if specified
         if config.bracket_adjustments:
