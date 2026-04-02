@@ -124,8 +124,21 @@ When `--scheduled` mode runs (monthly via launchd):
 1. Checks freshness of all sources
 2. Downloads anything stale
 3. Harmonizes BLS data if downloaded
-4. **Sends macOS notification** if new data found (does NOT auto-regenerate tax units)
-5. Logs to `logs/pipeline/{YYYY-MM-DD}.log`
+4. **Auto-commits to git** if any data was updated (manifest + data files)
+   - Commit message includes timestamp and list of updated sources
+   - Only commits if there were actual changes (skips if all sources fresh)
+5. **Sends macOS notification** if new data found (does NOT auto-regenerate tax units)
+6. Logs to `logs/pipeline/{YYYY-MM-DD}.log`
+
+Example auto-commit message:
+```
+Auto-update data pipeline — 2026-04-02 13:53
+
+Sources updated:
+  • bea_state_income
+
+Automated commit from monthly pipeline run.
+```
 
 To regenerate tax units after new data arrives:
 ```bash
