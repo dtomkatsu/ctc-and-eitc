@@ -296,6 +296,25 @@ class DOTAXCollectionsForecaster:
 
         # 2025 is partial (Jan-Sep only) — exclude it to avoid downward bias
         annual = inc[inc['year'] < 2025].groupby('year')['Amount'].sum() / 1e6
+
+        # Treat 2020-2022 as COVID-distorted before fitting ETS.
+        # CY2020: -3.2% (pandemic disruption). CY2021: +41% spike (federal stimulus,
+        # deferred TY2020 payments, accelerated capital gains). CY2022: elevated
+        # post-pandemic recovery. ETS interprets this volatile period as a trend
+        # inflection, causing systematic overprediction (MAPE ~9.4% on 2023-2024).
+        # Fix: linearly interpolate 2020-2022 between 2019 and 2023, removing the
+        # COVID disruption while preserving the structural growth trend.
+        if 2019 in annual.index and 2023 in annual.index:
+            y2019 = annual[2019]
+            y2023 = annual[2023]
+            covid_years = [yr for yr in [2020, 2021, 2022] if yr in annual.index]
+            for yr in covid_years:
+                frac = (yr - 2019) / (2023 - 2019)
+                smoothed = y2019 + frac * (y2023 - y2019)
+                logger.info(f"  COVID outlier treatment {yr}: "
+                            f"${annual[yr]:,.1f}M → ${smoothed:,.1f}M")
+                annual[yr] = smoothed
+
         self._annual_collections = annual
 
         logger.info("  DOTAX Individual Income Tax Collections ($M):")

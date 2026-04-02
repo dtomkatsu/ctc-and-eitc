@@ -5,14 +5,17 @@ Applies different growth rates to different income components (WAGP, SEMP, INTP,
 rather than a single bracket-specific rate to total AGI.
 
 Growth rate sources:
-    - Wages (WAGP): BLS OES bracket-specific nominal rates
+    - Wages (WAGP): BLS OES bracket-specific nominal rates (2022→2024 observed)
     - Self-employment (SEMP): BLS OES bracket-specific (proxy)
-    - Interest (INTP): ~3.5% nominal (Fed funds environment)
-    - Dividends (DIV): ~4.5% nominal (equity market average)
-    - Retirement (RETP): ~3.0% nominal (distribution growth)
-    - Social Security (SSP): ~2.5% nominal (published COLA average)
-    - Other income (OIP): ~3.0% nominal (inflation proxy)
-    - Capital gains: ~5.0% nominal (long-run equity return)
+    - Interest (INTP): 5.0% — BEA HI div+int+rent CAGR 2022→2024 = 9.4%; moderated for
+      Fed rate cuts 2024→2027 (data/raw/bea_hawaii_sainc5n.csv, line 46)
+    - Dividends (DIV): 5.0% — equity market nominal; BEA line 46 upper bound
+    - Retirement (RETP): 3.5% — inflation + growing retiree population
+    - Social Security (SSP): 3.8% — known COLAs: 8.7% (2023) + 3.2% (2024) + 2.5%/yr
+      projected (2025-2027) → compound CAGR = 3.8% (data/raw/bea_hawaii_sainc5n.csv, line 47)
+    - Other income (OIP): 3.0% — general inflation proxy; BEA transfers 2022→2024 = 1.8%,
+      blended with CPI
+    - Capital gains: 5.0% nominal (long-run equity return)
 """
 
 import numpy as np
@@ -34,12 +37,16 @@ _BLS_ANNUAL_RATES = {
 }
 
 # Fixed nominal annual growth rates for non-wage income sources
+# Derived from BEA SAINC5N Hawaii data (data/raw/bea_hawaii_sainc5n.csv)
+# BEA line 46 (div+int+rent) 2022→2024 CAGR = 9.4% (interest-rate surge inflated)
+# BEA line 47 (transfer receipts) 2022→2024 CAGR = 1.8% (post-COVID normalization)
+# SS COLAs: 8.7% (2023), 3.2% (2024), 2.5%/yr projected → 5yr CAGR = 3.8%
 _FIXED_RATES = {
-    'intp': 0.035,   # Interest income: Fed funds environment
-    'div':  0.045,   # Dividends: equity market average
-    'retp': 0.030,   # Retirement distributions: nominal growth
-    'ssp':  0.025,   # Social Security: published COLA average
-    'oip':  0.030,   # Other income: inflation proxy
+    'intp': 0.050,   # Interest: BEA HI div+int+rent surge 2022→2024; moderated by Fed cuts
+    'div':  0.050,   # Dividends: equity market nominal ~5%/yr
+    'retp': 0.035,   # Retirement distributions: inflation + retiree population growth
+    'ssp':  0.038,   # Social Security: 8.7%+3.2% COLA observed, 2.5%/yr projected → 3.8% CAGR
+    'oip':  0.030,   # Other income: general inflation proxy (BEA transfers 1.8%, CPI ~3%)
 }
 
 # Capital gains
