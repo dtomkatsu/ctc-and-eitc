@@ -1,14 +1,12 @@
 {
   "version": 1,
   "sources": {
-    "bls_oes": {
-      "last_fetched": "2026-04-02T13:36:19.754291",
+    "bea_state_income": {
+      "last_fetched": "2026-04-02T13:53:31.042975",
       "files": [
-        "/Users/devinthomas/ctc-and-eitc/data/external/bls_oes/state_M2022_dl.xlsx",
-        "/Users/devinthomas/ctc-and-eitc/data/external/bls_oes/state_M2014_dl.xlsx",
-        "/Users/devinthomas/ctc-and-eitc/data/external/bls_oes/state_M2015_dl.xlsx"
+        "/Users/devinthomas/ctc-and-eitc/data/raw/bea_hawaii_sainc5n.csv"
       ]
     }
   },
-  "last_run": "2026-04-02T13:36:19.754303"
+  "last_run": "2026-04-02T13:53:31.042986"
 }
