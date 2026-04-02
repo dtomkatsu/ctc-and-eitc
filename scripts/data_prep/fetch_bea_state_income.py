@@ -60,57 +60,58 @@ class BEAFetcher:
             line_code, description, year, value_thousands
         """
         years_str = ",".join(str(y) for y in range(start_year, end_year + 1))
-        line_codes_str = ",".join(str(lc) for lc in LINE_CODES)
-
-        params = {
-            "UserID": self.api_key,
-            "method": "GetData",
-            "datasetname": "Regional",
-            "TableName": "SAINC5N",
-            "GeoFips": "15000",  # Hawaii
-            "LineCode": line_codes_str,
-            "Year": years_str,
-            "ResultFormat": "JSON",
-        }
-
-        logger.info(f"Fetching BEA SAINC5N for Hawaii, years {start_year}-{end_year}")
-        try:
-            resp = requests.get(BEA_API_URL, params=params, timeout=30)
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            logger.error(f"BEA API request failed: {e}")
-            return pd.DataFrame()
-
-        data = resp.json()
-
-        # BEA wraps results in BEAAPI -> Results -> Data
-        try:
-            records = data["BEAAPI"]["Results"]["Data"]
-        except (KeyError, TypeError):
-            error_msg = data.get("BEAAPI", {}).get("Results", {}).get("Error", "Unknown error")
-            logger.error(f"BEA API error: {error_msg}")
-            return pd.DataFrame()
 
         rows = []
-        for rec in records:
-            line_code = int(rec["LineCode"])
-            year = int(rec["TimePeriod"])
-            # BEA returns values as strings, sometimes with commas
-            value_str = rec.get("DataValue", "0").replace(",", "")
+        logger.info(f"Fetching BEA SAINC5N for Hawaii, years {start_year}-{end_year}")
+
+        # BEA API requires separate calls for each line code (no comma-separated lists)
+        for line_code in LINE_CODES:
+            params = {
+                "UserID": self.api_key,
+                "method": "GetData",
+                "datasetname": "Regional",
+                "TableName": "SAINC5N",
+                "GeoFips": "15000",  # Hawaii
+                "LineCode": str(line_code),
+                "Year": years_str,
+                "ResultFormat": "JSON",
+            }
+
             try:
-                value = int(value_str)
-            except ValueError:
-                logger.warning(f"Skipping non-numeric value for line {line_code}, year {year}: {value_str}")
+                resp = requests.get(BEA_API_URL, params=params, timeout=30)
+                resp.raise_for_status()
+            except requests.RequestException as e:
+                logger.error(f"BEA API request failed for line code {line_code}: {e}")
                 continue
 
-            rows.append(
-                {
-                    "line_code": line_code,
-                    "description": LINE_CODES.get(line_code, rec.get("Description", "")),
-                    "year": year,
-                    "value_thousands": value,
-                }
-            )
+            data = resp.json()
+
+            # BEA wraps results in BEAAPI -> Results -> Data
+            try:
+                records = data["BEAAPI"]["Results"]["Data"]
+            except (KeyError, TypeError):
+                error_msg = data.get("BEAAPI", {}).get("Results", {}).get("Error", "Unknown error")
+                logger.error(f"BEA API error for line code {line_code}: {error_msg}")
+                continue
+
+            for rec in records:
+                try:
+                    year = int(rec["TimePeriod"])
+                    # BEA returns values as strings, sometimes with commas
+                    value_str = rec.get("DataValue", "0").replace(",", "")
+                    value = int(value_str)
+
+                    rows.append(
+                        {
+                            "line_code": line_code,
+                            "description": LINE_CODES.get(line_code, ""),
+                            "year": year,
+                            "value_thousands": value,
+                        }
+                    )
+                except (ValueError, KeyError) as e:
+                    logger.warning(f"Skipping record for line {line_code}: {e}")
+                    continue
 
         df = pd.DataFrame(rows).sort_values(["line_code", "year"]).reset_index(drop=True)
         logger.info(f"Fetched {len(df)} records from BEA API")
