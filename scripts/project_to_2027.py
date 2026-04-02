@@ -214,10 +214,15 @@ def main():
     logger.info(f"\n  ACS-derived aggregate CAGR: {central_cagr:.1%} "
                 f"(80% CI: {lower_cagr:.1%} – {upper_cagr:.1%})")
 
-    # Fit BLS trend models
-    logger.info("\n  Fitting BLS OES wage trend models:")
+    # Fit BLS trend models (15-year OES series 2009-2023)
+    logger.info("\n  Fitting BLS OES wage trend models (2009-2023):")
     bls_forecaster = BLSTrendForecaster(project_root=project_root)
     bls_forecaster.fit()
+    bls_bracket_rates = bls_forecaster.get_all_bracket_rates()
+    if bls_bracket_rates:
+        logger.info(f"  BLS-derived bracket rates available for {len(bls_bracket_rates)} brackets")
+    else:
+        logger.info("  No BLS bracket rates available — will use hardcoded _BLS_ANNUAL_RATES")
 
     # Backtest ACS ETS
     backtest_result = run_backtests(project_root)
@@ -257,10 +262,18 @@ def main():
     logger.info("=" * 80)
 
     if has_components:
+        # Use BLS long-term rates (2009-2023) when available; fall back to hardcoded 2-year rates
+        from src.projection.source_specific_growth import _BLS_ANNUAL_RATES as _DEFAULT_BLS_RATES
+        wage_rates = bls_bracket_rates if bls_bracket_rates else None
+        if wage_rates:
+            logger.info("  Using BLS long-term wage rates (2009-2023 OES CAGR)")
+        else:
+            logger.info("  Using hardcoded BLS rates (2022→2024 observed)")
         projector = SourceSpecificGrowthProjector(
             years_observed=2,
             years_projected=3,
             moderation_factor=0.70,
+            bls_annual_rates=wage_rates,
         )
         tax_units = projector.project_dataframe(tax_units)
     else:
@@ -315,6 +328,56 @@ def main():
     logger.info(f"    vs 2022 baseline:   ${baseline_tax_2022:,.1f}M → "
                 f"${baseline_result['total_revenue_millions']:,.1f}M "
                 f"({(baseline_result['total_revenue_millions']/baseline_tax_2022 - 1)*100:+.1f}%)")
+
+    # ===== STEP 5b: CAPITAL GAINS TAX =====
+    logger.info("\n" + "=" * 80)
+    logger.info("STEP 5b: CAPITAL GAINS TAX (Hawaii: taxed as ordinary income, max 7.25%)")
+    logger.info("=" * 80)
+
+    # Hawaii taxes long-term capital gains as ordinary income, but the effective rate
+    # is capped at 7.25%. For each filer, CG tax = capital_gains × min(marginal_rate, 7.25%).
+    # The marginal rate is the rate that applies at the TOP of ordinary income.
+    HAWAII_CG_MAX_RATE = 0.0725
+
+    cg_tax_m = 0.0
+    cg_filers = 0.0
+
+    if 'capital_gains' in tax_units.columns:
+        for _, row in tax_units.iterrows():
+            cg = float(row.get('capital_gains', 0) or 0)
+            if cg <= 0:
+                continue
+            status = row['filing_status']
+            weight = row['weight']
+            num_ex = int(row.get('num_exemptions', 1))
+            ded = float(row.get('deduction_2027', 0)) if 'deduction_2027' in row.index else None
+
+            try:
+                tax_result = calculator.calculate_tax(
+                    row['agi'], baseline_2027, status,
+                    num_exemptions=num_ex,
+                    deduction_override=ded,
+                )
+                marginal_rate = tax_result['marginal_rate'] / 100.0  # convert % to decimal
+                cg_rate = min(marginal_rate, HAWAII_CG_MAX_RATE)
+                cg_tax_m += cg * cg_rate * weight
+                cg_filers += weight
+            except Exception:
+                continue
+
+        cg_tax_m /= 1e6
+        logger.info(f"\n  Capital gains tax:")
+        logger.info(f"    Total CG tax:       ${cg_tax_m:,.1f}M")
+        logger.info(f"    Filers with CG:     {cg_filers:,.0f}")
+        if cg_filers > 0:
+            weighted_cg = (tax_units['capital_gains'] * tax_units['weight']).sum() / 1e6
+            logger.info(f"    Total CG base:      ${weighted_cg:,.1f}M")
+            logger.info(f"    Effective CG rate:  {cg_tax_m / weighted_cg * 100:.2f}%")
+        logger.info(f"\n  Income tax + CG tax: ${baseline_result['total_revenue_millions'] + cg_tax_m:,.1f}M "
+                    f"(vs 2022 calibration: ${baseline_tax_2022:,.1f}M)")
+    else:
+        logger.info("  No capital_gains column — skipping CG tax calculation")
+        cg_tax_m = 0.0
 
     # ===== STEP 6: MILLIONAIRE'S TAX =====
     logger.info("\n" + "=" * 80)
@@ -432,6 +495,8 @@ def main():
     gap_corrected_pct = (baseline_result['total_revenue_millions'] / dotax_corrected - 1) * 100
     act46_impact = dotax_corrected - baseline_result['total_revenue_millions']
 
+    total_with_cg = baseline_result['total_revenue_millions'] + cg_tax_m
+
     logger.info(f"""
   ┌─────────────────────────────────────────────────────────────────────┐
   │  REVENUE ESTIMATES: TY2027                                          │
@@ -439,9 +504,11 @@ def main():
   │  2022 Calibrated Baseline:      ${baseline_tax_2022:>8,.1f}M  (618,423 filers)     │
   │                                                                     │
   │  ── Microsimulation: Act 46 Law (primary estimate) ──               │
-  │  2027 Baseline (Act 46):        ${baseline_result['total_revenue_millions']:>8,.1f}M  ({baseline_result['total_filers']:>7,.0f} filers)     │
+  │  2027 Ordinary income tax:      ${baseline_result['total_revenue_millions']:>8,.1f}M  ({baseline_result['total_filers']:>7,.0f} filers)     │
+  │  2027 Capital gains tax:        ${cg_tax_m:>8,.1f}M  (max 7.25% rate)          │
+  │  2027 Total (ord + CG):         ${total_with_cg:>8,.1f}M                            │
   │  2027 Baseline 80% CI:          ${revenue_low:>8,.1f}M – ${revenue_high:,.1f}M             │
-  │  2027 + 2% Millionaire Tax:     ${millionaire_result['total_revenue_millions']:>8,.1f}M                            │
+  │  2027 + 2% Millionaire Tax:     ${millionaire_result['total_revenue_millions']:>8,.1f}M  (ordinary income)      │
   │  Surcharge Revenue:             ${surcharge_revenue:>8,.1f}M  ({affected_count:>6,.0f} filers)      │
   │                                                                     │
   │  ── DOTAX Collections ETS (trend extrapolation, no law change) ──   │
@@ -450,20 +517,20 @@ def main():
   │  DOTAX estimate 80% CI:         ${dotax_lower:>8,.1f}M – ${dotax_upper:,.1f}M             │
   │                                                                     │
   │  ── Interpretation ──                                               │
-  │  Microsimulation vs DOTAX:      ${(baseline_result['total_revenue_millions'] - dotax_corrected):>+8.1f}M ({gap_corrected_pct:>+.1f}%)              │
-  │  Implied Act 46 revenue cost:   ${-act46_impact:>8,.1f}M vs no-law-change trend      │
+  │  Microsimulation vs DOTAX:      ${(total_with_cg - dotax_corrected):>+8.1f}M ({(total_with_cg/dotax_corrected - 1)*100:>+.1f}%)              │
+  │  Implied Act 46 revenue cost:   ${dotax_corrected - total_with_cg:>8,.1f}M vs no-law-change trend      │
   └─────────────────────────────────────────────────────────────────────┘
 
-  Change 2022 → 2027 Baseline:  {(baseline_result['total_revenue_millions']/baseline_tax_2022 - 1)*100:+.1f}%
-  Millionaire's Tax Uplift:     {(surcharge_revenue/baseline_result['total_revenue_millions'])*100:+.1f}%
+  Change 2022 → 2027 (ord + CG):  {(total_with_cg/baseline_tax_2022 - 1)*100:+.1f}%
+  Millionaire's Tax Uplift:       {(surcharge_revenue/baseline_result['total_revenue_millions'])*100:+.1f}%
 
   Methodology:
-    Income growth: Source-specific (wages BLS 4.2-7.0%/yr, SS 2.5%, ret 3.0%, inv 3.5-4.5%)
+    Income growth: Source-specific (wages BLS 4.2-7.0%/yr, SS 3.8%, ret 3.5%, inv 5.0%)
     Population: DBEDT demographics (working-age -0.83%/yr, seniors +5.0%/yr)
     Deductions: SOI-calibrated itemized deductions (12.1% itemization rate)
-    Capital gains: 5%/yr nominal (long-run equity average)
+    Capital gains: 5%/yr nominal, taxed separately at min(marginal_rate, 7.25%) — Hawaii law
     ACS ETS backtest MAPE:           {backtest_mape:.1f}%
-    DOTAX collections backtest MAPE: {dotax_mape:.1f}% (systematic overprediction corrected)
+    DOTAX collections backtest MAPE: {dotax_mape:.1f}% (COVID outlier corrected)
 """)
 
 

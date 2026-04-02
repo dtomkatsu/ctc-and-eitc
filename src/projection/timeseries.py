@@ -184,6 +184,12 @@ class BLSTrendForecaster:
                 return info
         return None
 
+    def get_all_bracket_rates(self) -> Dict[tuple, float]:
+        """Return {(lo, hi): cagr} for use in SourceSpecificGrowthProjector."""
+        if not self._bracket_rates:
+            return {}
+        return {bracket: info['cagr'] for bracket, info in self._bracket_rates.items()}
+
 
 class ACSIncomeForecaster:
     """

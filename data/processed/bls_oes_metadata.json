@@ -1,14 +1,24 @@
 {
-  "processing_date": "2025-10-26T14:39:19.421044",
-  "total_records": 2736,
-  "total_occupations": 604,
-  "year_range": "2020-2024",
+  "processing_date": "2026-04-01T21:13:33.338965",
+  "total_records": 8567,
+  "total_occupations": 801,
+  "year_range": "2009-2023",
   "years_available": [
+    2009,
+    2010,
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
     2020,
     2021,
     2022,
-    2023,
-    2024
+    2023
   ],
   "wage_columns": [
     "mean_wage_annual",

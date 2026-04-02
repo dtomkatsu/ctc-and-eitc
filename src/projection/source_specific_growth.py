@@ -84,6 +84,7 @@ class SourceSpecificGrowthProjector:
         moderation_factor: float = 0.70,
         cap_gains_rate: float = _CAP_GAINS_RATE,
         fixed_rates: Optional[Dict[str, float]] = None,
+        bls_annual_rates: Optional[Dict[tuple, float]] = None,
     ):
         self.years_observed = years_observed
         self.years_projected = years_projected
@@ -91,11 +92,13 @@ class SourceSpecificGrowthProjector:
         self.cap_gains_rate = cap_gains_rate
         self.fixed_rates = fixed_rates or dict(_FIXED_RATES)
         self.total_years = years_observed + years_projected
+        # Use externally-provided BLS rates (e.g. from 15-year OES CAGR) or fall back to hardcoded
+        self._bls_rates = bls_annual_rates if bls_annual_rates else _BLS_ANNUAL_RATES
 
     def _grow_wage_component(self, values: np.ndarray, agi: np.ndarray) -> np.ndarray:
         """Grow wage/self-employment income using bracket-specific rates."""
         grown = values.copy()
-        for (lo, hi), annual_rate in _BLS_ANNUAL_RATES.items():
+        for (lo, hi), annual_rate in self._bls_rates.items():
             mask = (agi >= lo) & (agi < hi)
             factor = _compute_growth_factor(
                 annual_rate, self.years_observed, self.years_projected, self.moderation

@@ -123,11 +123,15 @@ class BLSOESHarmonizer:
             sheet_names = [0, 'State', 'state', 'All Data', 'Data']
             df = None
             
+            # Pick engine based on extension
+            engine = 'xlrd' if str(file_path).endswith('.xls') else 'openpyxl'
+
             for sheet in sheet_names:
                 try:
                     df = pd.read_excel(
                         file_path,
                         sheet_name=sheet,
+                        engine=engine,
                         na_values=['#', '*', '**', '***', 'N/A', ''],
                         keep_default_na=True
                     )
@@ -140,18 +144,25 @@ class BLSOESHarmonizer:
             if df is None:
                 raise ValueError(f"Could not read any sheet from {file_path}")
             
-            # Filter for Hawaii data
-            hawaii_masks = [
-                df['AREA_TITLE'].str.contains('Hawaii', case=False, na=False),
-                df['AREA'].astype(str).str.contains('15', na=False),  # Hawaii FIPS code
-                df.get('ST', pd.Series()).astype(str).str.contains('15', na=False)
-            ]
-            
+            # Normalize column names to uppercase for consistent filtering
+            df.columns = [c.upper() for c in df.columns]
+
+            # Filter for Hawaii data — column layout differs across years:
+            #   2009-2018: AREA (numeric), ST (HI), STATE (Hawaii)
+            #   2019: area_title (→ AREA_TITLE after upper())
+            #   2020+: AREA_TITLE
             hawaii_mask = pd.Series(False, index=df.index)
-            for mask in hawaii_masks:
-                if mask.any():
-                    hawaii_mask |= mask
-                    break
+            for col, pattern in [
+                ('AREA_TITLE', 'Hawaii'),
+                ('STATE', 'Hawaii'),
+                ('ST', 'HI'),
+                ('AREA', '15'),
+            ]:
+                if col in df.columns:
+                    m = df[col].astype(str).str.contains(pattern, case=False, na=False)
+                    if m.any():
+                        hawaii_mask |= m
+                        break
             
             if not hawaii_mask.any():
                 logger.warning(f"No Hawaii data found in {file_path.name}")

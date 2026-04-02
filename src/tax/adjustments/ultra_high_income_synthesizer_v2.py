@@ -40,6 +40,28 @@ INCOME_TIERS: List[Tuple[float, float]] = [
     (50_000_000, float('inf')),
 ]
 
+# Capital gains share of total income by tier (ordinary = 1 - cg_share)
+# Sources: IRS SOI 2022 national data at 95% adjustment for Hawaii (per DOTAX Table 21)
+# DOTAX Table 21: $400K+ residents have 20.9% CG share (residents)
+# National IRS SOI 2022: $5M–$10M = 31.6%; $10M+ = 47%; $25M+ = 49.4%; $50M+ = 51.7%
+# Hawaii adjustment: 95% of national (Hawaii skews toward wage/investment over capital gains)
+SYNTHETIC_CG_SHARES: Dict[Tuple[float, float], float] = {
+    (1_000_000, 2_000_000):      0.209,  # DOTAX Table 21 $400K+ baseline
+    (2_000_000, 5_000_000):      0.250,  # Graduated: between $1M baseline and $5M tier
+    (5_000_000, 10_000_000):     0.300,  # National: 31.6% × 95% ≈ 30%
+    (10_000_000, 25_000_000):    0.447,  # National: 47.0% × 95% ≈ 44.7%
+    (25_000_000, 50_000_000):    0.470,  # National: 49.4% × 95% ≈ 47%
+    (50_000_000, float('inf')): 0.494,  # National: 51.7% × 95% ≈ 49.4%
+}
+
+
+def _get_synthetic_cg_share(avg_agi: float) -> float:
+    """Look up capital gains share for a synthetic filer tier."""
+    for (lo, hi), share in SYNTHETIC_CG_SHARES.items():
+        if lo <= avg_agi < hi:
+            return share
+    return 0.209  # fallback: DOTAX $400K+ baseline
+
 # Hawaii standard deductions (2018 values matching year=2017 tax calc)
 HAWAII_STD_DEDUCTIONS = {
     'married_filing_jointly': 4_400,
@@ -158,6 +180,12 @@ class UltraHighIncomeSynthesizerV2:
         # Build synthetic filers for each tier x filing status
         synthetic_rows = []
         for spec in tier_specs:
+            cg_share = _get_synthetic_cg_share(spec['avg_agi'])
+            ordinary_agi = spec['avg_agi'] * (1 - cg_share)
+            # capital_gains is NOT pre-assigned here — apply_capital_gains_to_dataframe()
+            # will assign CG proportionally based on ordinary_agi within the $400K+ bracket.
+            # Setting agi=ordinary_agi ensures CG is not double-counted in the tax base.
+
             for status, share in HIGH_INCOME_STATUS_SHARES.items():
                 weight = spec['filers'] * share
                 if weight < 0.01:
@@ -169,7 +197,7 @@ class UltraHighIncomeSynthesizerV2:
                 )
 
                 synthetic_rows.append({
-                    'agi': spec['avg_agi'],
+                    'agi': ordinary_agi,
                     'filing_status': status,
                     'filing_status_hawaii': FILING_STATUS_HAWAII_MAP[status],
                     'num_dependents': num_dependents,
@@ -178,6 +206,8 @@ class UltraHighIncomeSynthesizerV2:
                     'is_synthetic_ultra_high': True,
                     'total_deductions': 0,
                     'standard_deduction': HAWAII_STD_DEDUCTIONS[status],
+                    'synthetic_total_income': spec['avg_agi'],   # for logging/validation
+                    'synthetic_cg_share': cg_share,
                 })
 
         if not synthetic_rows:
@@ -207,11 +237,18 @@ class UltraHighIncomeSynthesizerV2:
                 continue
             if 'tax' in col.lower():
                 synthetic_df[col] = 0
-            elif col in ['income', 'agi_without_cap_gains', 'agi_with_cap_gains']:
+            elif col in ['income']:
+                # income = ordinary agi (consistent with agi column)
+                synthetic_df[col] = synthetic_df['agi']
+            elif col in ['agi_without_cap_gains']:
+                synthetic_df[col] = synthetic_df['agi']
+            elif col in ['agi_with_cap_gains']:
+                # agi_with_cap_gains will be set after apply_capital_gains_to_dataframe() runs
                 synthetic_df[col] = synthetic_df['agi']
             elif col in ['taxable_income', 'hi_taxable_income', 'hi_tax_taxable_income']:
                 synthetic_df[col] = synthetic_df['agi'] - synthetic_df['standard_deduction']
             elif col in ['has_capital_gains', 'capital_gains', 'agi_adjustments']:
+                # CG will be assigned by apply_capital_gains_to_dataframe() based on ordinary agi
                 synthetic_df[col] = 0
             elif col in ['bracket']:
                 synthetic_df[col] = '1000000+'
@@ -247,7 +284,11 @@ class UltraHighIncomeSynthesizerV2:
         after_total = result['weight'].sum()
         logger.info(f"  Before: {before_total:,.0f} total filers")
         logger.info(f"  After:  {after_total:,.0f} total filers")
-        logger.info(f"  $1M+ filers: {result.loc[result['agi'] >= 1_000_000, 'weight'].sum():,.0f}")
+        # Use synthetic_total_income for $1M+ check (agi is now ordinary income only)
+        synth_mask = result.get('is_synthetic_ultra_high', pd.Series(False, index=result.index)).fillna(False)
+        synth_total_income = result.loc[synth_mask, 'synthetic_total_income'] if 'synthetic_total_income' in result.columns else result.loc[synth_mask, 'agi']
+        logger.info(f"  Synthetic $1M+ filers: {result.loc[synth_mask, 'weight'].sum():,.0f}")
+        logger.info(f"  Synthetic avg total income: ${synth_total_income.mean():,.0f} (ordinary only: ${result.loc[synth_mask, 'agi'].mean():,.0f})")
 
         return result
 
