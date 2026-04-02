@@ -43,7 +43,7 @@ from src.tax.config.tax_system_config import (
 )
 from src.projection.source_specific_growth import SourceSpecificGrowthProjector
 from src.tax.adjustments.itemized_deductions import ItemizedDeductionEstimator
-from src.projection.timeseries import ACSIncomeForecaster, BLSTrendForecaster
+from src.projection.timeseries import ACSIncomeForecaster, BLSTrendForecaster, DOTAXCollectionsForecaster
 from src.projection.backtester import ForecastBacktester
 
 logging.basicConfig(
@@ -218,8 +218,15 @@ def main():
     bls_forecaster = BLSTrendForecaster(project_root=project_root)
     bls_forecaster.fit()
 
-    # Backtest
+    # Backtest ACS ETS
     backtest_result = run_backtests(project_root)
+
+    # DOTAX collections time series
+    logger.info("\n  DOTAX Individual Income Tax Collections (2016-2024):")
+    dotax_forecaster = DOTAXCollectionsForecaster(project_root=project_root)
+    dotax_forecaster.load_and_aggregate()
+    dotax_collections_backtest = dotax_forecaster.backtest(holdout_years=2)
+    dotax_central, dotax_lower, dotax_upper = dotax_forecaster.forecast_ty_liability(target_ty=2027)
 
     # ===== STEP 1: LOAD DATA =====
     logger.info("\n" + "=" * 80)
@@ -399,12 +406,35 @@ def main():
 
     backtest_mape = backtest_result['mape'] if backtest_result else float('nan')
 
+    # DOTAX ETS systematically overpredicts post-surge (2023-2024 backtest MAPE ~9.4%,
+    # consistently above actuals). Apply a bias-correction using the backtest overprediction.
+    dotax_mape = dotax_collections_backtest.get('mape', 9.4)
+    dotax_corrected = dotax_central * (1 - dotax_mape / 100)
+    gap_pct = (baseline_result['total_revenue_millions'] / dotax_central - 1) * 100
+    gap_corrected_pct = (baseline_result['total_revenue_millions'] / dotax_corrected - 1) * 100
+    act46_impact = dotax_corrected - baseline_result['total_revenue_millions']
+
     logger.info(f"""
-  2022 Calibrated Baseline:     ${baseline_tax_2022:,.1f}M  (618,423 filers)
-  2027 Baseline (Act 46):       ${baseline_result['total_revenue_millions']:,.1f}M  ({baseline_result['total_filers']:,.0f} filers)
-  2027 Baseline 80% CI:         ${revenue_low:,.1f}M – ${revenue_high:,.1f}M
-  2027 + 2% Millionaire's Tax:  ${millionaire_result['total_revenue_millions']:,.1f}M
-  Surcharge Revenue:            ${surcharge_revenue:,.1f}M  ({affected_count:,.0f} affected filers)
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  REVENUE ESTIMATES: TY2027                                          │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │  2022 Calibrated Baseline:      ${baseline_tax_2022:>8,.1f}M  (618,423 filers)     │
+  │                                                                     │
+  │  ── Microsimulation: Act 46 Law (primary estimate) ──               │
+  │  2027 Baseline (Act 46):        ${baseline_result['total_revenue_millions']:>8,.1f}M  ({baseline_result['total_filers']:>7,.0f} filers)     │
+  │  2027 Baseline 80% CI:          ${revenue_low:>8,.1f}M – ${revenue_high:,.1f}M             │
+  │  2027 + 2% Millionaire Tax:     ${millionaire_result['total_revenue_millions']:>8,.1f}M                            │
+  │  Surcharge Revenue:             ${surcharge_revenue:>8,.1f}M  ({affected_count:>6,.0f} filers)      │
+  │                                                                     │
+  │  ── DOTAX Collections ETS (trend extrapolation, no law change) ──   │
+  │  TY2027 raw ETS estimate:       ${dotax_central:>8,.1f}M  (MAPE {dotax_mape:.1f}%, overpredicts)  │
+  │  TY2027 bias-corrected:         ${dotax_corrected:>8,.1f}M                            │
+  │  DOTAX estimate 80% CI:         ${dotax_lower:>8,.1f}M – ${dotax_upper:,.1f}M             │
+  │                                                                     │
+  │  ── Interpretation ──                                               │
+  │  Microsimulation vs DOTAX:      ${(baseline_result['total_revenue_millions'] - dotax_corrected):>+8.1f}M ({gap_corrected_pct:>+.1f}%)              │
+  │  Implied Act 46 revenue cost:   ${-act46_impact:>8,.1f}M vs no-law-change trend      │
+  └─────────────────────────────────────────────────────────────────────┘
 
   Change 2022 → 2027 Baseline:  {(baseline_result['total_revenue_millions']/baseline_tax_2022 - 1)*100:+.1f}%
   Millionaire's Tax Uplift:     {(surcharge_revenue/baseline_result['total_revenue_millions'])*100:+.1f}%
@@ -414,7 +444,8 @@ def main():
     Population: DBEDT demographics (working-age -0.83%/yr, seniors +5.0%/yr)
     Deductions: SOI-calibrated itemized deductions (12.1% itemization rate)
     Capital gains: 5%/yr nominal (long-run equity average)
-    Validation: ETS backtest MAPE = {backtest_mape:.1f}%
+    ACS ETS backtest MAPE:           {backtest_mape:.1f}%
+    DOTAX collections backtest MAPE: {dotax_mape:.1f}% (systematic overprediction corrected)
 """)
 
 

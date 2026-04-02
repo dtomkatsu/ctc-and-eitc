@@ -256,3 +256,120 @@ class ACSIncomeForecaster:
             return 0.04, 0.02, 0.06  # fallback defaults
         r = self._results['median_hh_income']
         return r['central_cagr'], r['lower_cagr'], r['upper_cagr']
+
+
+class DOTAXCollectionsForecaster:
+    """
+    ETS forecasting on DOTAX annual individual income tax collections (2016-2024).
+
+    Collections vs. liability distinction:
+        - Collections in calendar year X reflect primarily TY(X-1) filing (large April spike)
+          plus withholding for TY(X).
+        - The lag-adjustment ratio converts CY collections to TY liability.
+        - Ratio calibrated to TY2022 SOI liability ($3,029M) vs. CY2023 collections
+          ($3,385M, which mainly reflect TY2022 April filings): ratio ≈ 0.895.
+
+    Usage: fit on CY2016-2024, forecast CY2025-2028, apply ratio to estimate TY2027 liability.
+    """
+
+    # TY2022 SOI liability / CY2023 collections (CY(X+1) ≈ TY(X) returns)
+    COLLECTIONS_TO_LIABILITY_RATIO = 3_029 / 3_385  # ≈ 0.895
+
+    def __init__(self, project_root: Optional[Path] = None):
+        if project_root is None:
+            project_root = Path(__file__).parent.parent.parent
+        self.project_root = project_root
+        self._annual_collections: Optional[pd.Series] = None
+        self._forecaster: Optional[ETSForecaster] = None
+
+    def load_and_aggregate(self) -> 'DOTAXCollectionsForecaster':
+        """Load DOTAX collections CSV and compute annual individual income tax totals."""
+        csv_path = self.project_root / "data/raw/hawaii_tax_collections_2016_2025.csv"
+        if not csv_path.exists():
+            raise FileNotFoundError(f"DOTAX collections file not found: {csv_path}")
+
+        df = pd.read_csv(csv_path)
+        df['year'] = df['Year Month'].str.strip().str.split().str[-1].astype(int)
+        df['tax_type'] = df['Tax Type'].str.strip()
+
+        inc = df[df['tax_type'] == 'Individual Income'].copy()
+
+        # 2025 is partial (Jan-Sep only) — exclude it to avoid downward bias
+        annual = inc[inc['year'] < 2025].groupby('year')['Amount'].sum() / 1e6
+        self._annual_collections = annual
+
+        logger.info("  DOTAX Individual Income Tax Collections ($M):")
+        for yr, amt in annual.items():
+            logger.info(f"    {yr}: ${amt:,.1f}M")
+
+        return self
+
+    def fit(self) -> 'DOTAXCollectionsForecaster':
+        """Fit ETS on annual collections 2016-2024."""
+        if self._annual_collections is None:
+            self.load_and_aggregate()
+
+        years = self._annual_collections.index.values.astype(float)
+        values = self._annual_collections.values.astype(float)
+
+        self._forecaster = ETSForecaster(damped_trend=True)
+        self._forecaster.fit(values, years)
+        return self
+
+    def forecast_ty_liability(
+        self,
+        target_ty: int = 2027,
+    ) -> Tuple[float, float, float]:
+        """
+        Forecast TY liability for a given target tax year.
+
+        Since CY(X+1) collections ≈ TY(X) liability, we forecast CY(target_ty + 1)
+        and multiply by the collections-to-liability ratio.
+
+        Returns:
+            (central_estimate_M, lower_80_M, upper_80_M)
+        """
+        if self._forecaster is None:
+            self.fit()
+
+        last_year = int(self._annual_collections.index.max())
+        horizon = (target_ty + 1) - last_year  # e.g., 2027+1=2028; 2028-2024=4 steps
+
+        point, lower, upper = self._forecaster.forecast(horizon)
+
+        # The last forecast step corresponds to CY(target_ty + 1) collections
+        cy_central = point[-1]
+        cy_lower = lower[-1]
+        cy_upper = upper[-1]
+
+        r = self.COLLECTIONS_TO_LIABILITY_RATIO
+        ty_central = cy_central * r
+        ty_lower = cy_lower * r
+        ty_upper = cy_upper * r
+
+        # Also report the CAGR from last observed year to target CY
+        last_obs = self._annual_collections.iloc[-1]
+        cagr = (cy_central / last_obs) ** (1 / horizon) - 1
+
+        logger.info(f"\n  DOTAX Collections ETS forecast:")
+        logger.info(f"    Last observed (CY{last_year}): ${last_obs:,.1f}M")
+        logger.info(f"    Projected CY{target_ty + 1}: ${cy_central:,.1f}M "
+                     f"(80% CI: ${cy_lower:,.1f}M – ${cy_upper:,.1f}M)")
+        logger.info(f"    Implied CAGR ({last_year}→CY{target_ty+1}): {cagr:.1%}")
+        logger.info(f"    Collections-to-liability ratio: {r:.3f}")
+        logger.info(f"    → TY{target_ty} liability estimate: ${ty_central:,.1f}M "
+                     f"(80% CI: ${ty_lower:,.1f}M – ${ty_upper:,.1f}M)")
+
+        return ty_central, ty_lower, ty_upper
+
+    def backtest(self, holdout_years: int = 2) -> Dict[str, float]:
+        """Backtest ETS on held-out collections years."""
+        from .backtester import ForecastBacktester
+        if self._annual_collections is None:
+            self.load_and_aggregate()
+
+        values = self._annual_collections.values.astype(float)
+        years = self._annual_collections.index.values.astype(float)
+
+        backtester = ForecastBacktester(holdout_years=holdout_years)
+        return backtester.evaluate(values, years, series_name="DOTAX_collections")
