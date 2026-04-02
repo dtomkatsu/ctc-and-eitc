@@ -83,6 +83,23 @@ class TaxSystemRegistry:
         )
     
     @classmethod
+    def get_millionaire_tax_2027(cls, surcharge_rate: float = 0.02) -> TaxSystemConfig:
+        """Act 46 2027 + millionaire's tax surcharge on taxable income above $1M."""
+        return TaxSystemConfig(
+            name=f"millionaire_tax_2027_{surcharge_rate:.0%}",
+            year=2027,
+            bracket_year=2027,
+            standard_deduction_year=2027,
+            personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
+            description=f"Act 46 2027 + {surcharge_rate:.0%} surcharge on taxable income > $1M (all statuses)",
+            surcharges={
+                'Joint_Surviving_Spouse': {'threshold': 1_000_000, 'rate': surcharge_rate},
+                'Single_Married_Separate': {'threshold': 1_000_000, 'rate': surcharge_rate},
+                'Head_of_Household': {'threshold': 1_000_000, 'rate': surcharge_rate},
+            }
+        )
+
+    @classmethod
     def get_act46_rollback_targeted(cls, base_year: int = 2025) -> TaxSystemConfig:
         """Act 46 with targeted rollback increases (+0.25pp, +0.5pp, +1.0pp on top 5 brackets)."""
         return TaxSystemConfig(
