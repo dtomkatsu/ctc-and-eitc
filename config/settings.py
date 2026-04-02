@@ -1,7 +1,17 @@
 """Project configuration settings."""
 
-# Census API Key (register at https://api.census.gov/data/key_signup.html)
-CENSUS_API_KEY = "YOUR_CENSUS_API_KEY"
+import os
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except ImportError:
+    pass
+
+# API Keys (loaded from .env or environment)
+CENSUS_API_KEY = os.getenv("CENSUS_API_KEY", "YOUR_CENSUS_API_KEY")
+BEA_API_KEY = os.getenv("BEA_API_KEY", "")
 
 # Data years to analyze
 YEARS = [2020, 2021, 2022]  # Update with relevant years

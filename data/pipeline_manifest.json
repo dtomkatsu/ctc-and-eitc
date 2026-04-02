@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "sources": {
+    "bls_oes": {
+      "last_fetched": "2026-04-02T13:36:19.754291",
+      "files": [
+        "/Users/devinthomas/ctc-and-eitc/data/external/bls_oes/state_M2022_dl.xlsx",
+        "/Users/devinthomas/ctc-and-eitc/data/external/bls_oes/state_M2014_dl.xlsx",
+        "/Users/devinthomas/ctc-and-eitc/data/external/bls_oes/state_M2015_dl.xlsx"
+      ]
+    }
+  },
+  "last_run": "2026-04-02T13:36:19.754303"
+}
