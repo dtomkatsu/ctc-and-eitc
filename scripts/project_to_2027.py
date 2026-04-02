@@ -13,12 +13,13 @@ Income growth methodology:
     - Wages/SE (WAGP, SEMP): BLS OES bracket-specific nominal rates
         Years 1-2 (2022→2024): Observed rates
         Years 3-5 (2024→2027): Moderated to 70% of observed pace
-    - Interest (INTP): 3.5%/yr nominal
-    - Dividends (DIV): 4.5%/yr nominal
-    - Retirement (RETP): 3.0%/yr nominal
-    - Social Security (SSP): 2.5%/yr nominal (COLA average)
+    - Interest (INTP): 5.0%/yr nominal (BEA Hawaii, rate-cycle adjusted)
+    - Dividends (DIV): 5.0%/yr nominal (BEA Hawaii)
+    - Retirement (RETP): 3.5%/yr nominal
+    - Social Security (SSP): 3.8%/yr nominal (COLA compound 2022→2027)
     - Other income (OIP): 3.0%/yr nominal (inflation proxy)
-    - Capital gains: 5%/yr nominal (long-run equity average)
+    - Capital gains: 5%/yr nominal — tracked separately, NOT in regular income tax base
+      (income tax bracket changes and capital gains tax are separate policies)
 
 Population/weight adjustment:
     - Working-age (18-64): -0.83%/yr
@@ -320,51 +321,68 @@ def main():
     logger.info("STEP 6: MILLIONAIRE'S TAX 2027 (2% surcharge on taxable income > $1M)")
     logger.info("=" * 80)
 
-    millionaire_result = calculate_revenue_scenario(
-        tax_units, calculator, millionaire_2027, deduction_col='deduction_2027'
-    )
+    # Structure: regular income tax (on agi, ordinary income only) is unchanged from baseline.
+    # The 2% surcharge is calculated separately on TOTAL income (agi + capital gains).
+    # This correctly separates income tax policy from capital gains tax policy.
+    has_cg_col = 'agi_with_capital_gains' in tax_units.columns
+    logger.info(f"  Regular income tax base: agi (ordinary income, excl. capital gains)")
+    logger.info(f"  Surcharge base: {'agi + capital_gains' if has_cg_col else 'agi (no CG column)'}")
 
-    surcharge_revenue = millionaire_result['total_revenue_millions'] - baseline_result['total_revenue_millions']
+    surcharge_rate = 0.02
+    surcharge_threshold = 1_000_000
+    surcharge_total_m = 0.0
+    affected_count = 0.0
+    surcharge_by_status = {}
+
+    for _, row in tax_units.iterrows():
+        status = row['filing_status']
+        weight = row['weight']
+        num_ex = int(row.get('num_exemptions', 1))
+        ded = float(row.get('deduction_2027', 0)) if 'deduction_2027' in row.index else None
+
+        # Surcharge uses total income (including capital gains)
+        total_income = row['agi_with_capital_gains'] if has_cg_col else row['agi']
+        try:
+            std_ded = calculator.get_standard_deduction(baseline_2027.standard_deduction_year, status)
+            effective_ded = ded if ded is not None else std_ded
+            exemptions = num_ex * baseline_2027.personal_exemption
+            taxable_total = max(0.0, total_income - effective_ded - exemptions)
+        except Exception:
+            continue
+
+        if taxable_total > surcharge_threshold:
+            surcharge = (taxable_total - surcharge_threshold) * surcharge_rate
+            surcharge_total_m += surcharge * weight
+            affected_count += weight
+            surcharge_by_status[status] = surcharge_by_status.get(status, 0) + surcharge * weight
+
+    surcharge_total_m /= 1e6
+    millionaire_total_m = baseline_result['total_revenue_millions'] + surcharge_total_m
 
     logger.info(f"\n  Millionaire's Tax 2027 Revenue:")
-    logger.info(f"    Total revenue:      ${millionaire_result['total_revenue_millions']:,.1f}M")
-    logger.info(f"    Surcharge revenue:  ${surcharge_revenue:,.1f}M")
-    logger.info(f"    Avg tax per filer:  ${millionaire_result['average_tax_per_filer']:,.0f}")
-    logger.info(f"    Effective rate:     {millionaire_result['effective_rate']:.2f}%")
+    logger.info(f"    Regular income tax: ${baseline_result['total_revenue_millions']:,.1f}M")
+    logger.info(f"    Surcharge revenue:  ${surcharge_total_m:,.1f}M")
+    logger.info(f"    Total revenue:      ${millionaire_total_m:,.1f}M")
+
+    # Fake a result dict for the summary box
+    millionaire_result = {
+        'total_revenue_millions': millionaire_total_m,
+        'average_tax_per_filer': millionaire_total_m * 1e6 / baseline_result['total_filers'],
+        'effective_rate': millionaire_total_m * 1e6 / (baseline_result['average_income'] * baseline_result['total_filers']) * 100,
+    }
+    surcharge_revenue = surcharge_total_m
 
     # ===== STEP 7: SURCHARGE IMPACT ANALYSIS =====
     logger.info("\n" + "=" * 80)
     logger.info("STEP 7: SURCHARGE IMPACT ANALYSIS")
     logger.info("=" * 80)
 
-    affected_count = 0.0
-    affected_surcharge_total = 0.0
-    surcharge_by_status = {}
-
-    for _, row in tax_units.iterrows():
-        income = row['agi']
-        status = row['filing_status']
-        weight = row['weight']
-        num_ex = int(row.get('num_exemptions', 1))
-        ded = float(row.get('deduction_2027', 0)) if 'deduction_2027' in row.index else None
-
-        try:
-            result = calculator.calculate_tax(income, millionaire_2027, status, num_ex,
-                                              deduction_override=ded)
-        except Exception:
-            continue
-
-        surcharge = result.get('surcharge_amount', 0)
-        if surcharge > 0:
-            affected_count += weight
-            affected_surcharge_total += surcharge * weight
-            surcharge_by_status[status] = surcharge_by_status.get(status, 0) + surcharge * weight
-
+    # surcharge_by_status and affected_count already computed in Step 6
     logger.info(f"\n  Affected filers:    {affected_count:,.0f} "
                 f"({affected_count / tax_units['weight'].sum() * 100:.2f}%)")
-    logger.info(f"  Total surcharge:    ${affected_surcharge_total / 1e6:,.1f}M")
+    logger.info(f"  Total surcharge:    ${surcharge_total_m:,.1f}M")
     if affected_count > 0:
-        logger.info(f"  Avg surcharge:      ${affected_surcharge_total / affected_count:,.0f} per affected filer")
+        logger.info(f"  Avg surcharge:      ${surcharge_total_m * 1e6 / affected_count:,.0f} per affected filer")
 
     logger.info("\n  Surcharge by filing status:")
     for status, total in sorted(surcharge_by_status.items(), key=lambda x: -x[1]):

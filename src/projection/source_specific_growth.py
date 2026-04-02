@@ -151,13 +151,14 @@ class SourceSpecificGrowthProjector:
                 result[f'{col}_2027'] = grown
                 grown_total += grown
 
-        # Capital gains grow at market rate
+        # Capital gains grow at market rate — tracked separately from ordinary income.
+        # Capital gains are NOT added to agi because they are taxed under a separate
+        # tax policy (CG tax). Income tax bracket changes should only affect ordinary income.
         if 'capital_gains' in result.columns:
             cg_factor = (1 + self.cap_gains_rate) ** self.total_years
             result['capital_gains_2022'] = result['capital_gains'].copy()
             result['capital_gains'] = result['capital_gains'] * cg_factor
-            grown_total += result['capital_gains']
-            logger.info(f"  Capital gains: {self.cap_gains_rate:.1%}/yr → x{cg_factor:.3f}")
+            logger.info(f"  Capital gains: {self.cap_gains_rate:.1%}/yr → x{cg_factor:.3f} (tracked separately)")
 
         # Add dependent income (difference between original income and component sum)
         comp_cols = [f'{p}_{s}' for p in ['primary', 'secondary'] for s in all_sources
@@ -173,15 +174,12 @@ class SourceSpecificGrowthProjector:
         grown_dep_income = dependent_income * dep_factor
         grown_total += grown_dep_income
 
-        # Recompute AGI from grown components (excluding capital gains which are separate)
-        result['agi'] = grown_total - result['capital_gains']  # CG already in grown_total
-        # Actually, agi should include capital gains. Let me recalculate:
-        # AGI = sum of all grown income components (wage + non-wage + dependent + capital gains)
-        # But original agi = income - agi_adjustments, and income didn't include cap gains...
-        # Let's follow the same pattern as the original pipeline:
-        # agi was derived from income (which excluded cap gains) + capital gains
-        # So: agi_2027 = grown_non_cg_components + grown_cap_gains
+        # agi = ordinary income only (no capital gains). Consistent with 2022 baseline where
+        # agi excluded capital gains. Use agi_with_capital_gains for surcharges that apply
+        # to total income (e.g. millionaire's tax that covers all income sources).
         result['agi'] = grown_total
+        if 'capital_gains' in result.columns:
+            result['agi_with_capital_gains'] = grown_total + result['capital_gains']
 
         # Store growth factors for reporting
         result['income_growth_factor'] = np.where(
