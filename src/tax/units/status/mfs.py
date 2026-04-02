@@ -5,8 +5,11 @@ This module contains logic for determining if a taxpayer qualifies for
 Married Filing Separately status.
 """
 
+import logging
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 def is_married_filing_separately(
     person1: pd.Series, 
@@ -24,14 +27,14 @@ def is_married_filing_separately(
     Returns:
         bool: True if they should file separately
     """
-    print(f"MFS Check: Starting for persons with SERIALNO {person1.get('SERIALNO')} and {person2.get('SERIALNO')}")
+    logger.debug(f"MFS Check: Starting for persons with SERIALNO {person1.get('SERIALNO')} and {person2.get('SERIALNO')}")
     
     # Must be married to each other
     if not _are_married(person1, person2):
-        print(f"MFS Check: Not married to each other, returning False")
+        logger.debug(f"MFS Check: Not married to each other, returning False")
         return False
     
-    print(f"MFS Check: Confirmed married to each other")
+    logger.debug(f"MFS Check: Confirmed married to each other")
     
     # Get incomes
     income1 = _calculate_income(person1)
@@ -43,7 +46,7 @@ def is_married_filing_separately(
     # Made much more conservative to reduce MFS rate
     if income1 > 0 and income2 > 0:
         ratio = max(income1, income2) / min(income1, income2)
-        print(f"Income ratio check - income1: {income1}, income2: {income2}, ratio: {ratio}")
+        logger.debug(f"Income ratio check - income1: {income1}, income2: {income2}, ratio: {ratio}")
         
         # Relaxed threshold for income disparity
         # If income ratio is significant (10:1 or higher) and at least one earns a reasonable income
@@ -52,17 +55,17 @@ def is_married_filing_separately(
         
         # Case 1: More moderate income differences
         if ratio >= 5 and max_income > 50000 and min_income < 25000:
-            print(f"  Moderate income ratio {ratio:.1f}:1 (${max_income:,.0f} vs ${min_income:,.0f}), considering MFS")
+            logger.debug(f"  Moderate income ratio {ratio:.1f}:1 (${max_income:,.0f} vs ${min_income:,.0f}), considering MFS")
             return True
             
         # Case 2: High earner with moderate income difference
         if ratio >= 3 and max_income > 200000:
-            print(f"  Moderate earner (${max_income:,.0f}) with ratio {ratio:.1f}:1, considering MFS")
+            logger.debug(f"  Moderate earner (${max_income:,.0f}) with ratio {ratio:.1f}:1, considering MFS")
             return True
     
     # 2. More lenient business loss criteria
     if (income1 < -20000 and income2 > 50000) or (income2 < -20000 and income1 > 50000):
-        print(f"  Business loss detected (${income1:,.0f} vs ${income2:,.0f}), considering MFS")
+        logger.debug(f"  Business loss detected (${income1:,.0f} vs ${income2:,.0f}), considering MFS")
         return True
     
     # 3. More lenient disability criteria
@@ -71,33 +74,33 @@ def is_married_filing_separately(
             if person1.get('DIS') == 1 or person2.get('DIS') == 1:
                 # Lower income threshold for itemizing
                 if max(income1, income2) > 40000:
-                    print(f"  Disability status difference detected, considering MFS")
+                    logger.debug(f"  Disability status difference detected, considering MFS")
                     return True
     
     # 4. More lenient citizenship status criteria
     if 'CIT' in person1 and 'CIT' in person2:
         cit1 = person1.get('CIT', 0)
         cit2 = person2.get('CIT', 0)
-        print(f"Citizenship check - CIT1: {cit1}, CIT2: {cit2}")
+        logger.debug(f"Citizenship check - CIT1: {cit1}, CIT2: {cit2}")
         # Broader citizenship difference check
         if (cit1 >= 3 and cit2 < 3) or (cit2 >= 3 and cit1 < 3):
-            print(f"  Different citizenship status detected")
+            logger.debug(f"  Different citizenship status detected")
             if max(income1, income2) > 30000:  # Much lower income threshold
-                print(f"  Income threshold met, considering MFS")
+                logger.debug(f"  Income threshold met, considering MFS")
                 return True
     
     # 5. More lenient self-employment criteria
     semp1 = float(person1.get('SEMP', 0) or 0)
     semp2 = float(person2.get('SEMP', 0) or 0)
     if (abs(semp1) > 15000 and abs(semp2) < 5000) or (abs(semp2) > 15000 and abs(semp1) < 5000):
-        print(f"  Significant self-employment difference (${semp1:,.0f} vs ${semp2:,.0f}), considering MFS")
+        logger.debug(f"  Significant self-employment difference (${semp1:,.0f} vs ${semp2:,.0f}), considering MFS")
         return True
     
     # 6. More lenient investment income criteria
     intp1 = float(person1.get('INTP', 0) or 0)
     intp2 = float(person2.get('INTP', 0) or 0)
     if (intp1 > 5000 and intp2 < 2000) or (intp2 > 5000 and intp1 < 2000):
-        print(f"  Significant investment income difference (${intp1:,.0f} vs ${intp2:,.0f}), considering MFS")
+        logger.debug(f"  Significant investment income difference (${intp1:,.0f} vs ${intp2:,.0f}), considering MFS")
         return True
     
     # 7. Age difference suggesting different life stages/tax situations
@@ -126,13 +129,13 @@ def is_married_filing_separately(
     
     # If one spouse has Medicare and the other doesn't, consider MFS
     if hins1_1 != hins1_2:
-        print(f"MFS Check: Medicare coverage mismatch - Person1: {hins1_1}, Person2: {hins1_2}")
+        logger.debug(f"MFS Check: Medicare coverage mismatch - Person1: {hins1_1}, Person2: {hins1_2}")
         # Medicare coverage difference with income disparity suggests MFS
         if income1 != income2 and max(income1, income2) > 30000:
-            print("  Medicare coverage difference with income disparity, considering MFS")
+            logger.debug("  Medicare coverage difference with income disparity, considering MFS")
             return True
     
-    print(f"MFS Check: No MFS criteria met, returning False")
+    logger.debug(f"MFS Check: No MFS criteria met, returning False")
     return False
 
 def _are_married(person1: pd.Series, person2: pd.Series) -> bool:

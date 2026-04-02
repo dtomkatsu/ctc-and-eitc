@@ -21,6 +21,16 @@ import logging
 from datetime import datetime
 
 from src.tax.units.constructor import TaxUnitConstructor
+from src.tax.units.status.bracket_calibration import apply_bracket_calibration
+from src.tax.adjustments.agi_adjustments import apply_agi_adjustments_to_dataframe
+from src.tax.adjustments.itemized_deductions import ItemizedDeductionEstimator
+from src.tax.adjustments.ultra_high_income_synthesizer_v2 import UltraHighIncomeSynthesizerV2
+from src.tax.brackets import load_tax_data
+from src.tax.adjustments.capital_gains import apply_capital_gains_to_dataframe
+from src.tax.adjustments.pareto_calibration import ParetoIncomeCalibrator
+from src.tax.adjustments.income_distribution_calibrator import IncomeDistributionCalibrator
+from src.tax.adjustments.comprehensive_weight_calibrator import ComprehensiveWeightCalibrator
+from src.tax.calibration.simultaneous_calibrator import SimultaneousCalibrator
 
 # Configure logging
 logging.basicConfig(
@@ -88,6 +98,29 @@ def apply_filing_status_weight_calibration(df: pd.DataFrame, weight_col: str = '
     return df
 
 
+def _apply_tax_results(tax_units: pd.DataFrame, tax_results: pd.DataFrame) -> pd.DataFrame:
+    """
+    Merge calculator output into tax_units and promote hi_tax_tax_liability → hi_state_tax.
+
+    Raises ValueError if the calculator did not produce 'hi_tax_tax_liability', which
+    prevents silent zero-tax results from propagating through the rest of the pipeline.
+    """
+    for col in tax_results.columns:
+        tax_units[col] = tax_results[col]
+
+    if 'hi_tax_tax_liability' not in tax_units.columns:
+        raise ValueError(
+            "Tax calculator did not produce 'hi_tax_tax_liability'. "
+            "Check calculator configuration and filing_status_hawaii column for NaN values."
+        )
+    tax_units['hi_state_tax'] = tax_units['hi_tax_tax_liability']
+
+    if 'hi_tax_taxable_income' in tax_units.columns:
+        tax_units['hi_taxable_income'] = tax_units['hi_tax_taxable_income']
+
+    return tax_units
+
+
 def main(include_capital_gains: bool = True):
     """
     Main execution.
@@ -125,7 +158,6 @@ def main(include_capital_gains: bool = True):
     logger.info(f"\n✅ Created {len(tax_units):,} tax units (before calibration)")
     
     # Apply bracket-level SOI calibration
-    from src.tax.units.status.bracket_calibration import apply_bracket_calibration
     
     logger.info("\n🔧 Applying bracket-level SOI calibration to match DOTAX income distributions...")
     tax_units = apply_bracket_calibration(tax_units, weight_col='weight', method='factor')
@@ -137,8 +169,6 @@ def main(include_capital_gains: bool = True):
     logger.info(f"\n✅ Calibration complete - {len(tax_units):,} tax units")
     
     # Apply AGI adjustments and itemized deductions
-    from src.tax.adjustments.agi_adjustments import apply_agi_adjustments_to_dataframe
-    from src.tax.adjustments.itemized_deductions import ItemizedDeductionEstimator
     
     logger.info("\n🔧 Applying AGI adjustments...")
     tax_units = apply_agi_adjustments_to_dataframe(
@@ -147,19 +177,14 @@ def main(include_capital_gains: bool = True):
         filing_status_col='filing_status'
     )
     
-    # Ensure tax liability column exists for synthesizer calculations
-    if 'hi_state_tax' not in tax_units.columns:
-        tax_units['hi_state_tax'] = 0.0
+    # Placeholder so downstream column references don't crash before first tax calculation.
+    # This will be overwritten by every real tax calculation below.
+    tax_units['hi_state_tax'] = 0.0
 
     # First add ultra-high-income synthetic filers before AGI/capital gains calibration
     logger.info("\n💎 Step 2a: Ultra-high-income synthesis (before AGI calibration)...")
-    from src.tax.adjustments.ultra_high_income_synthesizer_v2 import UltraHighIncomeSynthesizerV2
     
-    # Use parameters calibrated from national IRS SOI 2022 data
-    ultra_synthesizer = UltraHighIncomeSynthesizerV2(
-        pareto_alpha=1.064,      # Calibrated from national IRS SOI data
-        tail_multiplier=0.58,    # Calibrated for $50M+ weight factor
-    )
+    ultra_synthesizer = UltraHighIncomeSynthesizerV2(pareto_alpha=1.5)
     tax_units = ultra_synthesizer.redistribute_within_million_plus(tax_units, target_tax_m=663.0)
     
     # Ensure synthetic units are marked for tracking
@@ -168,15 +193,16 @@ def main(include_capital_gains: bool = True):
     
     # Calculate taxes for synthetic units immediately after creation
     logger.info("\n💰 Step 2a.5: Calculate taxes for synthetic units...")
-    from src.tax.brackets import load_tax_data
     
     calculator = load_tax_data()
     filing_status_map = {
         'single': 'Single_Married_Separate',
         'married_filing_jointly': 'Joint_Surviving_Spouse',
+        'joint': 'Joint_Surviving_Spouse',          # legacy alias
         'married_filing_separately': 'Single_Married_Separate',
+        'married_filing_separate': 'Single_Married_Separate',  # legacy alias
         'head_of_household': 'Head_of_Household',
-        'qualifying_widow': 'Joint_Surviving_Spouse'
+        'qualifying_widow': 'Joint_Surviving_Spouse',
     }
     
     # Ensure filing_status_hawaii column exists for ALL units
@@ -191,14 +217,10 @@ def main(include_capital_gains: bool = True):
         year=2017
     )
     
-    # Update tax columns
-    for col in tax_results.columns:
-        tax_units[col] = tax_results[col]
-    
-    if 'hi_tax_tax_liability' in tax_units.columns:
-        tax_units['hi_state_tax'] = tax_units['hi_tax_tax_liability']
-    
-    synthetic_mask = tax_units.get('is_synthetic_ultra_high', False) == True
+    # Merge results; raises if calculator column is absent
+    tax_units = _apply_tax_results(tax_units, tax_results)
+
+    synthetic_mask = tax_units['is_synthetic_ultra_high'] == True
     synthetic_tax = (tax_units.loc[synthetic_mask, 'hi_state_tax'] * tax_units.loc[synthetic_mask, 'weight']).sum() / 1_000_000
     logger.info(f"   Synthetic ultra-high-income tax: ${synthetic_tax:,.1f}M")
     logger.info(f"   Total tax (all units): ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
@@ -224,6 +246,11 @@ def main(include_capital_gains: bool = True):
         )
         
         # Use AGI with capital gains as the primary AGI
+        if 'agi_with_cap_gains' not in tax_units.columns:
+            raise ValueError(
+                "'agi_with_cap_gains' was not produced by apply_capital_gains_to_dataframe(). "
+                "Check the capital gains module for errors."
+            )
         tax_units['agi'] = tax_units['agi_with_cap_gains']
         
         # Log summary statistics
@@ -244,14 +271,10 @@ def main(include_capital_gains: bool = True):
             year=2017
         )
         
-        # Update tax columns
-        for col in tax_results.columns:
-            tax_units[col] = tax_results[col]
-        
-        if 'hi_tax_tax_liability' in tax_units.columns:
-            tax_units['hi_state_tax'] = tax_units['hi_tax_tax_liability']
-        
-        synthetic_mask = tax_units.get('is_synthetic_ultra_high', False) == True
+        # Merge results; raises if calculator column is absent
+        tax_units = _apply_tax_results(tax_units, tax_results)
+
+        synthetic_mask = tax_units['is_synthetic_ultra_high'] == True
         synthetic_tax = (tax_units.loc[synthetic_mask, 'hi_state_tax'] * tax_units.loc[synthetic_mask, 'weight']).sum() / 1_000_000
         logger.info(f"   Synthetic ultra-high-income tax (after cap gains): ${synthetic_tax:,.1f}M")
         logger.info(f"   Total tax (all units, after cap gains): ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
@@ -289,258 +312,44 @@ def main(include_capital_gains: bool = True):
     tax_units['total_deductions'] = itemized_deductions
     
     # =========================================================================
-    # HYBRID CALIBRATION: STRUCTURAL BASE CORRECTION (Sequential Method)
+    # CALIBRATION
     # =========================================================================
-    
-    logger.info("\n" + "="*80)
-    logger.info("COMPLETE SEQUENTIAL CALIBRATION (All 5 Components)")
-    logger.info("="*80)
-    logger.info("Implementing the full sequential method that achieved -18.8% gap:")
-    logger.info("  1. Comprehensive bracket calibration (filer counts)")
-    logger.info("  2. Income distribution calibration (effective rates)")
-    logger.info("  3. Weight calibration (low/middle income fine-tuning)")
-    logger.info("  4. Ultra-high-income synthesis ($1M+ redistribution)")
-    logger.info("  5. Final gap closer (targeted adjustments)")
-    logger.info("  6. Itemized deduction reduction (already applied)")
-    
-    # 1. Comprehensive Bracket Calibration (ALL AGI brackets, not just high-income)
-    logger.info("\n📊 Step 1: Comprehensive bracket calibration (ALL AGI brackets)...")
-    from src.tax.adjustments.pareto_calibration import ParetoIncomeCalibrator
-    
-    pareto_calibrator = ParetoIncomeCalibrator(threshold=400000, target_alpha=1.454)
-    tax_units = pareto_calibrator.calibrate(tax_units, add_synthetic=False, calibrate_all_brackets=False)
-    
-    logger.info(f"   High-income filers ($200k+): {(tax_units['agi'] >= 200000).sum():,} units")
-    logger.info(f"   Weighted count: {tax_units[tax_units['agi'] >= 200000]['weight'].sum():,.0f}")
-    
-    # 2. Calculate initial taxes (needed for income distribution calibration)
-    logger.info("\n💰 Step 2: Calculate initial taxes (for income calibration baseline)...")
-    from src.tax.brackets import load_tax_data
-    
+    #
+    # Calculate taxes once with deductions already applied, then calibrate
+    # weights and tax amounts simultaneously against DOTAX targets.
+
+    # --- Calculate taxes (includes deductions) for all units ---
+    logger.info("\n💰 Calculating taxes for all units (pre-calibration)...")
+
     calculator = load_tax_data()
     filing_status_map = {
         'single': 'Single_Married_Separate',
         'married_filing_jointly': 'Joint_Surviving_Spouse',
+        'joint': 'Joint_Surviving_Spouse',          # legacy alias
         'married_filing_separately': 'Single_Married_Separate',
+        'married_filing_separate': 'Single_Married_Separate',  # legacy alias
         'head_of_household': 'Head_of_Household',
-        'qualifying_widow': 'Joint_Surviving_Spouse'
+        'qualifying_widow': 'Joint_Surviving_Spouse',
     }
     tax_units['filing_status_hawaii'] = tax_units['filing_status'].map(filing_status_map)
-    
+
     tax_results = calculator.calculate_tax_for_dataframe(
         tax_units,
         income_col='agi',
         filing_status_col='filing_status_hawaii',
         year=2017  # Use 2017 rates to match $3,029M benchmark
     )
-    
-    # Merge tax results
-    for col in tax_results.columns:
-        tax_units[col] = tax_results[col]
-    
-    # Map tax calculator columns to expected names
-    if 'hi_tax_tax_liability' in tax_units.columns:
-        tax_units['hi_state_tax'] = tax_units['hi_tax_tax_liability']
-    if 'hi_tax_taxable_income' in tax_units.columns:
-        tax_units['hi_taxable_income'] = tax_units['hi_tax_taxable_income']
-    
-    logger.info(f"   Initial total tax: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
-    
-    # 3. Income Distribution Calibration (AGI targets first, then optional effective rates)
-    logger.info("\n📈 Step 3: Income distribution calibration (AGI targets + optional effective rates)...")
-    from src.tax.adjustments.income_distribution_calibrator import IncomeDistributionCalibrator
-    
-    # Test both approaches: AGI-only vs AGI + effective rates
-    income_calibrator = IncomeDistributionCalibrator(threshold=100000, calibrate_agi_first=True)
-    tax_units = income_calibrator.calibrate(
-        tax_units,
-        recalculate_tax=False,  # We'll recalculate ourselves with our tax calculator
-        method='percentile',
-        apply_effective_rate_calibration=False  # Start with AGI-only to test accuracy
-    )
-    
-    logger.info(f"   Mean AGI after income shifting: ${tax_units['agi'].mean():,.0f}")
-    logger.info(f"   Median AGI after income shifting: ${tax_units['agi'].median():,.0f}")
-    
-    # Recalculate taxes after income distribution changes
-    logger.info("\n💰 Recalculating taxes after income distribution calibration...")
-    tax_results = calculator.calculate_tax_for_dataframe(
-        tax_units,
-        income_col='agi',
-        filing_status_col='filing_status_hawaii',
-        year=2017  # Use 2017 rates to match $3,029M benchmark
-    )
-    
-    # Merge updated tax results
-    for col in tax_results.columns:
-        tax_units[col] = tax_results[col]
-    
-    if 'hi_tax_tax_liability' in tax_units.columns:
-        tax_units['hi_state_tax'] = tax_results['hi_tax_tax_liability']
-    
-    logger.info(f"   Total tax after income calibration: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
-    
-    # 4. Weight Calibration (Low/Middle Income) - MISSING FROM PREVIOUS ATTEMPTS
-    logger.info("\n⚖️ Step 4: Weight calibration for low/middle income brackets...")
-    from src.tax.adjustments.comprehensive_weight_calibrator import ComprehensiveWeightCalibrator
-    
-    # Apply weight calibration to low/middle income brackets only (high-income already calibrated)
-    weight_calibrator = ComprehensiveWeightCalibrator(apply_to_all=False)  # Skip high-income brackets
-    tax_units = weight_calibrator.calibrate(tax_units)
-    
-    # Recalculate taxes after weight changes
-    logger.info("\n💰 Recalculating taxes after weight calibration...")
-    tax_results = calculator.calculate_tax_for_dataframe(
-        tax_units,
-        income_col='agi',
-        filing_status_col='filing_status_hawaii',
-        year=2017  # Use 2017 rates to match $3,029M benchmark
-    )
-    
-    # Merge updated tax results
-    for col in tax_results.columns:
-        tax_units[col] = tax_results[col]
-    
-    if 'hi_tax_tax_liability' in tax_units.columns:
-        tax_units['hi_state_tax'] = tax_results['hi_tax_tax_liability']
-    
-    logger.info(f"   Total tax after weight calibration: ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
-    
-    # Step 5: Ultra-high-income synthesis already completed in Step 2a
-    logger.info("\n💎 Step 5: Ultra-high-income synthesis (already completed in Step 2a)...")
-    logger.info("   Synthetic units already added and included in AGI calibration")
-    
-    # 6. Final Gap Closer (targeted adjustments)
-    logger.info("\n🎯 Step 6: Final gap closer (targeted adjustments)...")
-    logger.info("   Skipping final gap closer to preserve high-income calibration focus")
-    
-    # 7. Deduction reduction already applied via ItemizedDeductionEstimator
-    logger.info("\n✅ Step 7: Itemized deductions already reduced (via ItemizedDeductionEstimator)")
-    
-    logger.info("\n" + "="*80)
-    logger.info("Structural corrections complete. Taxes calculated on corrected base.")
-    logger.info("="*80)
-    
-    logger.info(f"  Total tax liability (before IPF): ${(tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000:,.1f}M")
-    logger.info(f"  Average tax per unit: ${tax_units['hi_state_tax'].mean():,.2f}")
-    logger.info(f"  Target: $3,029.0M")
-    
-    base_tax_gap = ((tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000 - 3029) / 3029 * 100
-    logger.info(f"  Gap before IPF: {base_tax_gap:+.1f}% (structural corrections applied)")
-    
-    # =========================================================================
-    # STRUCTURAL-ONLY APPROACH (Skip IPF to Preserve Calibration Benefits)
-    # =========================================================================
-    
-    logger.info("\n" + "="*80)
-    logger.info("COMPLETE SEQUENTIAL CALIBRATION RESULTS")
-    logger.info("="*80)
-    logger.info("Applied all 6 components of the sequential method that achieved -18.8% gap:")
-    logger.info("✅ 1. Comprehensive bracket calibration (perfect filer count matches)")
-    logger.info("✅ 2. Income distribution calibration (effective rate targeting)")
-    logger.info("✅ 3. Weight calibration (low/middle income fine-tuning)")
-    logger.info("✅ 4. Ultra-high-income synthesis ($1M+ redistribution)")
-    logger.info("✅ 5. Final gap closer (targeted adjustments)")
-    logger.info("✅ 6. Itemized deduction reduction (applied earlier)")
-    logger.info(f"\nFinal tax gap: {base_tax_gap:+.1f}% (target: -18.8% from sequential method)")
-    logger.info("Skipping IPF to preserve these sequential calibration improvements.")
-    
-    # No IPF - use taxes as calculated after structural corrections
-    logger.info(f"\n✅ FINAL STRUCTURAL-ONLY RESULTS:")
-    final_tax = (tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000
-    
-    final_gap = (final_tax - 3029) / 3029 * 100
-    logger.info(f"  Final gap: {final_gap:+.1f}%")
-    logger.info(f"  Improvement from base: {base_tax_gap - final_gap:+.1f} percentage points")
-    
-    logger.info("\n" + "="*80)
-    logger.info("Hybrid calibration complete!")
-    logger.info("="*80)
-    
-    # Apply deduction adjustments to reduce tax liability
-    logger.info("\n📉 Applying deduction-based tax reductions...")
-    
-    # Calculate effective deduction benefit (amount above standard deduction)
-    # CORRECTED 2022 Hawaii standard deductions
-    standard_amounts = {
-        'single': 2200,
-        'married_filing_jointly': 4400,
-        'married_filing_separately': 2200,
-        'head_of_household': 3212,
-        'qualifying_widow': 4400
-    }
-    
-    tax_units['standard_deduction_amount'] = tax_units['filing_status'].map(standard_amounts)
-    tax_units['deduction_benefit'] = tax_units['total_deductions'] - tax_units['standard_deduction_amount']
-    tax_units['deduction_benefit'] = tax_units['deduction_benefit'].clip(lower=0)
-    
-    # Apply marginal tax rate to deduction benefit to get tax reduction
-    # Use approximate marginal rates by income bracket
-    def get_marginal_rate(agi, filing_status):
-        if agi < 2400:
-            return 0.014
-        elif agi < 4800:
-            return 0.032
-        elif agi < 9600:
-            return 0.055
-        elif agi < 14400:
-            return 0.064
-        elif agi < 19200:
-            return 0.068
-        elif agi < 24000:
-            return 0.072
-        elif agi < 36000:
-            return 0.076
-        elif agi < 48000:
-            return 0.079
-        else:
-            return 0.0825
-    
-    tax_units['marginal_rate'] = tax_units.apply(
-        lambda row: get_marginal_rate(row.get('agi', row.get('income', 0)), row['filing_status']),
-        axis=1
-    )
-    
-    tax_units['deduction_tax_savings'] = tax_units['deduction_benefit'] * tax_units['marginal_rate']
-    
-    # Apply AGI adjustment tax savings (similar calculation)
-    tax_units['agi_adjustment_savings'] = tax_units.get('agi_adjustments', 0) * tax_units['marginal_rate']
-    
-    # Reduce Hawaii tax by total savings (preserve synthetic filers)
-    tax_units['hi_state_tax_adjusted'] = (
-        tax_units['hi_state_tax'] - 
-        tax_units['deduction_tax_savings'] - 
-        tax_units['agi_adjustment_savings']
-    ).clip(lower=0)
-    
-    # Use adjusted tax as the final tax, but preserve synthetic filer taxes
-    if 'is_synthetic_ultra_high' in tax_units.columns:
-        synthetic_mask = tax_units['is_synthetic_ultra_high'] == True
-        if synthetic_mask.any():
-            logger.info(f"  Preserving taxes for {synthetic_mask.sum()} synthetic filers during deduction adjustments")
-            # Only apply adjustments to non-synthetic filers
-            non_synthetic_mask = ~synthetic_mask
-            tax_units.loc[non_synthetic_mask, 'hi_state_tax'] = tax_units.loc[non_synthetic_mask, 'hi_state_tax_adjusted']
-        else:
-            tax_units['hi_state_tax'] = tax_units['hi_state_tax_adjusted']
-    else:
-        tax_units['hi_state_tax'] = tax_units['hi_state_tax_adjusted']
-    
-    logger.info(f"  Average deduction benefit: ${tax_units['deduction_benefit'].mean():.0f}")
-    logger.info(f"  Average AGI adjustment: ${tax_units.get('agi_adjustments', pd.Series([0])).mean():.0f}")
-    logger.info(f"  Average tax reduction: ${(tax_units['deduction_tax_savings'] + tax_units['agi_adjustment_savings']).mean():.0f}")
-    
+    tax_units = _apply_tax_results(tax_units, tax_results)
+
+    pre_cal_tax = (tax_units['hi_state_tax'] * tax_units['weight']).sum() / 1_000_000
+    logger.info(f"  Pre-calibration total tax: ${pre_cal_tax:,.1f}M  (target: $3,029M)")
+
+    # --- Simultaneous two-phase calibration ---
+    calibrator = SimultaneousCalibrator()
+    tax_units = calibrator.calibrate(tax_units)
+
     # Determine weight column
     weight_col = 'weight' if 'weight' in tax_units.columns else 'PWGTP'
-
-    # SKIP filing status weight calibration - the Oct 27 calibrated file already has excellent distribution
-    # (Single 53.1%, Joint 34.1%, HoH 10.6%, MFS 2.2% - all within 2.1pp of targets)
-    # Applying additional calibration would artificially reduce total filers from 635k to 585k
-    logger.info("\n⚠️  SKIPPING filing status weight calibration")
-    logger.info("    Tax unit construction already produces distribution close to DOTAX targets")
-    if False:  # Set to True to re-enable if needed
-        logger.info("\n🎯 Applying filing status weight calibration to match DOTAX benchmarks...")
-        tax_units = apply_filing_status_weight_calibration(tax_units, weight_col=weight_col)
 
     # Analyze filing status distribution
     logger.info("\n" + "="*80)
@@ -577,10 +386,20 @@ def main(include_capital_gains: bool = True):
     
     logger.info(f"\nSaving to: {output_file}")
     
-    # Fix parquet serialization: convert all object columns to string to avoid mixed-type issues
+    # Fix parquet serialization: convert mixed-type object columns to string, but skip
+    # list/dict columns (e.g. 'dependents') because astype(str) would turn them into
+    # a literal string representation "['id1', 'id2']" that can't be deserialized.
     for col in tax_units.columns:
-        if tax_units[col].dtype == 'object':
-            tax_units[col] = tax_units[col].astype(str)
+        if tax_units[col].dtype != 'object':
+            continue
+        sample = tax_units[col].dropna()
+        if sample.empty:
+            continue
+        first_val = sample.iloc[0]
+        if isinstance(first_val, (list, dict)):
+            # Leave list/dict columns as-is; PyArrow handles them natively
+            continue
+        tax_units[col] = tax_units[col].astype(str)
     
     tax_units.to_parquet(output_file, index=False)
     

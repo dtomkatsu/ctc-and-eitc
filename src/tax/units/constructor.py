@@ -611,7 +611,7 @@ class TaxUnitConstructor:
                     hh_group, 
                     hh_data, 
                     list(deps), 
-                    filing_status='married_filing_separate'
+                    filing_status='married_filing_separately'
                 )
                 
                 if tax_unit:
@@ -741,7 +741,7 @@ class TaxUnitConstructor:
             def get_priority(tax_unit):
                 status = tax_unit.get('filing_status', '')
                 # Priority 0: Married couples (joint or MFS) - must keep these!
-                if status in ['married_filing_jointly', 'married_filing_separate']:
+                if status in ['married_filing_jointly', 'married_filing_separately']:
                     return 0
                 # Priority 1: Head of household (has dependents)
                 elif status == 'head_of_household':
@@ -1163,13 +1163,13 @@ class TaxUnitConstructor:
         
         # Calculate hybrid weight
         hh_weight = float(hh_data.get('WGTP', 1.0))
-        hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, 'joint')
-        
+        hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, 'married_filing_jointly')
+
         # Create tax unit with proper string IDs and include hybrid weight and geographic info
         tax_unit = {
             'filer_id': f"{hh_data['SERIALNO']}_joint_{adult1.name}_{adult2.name}",
             'SERIALNO': str(hh_data['SERIALNO']),  # Ensure SERIALNO is string
-            'filing_status': 'joint',
+            'filing_status': 'married_filing_jointly',
             'primary_filer_id': str(adult1.name),   # Convert to string
             'secondary_filer_id': str(adult2.name), # Convert to string
             'income': income,
@@ -1242,12 +1242,10 @@ class TaxUnitConstructor:
         # These factors adjust for PUMS sampling limitations and ensure accurate filing status distribution
         # Note: After fixing weight calculation bug, these are recalibrated
         calibration_factors = {
-            'single': 0.85,                       # Slightly reduce singles
-            'joint': 1.0,                         # No adjustment needed after weight fix
-            'married_filing_jointly': 1.0,        # No adjustment needed after weight fix
-            'head_of_household': 1.88,            # PUMS severely undersamples single-parent HHs
-            'married_filing_separate': 1.05,      # Slight increase
-            'married_filing_separately': 1.05     # Slight increase
+            'single': 0.85,
+            'married_filing_jointly': 1.0,
+            'head_of_household': 1.88,
+            'married_filing_separately': 1.05,
         }
         
         adjustment = calibration_factors.get(filing_status, 1.0)
@@ -1296,13 +1294,13 @@ class TaxUnitConstructor:
         
         # Calculate hybrid weight
         hh_weight = float(hh_data.get('WGTP', 1.0))
-        hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, 'joint')
-        
+        hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, 'married_filing_jointly')
+
         # Create tax unit with proper string IDs and include hybrid weight and geographic info
         tax_unit = {
             'filer_id': f"{hh_data['SERIALNO']}_joint_{adult1.name}_{adult2.name}",
             'SERIALNO': str(hh_data['SERIALNO']),  # Ensure SERIALNO is string
-            'filing_status': 'joint',
+            'filing_status': 'married_filing_jointly',
             'primary_filer_id': str(adult1.name),   # Convert to string
             'secondary_filer_id': str(adult2.name), # Convert to string
             'income': income,

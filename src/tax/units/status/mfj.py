@@ -5,8 +5,11 @@ This module contains logic for determining if a taxpayer qualifies for
 Married Filing Jointly status.
 """
 
+import logging
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 def is_married_filing_jointly(
     person1: pd.Series, 
@@ -24,38 +27,38 @@ def is_married_filing_jointly(
     Returns:
         bool: True if they qualify to file jointly
     """
-    print(f"\nChecking if {person1.name} and {person2.name} can file jointly")
-    print(f"  person1: MAR={person1.get('MAR')}, RELSHIPP={person1.get('RELSHIPP')}, CIT={person1.get('CIT')}")
-    print(f"  person2: MAR={person2.get('MAR')}, RELSHIPP={person2.get('RELSHIPP')}, CIT={person2.get('CIT')}")
+    logger.debug(f"\nChecking if {person1.name} and {person2.name} can file jointly")
+    logger.debug(f"  person1: MAR={person1.get('MAR')}, RELSHIPP={person1.get('RELSHIPP')}, CIT={person1.get('CIT')}")
+    logger.debug(f"  person2: MAR={person2.get('MAR')}, RELSHIPP={person2.get('RELSHIPP')}, CIT={person2.get('CIT')}")
     
     # Both must be married to each other
     if not _are_married(person1, person2):
-        print("  Not married to each other")
+        logger.debug("  Not married to each other")
         return False
-        
+
     # Neither can be claimed as a dependent
     if person1.get('is_dependent', False) or person2.get('is_dependent', False):
-        print("  One or both are dependents")
+        logger.debug("  One or both are dependents")
         return False
         
     # Must be married on the last day of the year
     # (simplified - would need actual date data for full accuracy)
     if person1.get('MAR') != 1 or person2.get('MAR') != 1:  # 1 = Married, spouse present
-        print(f"  Not married on last day of year: MAR1={person1.get('MAR')}, MAR2={person2.get('MAR')}")
+        logger.debug(f"  Not married on last day of year: MAR1={person1.get('MAR')}, MAR2={person2.get('MAR')}")
         return False
         
     # Must be US citizens or resident aliens
     if not _are_citizens_or_residents(person1, person2):
-        print(f"  Not both citizens/residents: CIT1={person1.get('CIT')}, CIT2={person2.get('CIT')}")
+        logger.debug(f"  Not both citizens/residents: CIT1={person1.get('CIT')}, CIT2={person2.get('CIT')}")
         return False
         
     # Must not be married to someone else
     if _is_married_to_someone_else(person1, person2, person_data) or \
        _is_married_to_someone_else(person2, person1, person_data):
-        print("  One or both are married to someone else")
+        logger.debug("  One or both are married to someone else")
         return False
-        
-    print("  Qualify to file jointly")
+
+    logger.debug("  Qualify to file jointly")
     return True
 
 def _are_married(person1: pd.Series, person2: pd.Series) -> bool:
