@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 # Import modular components
 from .status import is_married_filing_jointly, is_married_filing_separately, is_head_of_household
-from .income import calculate_tax_unit_income
+from .income import calculate_tax_unit_income, extract_person_income_components
 from .dependencies import identify_dependents
 from .utils import setup_logging, validate_input_data, create_person_id
 from .fixes import apply_overcounting_fixes
@@ -1165,6 +1165,10 @@ class TaxUnitConstructor:
         hh_weight = float(hh_data.get('WGTP', 1.0))
         hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, 'married_filing_jointly')
 
+        # Extract per-filer income components for source-specific growth projections
+        p1 = extract_person_income_components(adult1)
+        p2 = extract_person_income_components(adult2)
+
         # Create tax unit with proper string IDs and include hybrid weight and geographic info
         tax_unit = {
             'filer_id': f"{hh_data['SERIALNO']}_joint_{adult1.name}_{adult2.name}",
@@ -1180,9 +1184,19 @@ class TaxUnitConstructor:
             'hh_weight': hh_weight,   # Store original household weight for reference
             'person_weight_sum': sum(person_weights),  # Store sum of person weights for reference
             'PUMA': hh_data.get('PUMA'),  # Add PUMA code for geographic analysis
-            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA'))  # Handle both PUMA and PUMA10 fields
+            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA')),  # Handle both PUMA and PUMA10 fields
+            # Primary filer income components
+            'primary_wagp': p1['wagp'], 'primary_semp': p1['semp'],
+            'primary_intp': p1['intp'], 'primary_div': p1['div'],
+            'primary_retp': p1['retp'], 'primary_ssp': p1['ssp'],
+            'primary_oip': p1['oip'], 'primary_agep': p1['agep'],
+            # Secondary filer income components
+            'secondary_wagp': p2['wagp'], 'secondary_semp': p2['semp'],
+            'secondary_intp': p2['intp'], 'secondary_div': p2['div'],
+            'secondary_retp': p2['retp'], 'secondary_ssp': p2['ssp'],
+            'secondary_oip': p2['oip'], 'secondary_agep': p2['agep'],
         }
-        
+
         logger.debug(f"Created joint tax unit: {tax_unit}")
         return tax_unit
 
@@ -1296,6 +1310,10 @@ class TaxUnitConstructor:
         hh_weight = float(hh_data.get('WGTP', 1.0))
         hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, 'married_filing_jointly')
 
+        # Extract per-filer income components for source-specific growth projections
+        p1 = extract_person_income_components(adult1)
+        p2 = extract_person_income_components(adult2)
+
         # Create tax unit with proper string IDs and include hybrid weight and geographic info
         tax_unit = {
             'filer_id': f"{hh_data['SERIALNO']}_joint_{adult1.name}_{adult2.name}",
@@ -1311,9 +1329,19 @@ class TaxUnitConstructor:
             'hh_weight': hh_weight,   # Store original household weight for reference
             'person_weight_sum': sum(person_weights),  # Store sum of person weights for reference
             'PUMA': hh_data.get('PUMA'),  # Add PUMA code for geographic analysis
-            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA'))  # Handle both PUMA and PUMA10 fields
+            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA')),  # Handle both PUMA and PUMA10 fields
+            # Primary filer income components
+            'primary_wagp': p1['wagp'], 'primary_semp': p1['semp'],
+            'primary_intp': p1['intp'], 'primary_div': p1['div'],
+            'primary_retp': p1['retp'], 'primary_ssp': p1['ssp'],
+            'primary_oip': p1['oip'], 'primary_agep': p1['agep'],
+            # Secondary filer income components
+            'secondary_wagp': p2['wagp'], 'secondary_semp': p2['semp'],
+            'secondary_intp': p2['intp'], 'secondary_div': p2['div'],
+            'secondary_retp': p2['retp'], 'secondary_ssp': p2['ssp'],
+            'secondary_oip': p2['oip'], 'secondary_agep': p2['agep'],
         }
-        
+
         logger.debug(f"Created joint tax unit: {tax_unit}")
         return tax_unit
 
@@ -1464,7 +1492,10 @@ class TaxUnitConstructor:
         # Calculate hybrid weight
         hh_weight = float(hh_data.get('WGTP', 1.0))
         hybrid_weight = self._calculate_hybrid_weight(hh_weight, person_weights, filing_status)
-        
+
+        # Extract primary filer income components for source-specific growth projections
+        p1 = extract_person_income_components(adult)
+
         # Create tax unit with hybrid weight and geographic info
         tax_unit = {
             'filer_id': f"{hh_data.get('SERIALNO', '')}_{filing_status}_{adult.name}",
@@ -1479,8 +1510,18 @@ class TaxUnitConstructor:
             'hh_weight': hh_weight,
             'person_weight_sum': sum(person_weights),
             'PUMA': hh_data.get('PUMA'),  # Add PUMA code for geographic analysis
-            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA'))  # Handle both PUMA and PUMA10 fields
+            'PUMA10': hh_data.get('PUMA10', hh_data.get('PUMA')),  # Handle both PUMA and PUMA10 fields
+            # Primary filer income components
+            'primary_wagp': p1['wagp'], 'primary_semp': p1['semp'],
+            'primary_intp': p1['intp'], 'primary_div': p1['div'],
+            'primary_retp': p1['retp'], 'primary_ssp': p1['ssp'],
+            'primary_oip': p1['oip'], 'primary_agep': p1['agep'],
+            # Secondary filer (none for single filers — zero for uniform schema)
+            'secondary_wagp': 0.0, 'secondary_semp': 0.0,
+            'secondary_intp': 0.0, 'secondary_div': 0.0,
+            'secondary_retp': 0.0, 'secondary_ssp': 0.0,
+            'secondary_oip': 0.0, 'secondary_agep': 0,
         }
-        
+
         logger.debug(f"Created tax unit: {tax_unit}")
         return tax_unit

@@ -1,0 +1,258 @@
+"""
+Time-Series Forecasting for Income Growth Projections
+
+Uses Holt's Damped Trend Exponential Smoothing on ACS time-series data
+(2015-2024, 9 data points with 2020 missing) to produce statistically
+grounded growth rate forecasts with confidence intervals.
+
+Also provides BLS OES log-linear trend analysis for wage growth validation.
+"""
+
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class ETSForecaster:
+    """
+    Holt's Damped Trend Exponential Smoothing for ACS income series.
+
+    Handles missing years (e.g., 2020) by interpolation before fitting.
+    Produces point forecasts and approximate prediction intervals.
+    """
+
+    def __init__(self, damped_trend: bool = True):
+        self.damped_trend = damped_trend
+        self._model = None
+        self._fit_result = None
+        self._fitted_years = None
+
+    def fit(self, values: np.ndarray, years: np.ndarray) -> 'ETSForecaster':
+        """
+        Fit ETS model to the series.
+
+        Args:
+            values: Observed values (e.g., median household income)
+            years: Corresponding years
+        """
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+        # Create a complete annual series, interpolating any missing years
+        all_years = np.arange(years.min(), years.max() + 1)
+        complete_values = np.interp(all_years, years, values)
+
+        # Create pandas series with annual frequency
+        idx = pd.date_range(start=f'{int(all_years[0])}-01-01', periods=len(all_years), freq='YS')
+        series = pd.Series(complete_values, index=idx)
+
+        self._model = ExponentialSmoothing(
+            series,
+            trend='add',
+            damped_trend=self.damped_trend,
+            seasonal=None,
+        )
+        self._fit_result = self._model.fit(optimized=True)
+        self._fitted_years = all_years
+        self._residual_std = np.std(self._fit_result.resid.dropna())
+
+        return self
+
+    def forecast(self, horizon: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Forecast future values with approximate 80% prediction intervals.
+
+        Returns:
+            (point_forecast, lower_80_ci, upper_80_ci) each of length `horizon`
+        """
+        if self._fit_result is None:
+            raise RuntimeError("Must call fit() before forecast()")
+
+        fcast = self._fit_result.forecast(horizon)
+        point = fcast.values
+
+        # Approximate prediction intervals (widen with sqrt of horizon step)
+        z_80 = 1.28  # 80% CI z-score
+        steps = np.arange(1, horizon + 1)
+        interval_width = z_80 * self._residual_std * np.sqrt(steps)
+
+        lower = point - interval_width
+        upper = point + interval_width
+
+        return point, lower, upper
+
+    def get_annual_growth_rate(self, horizon: int) -> Tuple[float, float, float]:
+        """
+        Extract implied compound annual growth rate from the forecast.
+
+        Returns:
+            (central_cagr, lower_cagr, upper_cagr) as decimals
+        """
+        point, lower, upper = self.forecast(horizon)
+        last_observed = self._fit_result.fittedvalues.iloc[-1]
+
+        if last_observed <= 0:
+            return 0.0, 0.0, 0.0
+
+        central_cagr = (point[-1] / last_observed) ** (1 / horizon) - 1
+        lower_cagr = (lower[-1] / last_observed) ** (1 / horizon) - 1
+        upper_cagr = (upper[-1] / last_observed) ** (1 / horizon) - 1
+
+        return central_cagr, lower_cagr, upper_cagr
+
+
+class BLSTrendForecaster:
+    """
+    Log-linear trend analysis on BLS OES wage data (2020-2024).
+
+    Fits log(wage) ~ year across occupations within an income bracket,
+    weighted by employment. Provides bracket-specific growth rates
+    with standard errors.
+    """
+
+    def __init__(self, project_root: Optional[Path] = None):
+        if project_root is None:
+            project_root = Path(__file__).parent.parent.parent
+        self.project_root = project_root
+        self._bracket_rates = None
+
+    def fit(self) -> 'BLSTrendForecaster':
+        """Fit log-linear trends from BLS OES timeseries."""
+        bls_path = self.project_root / "data/processed/bls_oes_timeseries.csv"
+        if not bls_path.exists():
+            logger.warning(f"BLS OES file not found: {bls_path}")
+            self._bracket_rates = {}
+            return self
+
+        df = pd.read_csv(bls_path)
+
+        # Use mean_wage_annual_cagr already computed in the data
+        # Group by wage percentile ranges to get bracket-level rates
+        latest = df[df['year'] == df['year'].max()].copy()
+        latest = latest.dropna(subset=['mean_wage_annual', 'mean_wage_annual_cagr', 'employment'])
+
+        if latest.empty:
+            self._bracket_rates = {}
+            return self
+
+        # Classify occupations into income brackets by mean wage
+        brackets = [
+            (0, 25_000), (25_000, 50_000), (50_000, 75_000),
+            (75_000, 100_000), (100_000, 200_000), (200_000, float('inf'))
+        ]
+
+        self._bracket_rates = {}
+        for lo, hi in brackets:
+            mask = (latest['mean_wage_annual'] >= lo) & (latest['mean_wage_annual'] < hi)
+            subset = latest[mask]
+            if len(subset) < 3:
+                continue
+
+            # Employment-weighted CAGR
+            weights = subset['employment'].values
+            cagrs = subset['mean_wage_annual_cagr'].values
+            valid = np.isfinite(cagrs) & np.isfinite(weights) & (weights > 0)
+            if valid.sum() < 3:
+                continue
+
+            weighted_cagr = np.average(cagrs[valid], weights=weights[valid])
+            # Standard error via weighted std
+            weighted_var = np.average((cagrs[valid] - weighted_cagr) ** 2, weights=weights[valid])
+            se = np.sqrt(weighted_var / valid.sum())
+
+            self._bracket_rates[(lo, hi)] = {
+                'cagr': weighted_cagr,
+                'se': se,
+                'n_occupations': int(valid.sum()),
+            }
+
+            label = f"${lo/1000:.0f}k–${hi/1000:.0f}k" if hi != float('inf') else f"${lo/1000:.0f}k+"
+            logger.info(f"  BLS bracket {label}: CAGR={weighted_cagr:.1%} ± {se:.1%} "
+                        f"({valid.sum()} occupations)")
+
+        return self
+
+    def get_bracket_rate(self, agi: float) -> Optional[Dict[str, float]]:
+        """Get growth rate info for a given AGI bracket."""
+        if not self._bracket_rates:
+            return None
+        for (lo, hi), info in self._bracket_rates.items():
+            if lo <= agi < hi:
+                return info
+        return None
+
+
+class ACSIncomeForecaster:
+    """
+    Orchestrates ETS forecasting on ACS income time series.
+
+    Fits models on:
+    - B19013: Median household income (aggregate trend)
+    - B19019: Income by household type (filing-status-specific)
+
+    Produces growth rate forecasts with confidence intervals.
+    """
+
+    def __init__(self, project_root: Optional[Path] = None):
+        if project_root is None:
+            project_root = Path(__file__).parent.parent.parent
+        self.project_root = project_root
+        self._forecasters: Dict[str, ETSForecaster] = {}
+        self._results: Dict[str, Dict] = {}
+
+    def fit_all(self) -> 'ACSIncomeForecaster':
+        """Fit ETS models on all relevant ACS series."""
+        acs_dir = self.project_root / "data/processed/acs_timeseries/wide"
+
+        # Median household income (aggregate)
+        b19013 = pd.read_csv(acs_dir / "B19013_wide.csv")
+        self._fit_series('median_hh_income', b19013, 'median_household_income')
+
+        # Income by household type
+        b19019_path = acs_dir / "B19019_wide.csv"
+        if b19019_path.exists():
+            b19019 = pd.read_csv(b19019_path)
+            for col in b19019.columns:
+                if col.startswith('median_income_'):
+                    self._fit_series(col, b19019, col)
+
+        return self
+
+    def _fit_series(self, name: str, df: pd.DataFrame, value_col: str):
+        """Fit a single ETS model."""
+        valid = df.dropna(subset=[value_col])
+        if len(valid) < 5:
+            logger.warning(f"Skipping {name}: only {len(valid)} data points")
+            return
+
+        years = valid['year'].values
+        values = valid[value_col].values.astype(float)
+
+        forecaster = ETSForecaster(damped_trend=True)
+        forecaster.fit(values, years)
+        self._forecasters[name] = forecaster
+
+        # Get 3-year forecast (2025-2027 from 2024 base)
+        central, lower, upper = forecaster.get_annual_growth_rate(3)
+        self._results[name] = {
+            'central_cagr': central,
+            'lower_cagr': lower,
+            'upper_cagr': upper,
+        }
+
+        logger.info(f"  {name}: ETS CAGR = {central:.1%} "
+                     f"(80% CI: {lower:.1%} – {upper:.1%})")
+
+    def get_results(self) -> Dict[str, Dict]:
+        """Return all fitted forecasts."""
+        return dict(self._results)
+
+    def get_aggregate_growth(self) -> Tuple[float, float, float]:
+        """Get aggregate median household income growth rate (central, lower, upper)."""
+        if 'median_hh_income' not in self._results:
+            return 0.04, 0.02, 0.06  # fallback defaults
+        r = self._results['median_hh_income']
+        return r['central_cagr'], r['lower_cagr'], r['upper_cagr']

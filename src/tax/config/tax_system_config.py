@@ -204,22 +204,27 @@ class TaxCalculator:
         income: float,
         config: TaxSystemConfig,
         filing_status: str,
-        num_exemptions: int = 1
+        num_exemptions: int = 1,
+        deduction_override: Optional[float] = None
     ) -> Dict[str, float]:
         """
         Calculate tax liability for a single tax unit.
-        
+
         Args:
             income: Gross income (AGI)
             config: Tax system configuration
             filing_status: Filing status
             num_exemptions: Number of personal exemptions
-            
+            deduction_override: If provided, use this instead of the standard deduction
+                (e.g., for itemized deductions that exceed the standard deduction)
+
         Returns:
             Dict with tax calculation details
         """
-        # Get standard deduction
+        # Get standard deduction (or use override if provided)
         std_deduction = self.get_standard_deduction(config.standard_deduction_year, filing_status)
+        if deduction_override is not None:
+            std_deduction = deduction_override
         
         # Calculate personal exemptions
         personal_exemptions = num_exemptions * config.personal_exemption
@@ -301,11 +306,12 @@ class TaxCalculator:
         filing_status_col: str = 'filing_status',
         income_col: str = 'income',
         weight_col: str = 'weight',
-        num_exemptions_col: str = 'num_exemptions'
+        num_exemptions_col: str = 'num_exemptions',
+        deduction_col: Optional[str] = None
     ) -> Dict[str, float]:
         """
         Calculate total revenue for a dataframe of tax units.
-        
+
         Args:
             tax_units: DataFrame with tax units
             config: Tax system configuration
@@ -313,26 +319,32 @@ class TaxCalculator:
             income_col: Column name for income
             weight_col: Column name for weights
             num_exemptions_col: Column name for number of exemptions
-            
+            deduction_col: Optional column with per-unit deduction overrides
+                (e.g., max of standard vs itemized deduction)
+
         Returns:
             Dict with revenue statistics
         """
         liabilities = []
         weights = tax_units[weight_col].values
-        
+
         # Set default exemptions if column doesn't exist
         if num_exemptions_col not in tax_units.columns:
             num_exemptions = np.ones(len(tax_units))
         else:
             num_exemptions = tax_units[num_exemptions_col].values
-        
-        for income, status, num_ex in zip(
-            tax_units[income_col], 
+
+        # Deduction overrides (None if column not specified)
+        deductions = tax_units[deduction_col].values if deduction_col and deduction_col in tax_units.columns else None
+
+        for i, (income, status, num_ex) in enumerate(zip(
+            tax_units[income_col],
             tax_units[filing_status_col],
             num_exemptions
-        ):
+        )):
             try:
-                result = self.calculate_tax(income, config, status, int(num_ex))
+                ded = float(deductions[i]) if deductions is not None else None
+                result = self.calculate_tax(income, config, status, int(num_ex), deduction_override=ded)
                 liabilities.append(result['tax_liability'])
             except Exception as e:
                 logger.warning(f"Error calculating tax for income ${income:,.0f}, status {status}: {e}")

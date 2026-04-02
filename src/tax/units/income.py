@@ -11,6 +11,28 @@ import pandas as pd
 import numpy as np
 from config.income_growth import apply_income_growth
 
+
+def extract_person_income_components(person: pd.Series) -> Dict[str, float]:
+    """
+    Extract individual income components adjusted by ADJINC, without growth projection.
+
+    Returns dict with ADJINC-adjusted values for each PUMS income source,
+    plus the person's age (AGEP).
+    """
+    adjinc_raw = float(person.get('ADJINC', 1_000_000) or 1_000_000)
+    adjinc = adjinc_raw / 1_000_000
+
+    return {
+        'wagp': float(person.get('WAGP', 0) or 0) * adjinc,
+        'semp': float(person.get('SEMP', 0) or 0) * adjinc,
+        'intp': float(person.get('INTP', 0) or 0) * adjinc,
+        'div':  float(person.get('DIV', 0) or 0) * adjinc,
+        'retp': float(person.get('RETP', 0) or 0) * adjinc,
+        'ssp':  float(person.get('SSP', 0) or 0) * 0.85 * adjinc,  # 85% taxable
+        'oip':  float(person.get('OIP', 0) or 0) * adjinc,
+        'agep': int(person.get('AGEP', 0) or 0),
+    }
+
 def calculate_person_income(
     person: pd.Series, 
     apply_2026_growth: bool = True,
