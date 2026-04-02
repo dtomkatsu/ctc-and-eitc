@@ -85,13 +85,14 @@ class SourceSpecificGrowthProjector:
         cap_gains_rate: float = _CAP_GAINS_RATE,
         fixed_rates: Optional[Dict[str, float]] = None,
         bls_annual_rates: Optional[Dict[tuple, float]] = None,
+        growth_scale_factor: float = 1.0,
     ):
         self.years_observed = years_observed
         self.years_projected = years_projected
         self.moderation = moderation_factor
-        self.cap_gains_rate = cap_gains_rate
-        self.fixed_rates = fixed_rates or dict(_FIXED_RATES)
         self.total_years = years_observed + years_projected
+        self.growth_scale_factor = growth_scale_factor
+
         # Use externally-provided BLS rates (e.g. from 15-year OES CAGR) or fall back to hardcoded.
         # Merge: start with hardcoded rates as base (covers all brackets including $0-$25k),
         # then overlay BLS long-run rates where available. This ensures no bracket is left at 0%.
@@ -100,7 +101,12 @@ class SourceSpecificGrowthProjector:
         merged = dict(_BLS_ANNUAL_RATES)
         if bls_annual_rates:
             merged.update(bls_annual_rates)
-        self._bls_rates = merged
+
+        # Apply growth_scale_factor to all rates for CI scenario runs
+        self._bls_rates = {k: v * growth_scale_factor for k, v in merged.items()}
+        self.fixed_rates = {k: v * growth_scale_factor
+                           for k, v in (fixed_rates or dict(_FIXED_RATES)).items()}
+        self.cap_gains_rate = cap_gains_rate * growth_scale_factor
 
     def _grow_wage_component(self, values: np.ndarray, agi: np.ndarray) -> np.ndarray:
         """Grow wage/self-employment income using bracket-specific rates."""

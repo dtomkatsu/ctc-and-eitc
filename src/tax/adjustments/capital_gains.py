@@ -149,12 +149,27 @@ def apply_capital_gains_to_dataframe(
         # Cap individual cap gains at 3x AGI to prevent extreme values
         cg_mask = mask & (cap_gains > 0)
         if cg_mask.any():
+            pre_cap_total = (cap_gains[cg_mask] * weights[cg_mask]).sum()
             max_cg = agi[cg_mask] * 3.0
+            was_capped = cap_gains[cg_mask] > max_cg
             cap_gains[cg_mask] = np.minimum(cap_gains[cg_mask], max_cg)
+            post_cap_total = (cap_gains[cg_mask] * weights[cg_mask]).sum()
+            n_capped = weights[cg_mask][was_capped].sum()
+            if pre_cap_total > post_cap_total + 1:
+                logger.info(f"    3x AGI cap: {n_capped:,.0f} filers capped, "
+                            f"${(pre_cap_total - post_cap_total)/1e6:.1f}M removed")
 
-        # Final check after capping
+        # Post-cap re-calibration: scale remaining CG to still hit Table 21 target
+        weighted_cg_post_cap = (cap_gains[mask] * weights[mask]).sum()
+        if weighted_cg_post_cap > 0 and abs(weighted_cg_post_cap - target_amount_m * 1e6) > 1e3:
+            rescale = (target_amount_m * 1e6) / weighted_cg_post_cap
+            cap_gains[mask] *= rescale
+            if abs(rescale - 1.0) > 0.001:
+                logger.info(f"    Post-cap rescale: x{rescale:.3f} to match Table 21 target")
+
+        # Final check after capping and re-calibration
         weighted_cg_final = (cap_gains[mask] * weights[mask]).sum() / 1e6
-        label = f"${lo/1000:.0f}k–${hi/1000:.0f}k" if hi != float('inf') else f"${lo/1000:.0f}k+"
+        label = f"${lo/1000:.0f}k\u2013${hi/1000:.0f}k" if hi != float('inf') else f"${lo/1000:.0f}k+"
         selected_weighted = weights[selected].sum()
         logger.info(
             f"  {label:<18s}  filers: {selected_weighted:>8,.0f} (target {target_filers:>6,})  "
@@ -169,6 +184,13 @@ def apply_capital_gains_to_dataframe(
     total_filers_cg = weights[has_cg].sum()
     logger.info(f"\n  Total capital gains: ${total_cg_m:,.1f}M (target: $2,995M)")
     logger.info(f"  Filers with cap gains: {total_filers_cg:,.0f} (target: 43,443)")
+
+    # CG/AGI ratio distribution for validation
+    cg_filers_mask = cap_gains > 0
+    if cg_filers_mask.any():
+        ratios = cap_gains[cg_filers_mask] / np.maximum(agi[cg_filers_mask], 1)
+        logger.info(f"  CG/AGI ratio: p50={np.median(ratios):.2f}, p90={np.percentile(ratios, 90):.2f}, "
+                    f"p99={np.percentile(ratios, 99):.2f}, max={ratios.max():.2f}")
 
     return result
 

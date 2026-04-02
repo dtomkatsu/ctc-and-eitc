@@ -1,4 +1,7 @@
 """
+DEPRECATED: Superseded by SimultaneousCalibrator (iterative raking/IPF across all 15 brackets).
+Retained for reference only.
+
 Pareto Distribution Calibration for High-Income Filers
 
 Uses Pareto distribution to calibrate high-income tail (AGI >= $200k)

@@ -27,7 +27,6 @@ from src.tax.adjustments.itemized_deductions import ItemizedDeductionEstimator
 from src.tax.adjustments.ultra_high_income_synthesizer_v2 import UltraHighIncomeSynthesizerV2
 from src.tax.brackets import load_tax_data
 from src.tax.adjustments.capital_gains import apply_capital_gains_to_dataframe
-from src.tax.adjustments.pareto_calibration import ParetoIncomeCalibrator
 from src.tax.adjustments.income_distribution_calibrator import IncomeDistributionCalibrator
 from src.tax.adjustments.comprehensive_weight_calibrator import ComprehensiveWeightCalibrator
 from src.tax.calibration.simultaneous_calibrator import SimultaneousCalibrator
