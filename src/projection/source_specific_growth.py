@@ -92,8 +92,15 @@ class SourceSpecificGrowthProjector:
         self.cap_gains_rate = cap_gains_rate
         self.fixed_rates = fixed_rates or dict(_FIXED_RATES)
         self.total_years = years_observed + years_projected
-        # Use externally-provided BLS rates (e.g. from 15-year OES CAGR) or fall back to hardcoded
-        self._bls_rates = bls_annual_rates if bls_annual_rates else _BLS_ANNUAL_RATES
+        # Use externally-provided BLS rates (e.g. from 15-year OES CAGR) or fall back to hardcoded.
+        # Merge: start with hardcoded rates as base (covers all brackets including $0-$25k),
+        # then overlay BLS long-run rates where available. This ensures no bracket is left at 0%.
+        # The $0-$25k bracket uses the hardcoded 7.0% (Hawaii min wage $10.10→$14 2022→2024),
+        # which is more accurate than long-run OES CAGR since OES has no sub-$25k occupations.
+        merged = dict(_BLS_ANNUAL_RATES)
+        if bls_annual_rates:
+            merged.update(bls_annual_rates)
+        self._bls_rates = merged
 
     def _grow_wage_component(self, values: np.ndarray, agi: np.ndarray) -> np.ndarray:
         """Grow wage/self-employment income using bracket-specific rates."""
