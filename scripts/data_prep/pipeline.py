@@ -519,6 +519,82 @@ def notify_macos(title: str, message: str):
         pass
 
 
+def git_commit_if_updated(project_root: Path, report: PipelineReport) -> bool:
+    """Auto-commit to git if any data was updated. Returns True if commit succeeded."""
+    if not report.any_updated:
+        return False
+
+    try:
+        # List updated files
+        updated_sources = [
+            name
+            for name, r in report.results.items()
+            if r.success and not r.skipped and r.files_updated
+        ]
+        if not updated_sources:
+            return False
+
+        # Stage the manifest (always updated if any source succeeded)
+        manifest_path = project_root / "data" / "pipeline_manifest.json"
+        subprocess.run(
+            ["git", "add", str(manifest_path)],
+            cwd=str(project_root),
+            check=True,
+            capture_output=True,
+        )
+
+        # Stage any updated data files
+        for source_name, result in report.results.items():
+            for file_path in result.files_updated:
+                if file_path.exists():
+                    subprocess.run(
+                        ["git", "add", str(file_path)],
+                        cwd=str(project_root),
+                        check=True,
+                        capture_output=True,
+                    )
+
+        # Build commit message
+        msg_lines = [
+            f"Auto-update data pipeline — {datetime.now():%Y-%m-%d %H:%M}",
+            "",
+            "Sources updated:",
+        ]
+        for source in updated_sources:
+            msg_lines.append(f"  • {source}")
+        msg_lines.extend(
+            [
+                "",
+                "Automated commit from monthly pipeline run.",
+                "",
+                "Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>",
+            ]
+        )
+        commit_msg = "\n".join(msg_lines)
+
+        # Commit
+        result = subprocess.run(
+            ["git", "commit", "-m", commit_msg],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            logger.info("✓ Auto-committed updated data to git")
+            return True
+        elif "nothing to commit" in result.stdout or "nothing to commit" in result.stderr:
+            logger.info("No git changes to commit (staging area empty)")
+            return False
+        else:
+            logger.error(f"Git commit failed: {result.stderr}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Git auto-commit failed: {e}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -578,18 +654,23 @@ def main():
     # Print report
     print("\n" + report.to_text())
 
-    # Scheduled mode: notify if anything was updated
-    if args.scheduled and report.any_updated:
-        updated_sources = [
-            name
-            for name, r in report.results.items()
-            if r.success and not r.skipped and r.files_updated
-        ]
-        notify_macos(
-            "Hawaii Tax Model",
-            f"New data available: {', '.join(updated_sources)}. "
-            f"Run pipeline with --regenerate to update tax units.",
-        )
+    # Scheduled mode: auto-commit and notify
+    if args.scheduled:
+        if report.any_updated:
+            # Auto-commit updated data files and manifest
+            git_commit_if_updated(project_root, report)
+
+            # Notify user
+            updated_sources = [
+                name
+                for name, r in report.results.items()
+                if r.success and not r.skipped and r.files_updated
+            ]
+            notify_macos(
+                "Hawaii Tax Model",
+                f"New data available: {', '.join(updated_sources)}. "
+                f"Run pipeline with --regenerate to update tax units.",
+            )
 
     # Exit with error if any non-skipped step failed
     if any(not r.success and not r.skipped for r in report.results.values()):
