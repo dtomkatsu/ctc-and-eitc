@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "description": "Registry of all automated scheduled tasks and cron jobs for this project",
+  "tasks": [
+    {
+      "id": "data-pipeline-monthly",
+      "name": "Data Pipeline (Monthly)",
+      "type": "launchd",
+      "description": "Automated data fetching and git commit for Census PUMS, ACS tables, BLS OES, and BEA state income data",
+      "schedule": {
+        "frequency": "monthly",
+        "day_of_month": 1,
+        "time": "09:00",
+        "timezone": "local"
+      },
+      "command": "python scripts/data_prep/pipeline.py --scheduled",
+      "launchd_plist": "~/Library/LaunchAgents/com.ctc-eitc.datapipeline.plist",
+      "working_directory": "/Users/devinthomas/ctc-and-eitc",
+      "data_sources": [
+        "Census PUMS (CENSUS_API_KEY required)",
+        "ACS 1-Year Tables (CENSUS_API_KEY required)",
+        "BLS OES Wages",
+        "BEA State Income (BEA_API_KEY required)"
+      ],
+      "outputs": [
+        "data/raw/pums/*.csv",
+        "data/raw/acs_1yr/**/*.csv",
+        "data/external/bls_oes/*.xlsx",
+        "data/raw/bea_hawaii_sainc5n.csv",
+        "data/pipeline_manifest.json"
+      ],
+      "side_effects": [
+        "Auto-commits to git if any data was updated",
+        "Sends macOS notification when new data available"
+      ],
+      "logs": [
+        "logs/pipeline/{YYYY-MM-DD}.log",
+        "logs/pipeline/launchd_stdout.log",
+        "logs/pipeline/launchd_stderr.log"
+      ],
+      "status": "active",
+      "last_verified": "2026-04-02",
+      "manual_sources_monitored": [
+        "DOTAX SOI (request from DOTAX)",
+        "IRS SOI ZIP Code (download from IRS)",
+        "CEX (download from BLS)",
+        "DOTAX Collections (manual updates)"
+      ],
+      "documentation": "PIPELINE_SETUP.md"
+    }
+  ],
+  "notes": {
+    "automation_philosophy": "Minimize manual work by auto-fetching data and auto-committing. User only needs to run --regenerate when ready to rebuild tax units.",
+    "git_integration": "Each scheduled run that finds new data creates a timestamped commit. This maintains a clear audit trail of when data was updated.",
+    "monitoring": "Check logs/pipeline/ after scheduled run to verify success. launchd logs available in ~/Library/Logs/ if needed."
+  }
+}
