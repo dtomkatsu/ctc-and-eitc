@@ -126,6 +126,45 @@ log stream --predicate 'process == "com.ctc-eitc.datapipeline"'
 
 ---
 
+## 2. DOTAX Revenue Scraper (Monthly)
+
+**What it does:**
+- Scrapes monthly revenue collections data from the DOTAX Looker Studio dashboard
+- Extracts data by tax type (Individual Income, Corporate Income, etc.)
+- Saves to CSV matching the format of existing tax collections data
+- Auto-commits to git when new data is found
+
+**Schedule:**
+- **When:** 5th of each month at 10:00 AM
+- **Frequency:** Monthly
+- **Type:** OpenClaw via launchd
+
+**Launcher:**
+- **Plist:** `~/Library/LaunchAgents/com.openclaw.dotax-revenue-scraper.plist`
+- **Script:** `~/.openclaw/scripts/dotax_revenue_scraper.sh`
+- **Command:** `openclaw agent --agent personal --message "..."` (same pattern as heartbeat scripts)
+- **Working Directory:** `/Users/devinthomas/ctc-and-eitc`
+
+**Data Source:**
+- DOTAX Looker Studio Dashboard: https://lookerstudio.google.com/u/0/reporting/1zq4f0MPndhtJcl7lhXXR4NR6jwH4xPQV/page/br2GB
+
+**Output:**
+- `data/raw/hawaii_tax_collections_looker_studio.csv`
+
+**Git Integration:**
+- Auto-commits if revenue data is new
+- Commit message: `Auto-update DOTAX revenue collections from Looker Studio — {timestamp}`
+
+**Logs:**
+- `logs/pipeline/dotax_scrape.log` (task execution log with row count and status)
+
+**Notes:**
+- Runs 5 days after the main data pipeline (1st → 5th) to allow for any upstream processing
+- Complements existing tax collections data with latest DOTAX revenue figures
+- Data format matches `data/raw/hawaii_tax_collections_2016_2025.csv` schema
+
+---
+
 ## Future Tasks
 
 This registry is extensible. Future scheduled tasks (e.g., auto-regenerate tax units, weekly validation checks) can be added by:

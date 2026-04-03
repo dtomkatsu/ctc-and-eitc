@@ -47,6 +47,37 @@
         "DOTAX Collections (manual updates)"
       ],
       "documentation": "PIPELINE_SETUP.md"
+    },
+    {
+      "id": "dotax-revenue-scraper",
+      "name": "DOTAX Revenue Scraper (Monthly)",
+      "type": "openclaw-launchd",
+      "description": "Scrape monthly revenue collections data from DOTAX Looker Studio dashboard and save to CSV",
+      "schedule": {
+        "frequency": "monthly",
+        "day_of_month": 5,
+        "time": "10:00",
+        "timezone": "local"
+      },
+      "command": "openclaw agent --agent personal --message '...' (see ~/.openclaw/scripts/dotax_revenue_scraper.sh)",
+      "launchd_plist": "~/Library/LaunchAgents/com.openclaw.dotax-revenue-scraper.plist",
+      "working_directory": "/Users/devinthomas/ctc-and-eitc",
+      "data_sources": [
+        "DOTAX Looker Studio Dashboard (https://lookerstudio.google.com/u/0/reporting/1zq4f0MPndhtJcl7lhXXR4NR6jwH4xPQV/page/br2GB)"
+      ],
+      "outputs": [
+        "data/raw/hawaii_tax_collections_looker_studio.csv"
+      ],
+      "side_effects": [
+        "Auto-commits to git if revenue data was updated",
+        "Logs scraping results with timestamp and row count"
+      ],
+      "logs": [
+        "logs/pipeline/dotax_scrape.log"
+      ],
+      "status": "active",
+      "last_verified": "2026-04-02",
+      "documentation": "SCHEDULED_TASKS.md"
     }
   ],
   "notes": {
