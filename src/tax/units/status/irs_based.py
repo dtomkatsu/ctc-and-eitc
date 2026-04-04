@@ -3,57 +3,117 @@ IRS-Based Filing Status Determination
 
 This module implements filing status determination logic based on IRS Statistics of Income (SOI)
 documentation and empirical patterns observed in official tax data.
+
+Filing status probabilities are loaded from config/filing_status_rates.json.
+If the config file is missing, hardcoded fallbacks matching the original SOI values are used.
 """
 
+import json
 import random
 import hashlib
 import logging
+from pathlib import Path
 import pandas as pd
 from typing import Optional, Dict, Any, List, Tuple, Set
 
 logger = logging.getLogger(__name__)
 
+# Config file location
+_CONFIG_PATH = Path(__file__).parent.parent.parent.parent.parent / "config" / "filing_status_rates.json"
+_FS_PARAMS = None
+
+
+def _load_fs_params(config_path: Path = _CONFIG_PATH) -> dict:
+    """Load filing status parameters from JSON config, with hardcoded fallbacks."""
+    global _FS_PARAMS
+    if _FS_PARAMS is not None:
+        return _FS_PARAMS
+
+    fallback = {
+        "income_based_joint_probability": {
+            "tiers": [
+                {"min_income": 100001, "max_income": None, "probability": 0.92},
+                {"min_income": 50001, "max_income": 100000, "probability": 0.85},
+                {"min_income": 0, "max_income": 50000, "dual_earner": 0.75, "single_earner": 0.40},
+            ]
+        },
+        "age_based_joint_probability": {
+            "tiers": [
+                {"min_age": 60, "probability": 0.95},
+                {"min_age": 40, "probability": 0.85},
+                {"min_age": 25, "probability": 0.75},
+                {"min_age": 0, "probability": 0.65},
+            ]
+        },
+    }
+
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                loaded = json.load(f)
+            params = {k: v for k, v in loaded.items() if not k.startswith("_")}
+            for key, val in params.items():
+                if isinstance(val, dict):
+                    params[key] = {k: v for k, v in val.items() if not k.startswith("_")}
+            logger.info(f"Loaded filing status params from {config_path}")
+            _FS_PARAMS = params
+            return _FS_PARAMS
+        except Exception as e:
+            logger.warning(f"Failed to load {config_path}: {e}. Using hardcoded fallbacks.")
+
+    _FS_PARAMS = fallback
+    return _FS_PARAMS
+
 
 def income_based_joint_probability(adult1: Dict[str, Any], adult2: Optional[Dict[str, Any]] = None) -> float:
     """
     Determine joint filing probability based on income patterns from IRS SOI data.
-    
+
+    Probabilities loaded from config/filing_status_rates.json.
+
     Args:
         adult1: Primary adult's data
         adult2: Secondary adult's data (if applicable)
-        
+
     Returns:
         float: Probability of filing jointly (0.0 to 1.0)
     """
+    params = _load_fs_params()
+    tiers = params["income_based_joint_probability"]["tiers"]
+
     income1 = float(adult1.get('PINCP', 0) or 0)
     income2 = float(adult2.get('PINCP', 0) or 0) if adult2 else 0
     total_income = income1 + income2
-    
+
     logger.debug(f"Income-based analysis: Adult1=${income1:,.0f}, Adult2=${income2:,.0f}, Total=${total_income:,.0f}")
-    
-    # IRS SOI data shows these income thresholds strongly predict filing status
-    if total_income > 100000:
-        # High-income couples almost always file jointly (92% per SOI)
-        prob = 0.92
-        logger.debug(f"High income (>${total_income:,.0f}): Joint probability = {prob}")
-        return prob
-    elif total_income > 50000:
-        # Middle-income couples file jointly ~85% of the time
-        prob = 0.85
-        logger.debug(f"Middle income (${total_income:,.0f}): Joint probability = {prob}")
-        return prob
-    else:
-        # Lower-income couples have more variation
-        if income1 > 0 and income2 > 0:
-            # Both have income - more likely to file jointly
-            prob = 0.75
-            logger.debug(f"Lower income, dual earner (${total_income:,.0f}): Joint probability = {prob}")
-            return prob
-        else:
-            # Single earner - less likely to file jointly
-            prob = 0.40  # 40% joint, 60% separate for single earners
-            logger.debug(f"Lower income, single earner (${total_income:,.0f}): Joint probability = {prob}")
-            return prob
+
+    for tier in tiers:
+        min_inc = tier.get("min_income", 0)
+        max_inc = tier.get("max_income")
+
+        if max_inc is None:
+            # Open-ended top tier
+            if total_income > min_inc:
+                prob = tier["probability"]
+                logger.debug(f"Income tier (>${min_inc:,}): Joint probability = {prob}")
+                return prob
+        elif total_income >= min_inc and total_income <= max_inc:
+            # Check for dual/single earner split
+            if "dual_earner" in tier:
+                if income1 > 0 and income2 > 0:
+                    prob = tier["dual_earner"]
+                    logger.debug(f"Lower income, dual earner (${total_income:,.0f}): Joint probability = {prob}")
+                else:
+                    prob = tier["single_earner"]
+                    logger.debug(f"Lower income, single earner (${total_income:,.0f}): Joint probability = {prob}")
+                return prob
+            else:
+                prob = tier["probability"]
+                logger.debug(f"Income tier (${min_inc:,}-${max_inc:,}): Joint probability = {prob}")
+                return prob
+
+    # Fallback
+    return 0.75
 
 
 def get_marital_duration_factor(adult1: Dict[str, Any], adult2: Optional[Dict[str, Any]] = None, current_year: int = 2023) -> float:
@@ -68,29 +128,24 @@ def get_marital_duration_factor(adult1: Dict[str, Any], adult2: Optional[Dict[st
     Returns:
         float: Age-based joint filing probability (0.0 to 1.0)
     """
+    params = _load_fs_params()
+    tiers = params["age_based_joint_probability"]["tiers"]
+
     age1 = int(adult1.get('AGEP', 30))
     age2 = int(adult2.get('AGEP', 30)) if adult2 else age1
     avg_age = (age1 + age2) / 2
-    
+
     logger.debug(f"Age analysis: Adult1={age1}, Adult2={age2}, Average={avg_age:.1f}")
-    
-    # IRS SOI data shows these age-based patterns
-    if avg_age > 60:
-        prob = 0.95  # 95% probability of joint filing for older couples
-        logger.debug(f"Older couple (avg age {avg_age:.1f}): Joint probability = {prob}")
-        return prob
-    elif avg_age > 40:
-        prob = 0.85
-        logger.debug(f"Middle-aged couple (avg age {avg_age:.1f}): Joint probability = {prob}")
-        return prob
-    elif avg_age > 25:
-        prob = 0.75
-        logger.debug(f"Young adult couple (avg age {avg_age:.1f}): Joint probability = {prob}")
-        return prob
-    else:
-        prob = 0.65  # Younger couples more likely to file separately
-        logger.debug(f"Very young couple (avg age {avg_age:.1f}): Joint probability = {prob}")
-        return prob
+
+    for tier in tiers:
+        if avg_age >= tier["min_age"]:
+            prob = tier["probability"]
+            label = tier.get("label", f"age >= {tier['min_age']}")
+            logger.debug(f"{label} (avg age {avg_age:.1f}): Joint probability = {prob}")
+            return prob
+
+    # Fallback
+    return 0.75
 
 
 def dependent_based_rules(household: List[Dict[str, Any]], adult1: Dict[str, Any], adult2: Optional[Dict[str, Any]] = None) -> Optional[float]:

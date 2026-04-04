@@ -337,6 +337,68 @@ class DataPipeline:
         except Exception as e:
             return StepResult(False, f"BEA fetch failed: {e}")
 
+    def fetch_fred(self, force: bool = False) -> StepResult:
+        """Fetch FRED economic time-series for Hawaii (CPI, HPI, unemployment, etc.)."""
+        source = "fred"
+        cfg = self.config.sources.get(source)
+        if cfg and not cfg.enabled:
+            return StepResult(True, "Disabled in config", skipped=True)
+        if not force and self.manifest.is_fresh(source, cfg.freshness_days if cfg else 30):
+            return StepResult(True, "Data is fresh, skipping", skipped=True)
+
+        api_key = os.getenv("FRED_API_KEY", "")
+        if not api_key:
+            return StepResult(
+                False,
+                "FRED_API_KEY not set. Register at https://fred.stlouisfed.org/docs/api/api_key.html "
+                "and add to .env",
+            )
+
+        try:
+            from scripts.data_prep.fetch_fred import FREDFetcher
+
+            fetcher = FREDFetcher(
+                api_key=api_key,
+                output_dir=self.root / "data" / "external" / "fred",
+            )
+            dataframes = fetcher.fetch_all(start_date="2010-01-01")
+            if not dataframes:
+                return StepResult(False, "FRED API returned no data")
+            paths = fetcher.save(dataframes)
+            self.manifest.record(source, paths)
+            series_names = list(dataframes.keys())
+            return StepResult(
+                True,
+                f"Fetched {len(dataframes)} FRED series: {', '.join(series_names)}",
+                paths,
+            )
+        except Exception as e:
+            return StepResult(False, f"FRED fetch failed: {e}")
+
+    def fetch_bls_cpi(self, force: bool = False) -> StepResult:
+        """Fetch BLS CPI-U for Honolulu metro area."""
+        source = "bls_cpi"
+        cfg = self.config.sources.get(source)
+        if cfg and not cfg.enabled:
+            return StepResult(True, "Disabled in config", skipped=True)
+        if not force and self.manifest.is_fresh(source, cfg.freshness_days if cfg else 30):
+            return StepResult(True, "Data is fresh, skipping", skipped=True)
+
+        try:
+            from scripts.data_prep.fetch_bls_cpi import BLSCPIFetcher
+
+            fetcher = BLSCPIFetcher(
+                output_dir=self.root / "data" / "external" / "bls_cpi",
+            )
+            df = fetcher.fetch(start_year=2015)
+            if df.empty:
+                return StepResult(False, "BLS CPI API returned no data")
+            path = fetcher.save(df)
+            self.manifest.record(source, [path])
+            return StepResult(True, f"Fetched {len(df)} BLS CPI observations", [path])
+        except Exception as e:
+            return StepResult(False, f"BLS CPI fetch failed: {e}")
+
     # ------------------------------------------------------------------
     # Post-fetch processing
     # ------------------------------------------------------------------
@@ -416,6 +478,8 @@ class DataPipeline:
             "acs_tables": self.fetch_acs_tables,
             "bls_oes": self.fetch_bls_oes,
             "bea_state_income": self.fetch_bea_state_income,
+            "fred": self.fetch_fred,
+            "bls_cpi": self.fetch_bls_cpi,
         }
 
         if sources:
@@ -607,7 +671,7 @@ def main():
     parser.add_argument(
         "--sources",
         nargs="+",
-        choices=["census_pums", "acs_tables", "bls_oes", "bea_state_income"],
+        choices=["census_pums", "acs_tables", "bls_oes", "bea_state_income", "fred", "bls_cpi"],
         help="Only fetch specific sources",
     )
     parser.add_argument("--force", action="store_true", help="Ignore freshness, re-download")

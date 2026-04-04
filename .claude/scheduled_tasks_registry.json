@@ -20,13 +20,17 @@
         "Census PUMS (CENSUS_API_KEY required)",
         "ACS 1-Year Tables (CENSUS_API_KEY required)",
         "BLS OES Wages",
-        "BEA State Income (BEA_API_KEY required)"
+        "BEA State Income (BEA_API_KEY required)",
+        "FRED Economic Data — Hawaii CPI, HPI, unemployment, tax collections, min wage (FRED_API_KEY required)",
+        "BLS CPI-U Honolulu (no key required)"
       ],
       "outputs": [
         "data/raw/pums/*.csv",
         "data/raw/acs_1yr/**/*.csv",
         "data/external/bls_oes/*.xlsx",
         "data/raw/bea_hawaii_sainc5n.csv",
+        "data/external/fred/*.csv",
+        "data/external/bls_cpi/honolulu_cpi.csv",
         "data/pipeline_manifest.json"
       ],
       "side_effects": [
@@ -52,7 +56,7 @@
       "id": "dotax-revenue-scraper",
       "name": "DOTAX Revenue Scraper (Monthly)",
       "type": "openclaw-launchd",
-      "description": "Scrape monthly revenue collections data from DOTAX Looker Studio dashboard and save to CSV",
+      "description": "Scrape monthly State Tax Collections and Distribution XLSX from Hawaii.gov and save to CSV",
       "schedule": {
         "frequency": "monthly",
         "day_of_month": 5,
@@ -63,7 +67,7 @@
       "launchd_plist": "~/Library/LaunchAgents/com.openclaw.dotax-revenue-scraper.plist",
       "working_directory": "/Users/devinthomas/ctc-and-eitc",
       "data_sources": [
-        "DOTAX Looker Studio Dashboard (https://lookerstudio.google.com/u/0/reporting/1zq4f0MPndhtJcl7lhXXR4NR6jwH4xPQV/page/br2GB)"
+        "Hawaii Department of Taxation — State Tax Collections and Distribution XLSX (https://tax.hawaii.gov/stats/a5_3txcolrpt/)"
       ],
       "outputs": [
         "data/raw/hawaii_tax_collections_looker_studio.csv"

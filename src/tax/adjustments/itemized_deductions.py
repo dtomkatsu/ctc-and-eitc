@@ -1,6 +1,9 @@
 """
 Itemized Deductions Estimation for Hawaii
 
+Parameters are loaded from config/deduction_params.json, which can be updated
+without code changes when new SOI data becomes available.
+
 Based on IRS SOI 2022 data:
 - 12.1% of filers itemize (81,360 out of 674,660)
 - Average itemized deduction: $34,592
@@ -16,46 +19,140 @@ Note: State income taxes (SALT) are excluded because Hawaii taxable
 income should not deduct Hawaii income tax payments.
 """
 
-import pandas as pd
-import numpy as np
+import json
+import logging
+from pathlib import Path
 from typing import Dict, Optional
+
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+# Locate config file relative to project root
+_CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "deduction_params.json"
+
+# Module-level cache for loaded params
+_PARAMS = None
+
+
+def _load_params(config_path: Path = _CONFIG_PATH) -> dict:
+    """Load deduction parameters from JSON config, with hardcoded fallbacks."""
+    global _PARAMS
+    if _PARAMS is not None:
+        return _PARAMS
+
+    # Hardcoded fallbacks (match original values if config file is missing)
+    fallback = {
+        "overall_itemization_rate": 0.121,
+        "avg_itemized_deduction": 34592,
+        "itemization_rates": {
+            "under_50k": 0.05, "50k_to_100k": 0.12,
+            "100k_to_200k": 0.20, "200k_plus": 0.30,
+        },
+        "avg_deductions": {
+            "under_50k": 10800, "50k_to_100k": 15600,
+            "100k_to_200k": 25200, "200k_plus": 36000,
+        },
+        "filing_status_multipliers": {
+            "married_filing_jointly": 1.3, "qualifying_widow": 1.3,
+            "head_of_household": 1.1, "single": 1.0,
+            "married_filing_separately": 1.0,
+        },
+        "max_itemization_rate": 0.80,
+        "homeownership": {
+            "joint": {"base": 0.40, "slope": 0.40, "income_scale": 200000, "cap": 0.80},
+            "hoh":   {"base": 0.30, "slope": 0.40, "income_scale": 200000, "cap": 0.70},
+            "other": {"base": 0.20, "slope": 0.40, "income_scale": 200000, "cap": 0.60},
+        },
+        "mortgage_interest_tiers": {
+            "tiers": [
+                {"max_agi": 30000, "base_interest": 3000},
+                {"max_agi": 50000, "base_interest": 6000},
+                {"max_agi": 75000, "base_interest": 10000},
+                {"max_agi": 100000, "base_interest": 15000},
+                {"max_agi": 150000, "base_interest": 20000},
+                {"max_agi": 200000, "base_interest": 25000},
+                {"max_agi": 300000, "base_interest": 32000},
+            ],
+            "default_base_interest": 40000,
+            "joint_multiplier": 1.3,
+        },
+        "charitable_giving": {
+            "claim_rate": 0.727,
+            "rates_by_agi": [
+                {"max_agi": 75000, "rate": 0.02},
+                {"max_agi": 150000, "rate": 0.03},
+                {"max_agi": 300000, "rate": 0.04},
+            ],
+            "default_rate": 0.05,
+        },
+        "medical_expenses": {
+            "agi_threshold": 0.075,
+            "elderly_age": 65,
+            "claim_rate_elderly": 0.30,
+            "claim_rate_other": 0.10,
+            "expense_pct_elderly": 0.15,
+            "expense_pct_other": 0.10,
+        },
+        "real_estate_taxes": {
+            "tiers": [
+                {"max_agi": 75000, "amount": 3200},
+                {"max_agi": 150000, "amount": 4800},
+                {"max_agi": 300000, "amount": 7000},
+            ],
+            "default_amount": 9000,
+        },
+    }
+
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                loaded = json.load(f)
+            # Strip _note/_description keys
+            params = {k: v for k, v in loaded.items() if not k.startswith("_")}
+            # Strip nested _note keys
+            for key, val in params.items():
+                if isinstance(val, dict):
+                    params[key] = {k: v for k, v in val.items() if not k.startswith("_")}
+            logger.info(f"Loaded deduction params from {config_path}")
+            _PARAMS = params
+            return _PARAMS
+        except Exception as e:
+            logger.warning(f"Failed to load {config_path}: {e}. Using hardcoded fallbacks.")
+
+    logger.info("Using hardcoded deduction parameter fallbacks")
+    _PARAMS = fallback
+    return _PARAMS
 
 
 class ItemizedDeductionEstimator:
     """
     Estimate itemized deductions based on SOI patterns.
-    
-    From SOI 2022 Hawaii:
-    - 12.1% of filers itemize
-    - Itemizers are concentrated in higher income brackets
-    - Average itemized deduction: $34,592
+
+    Parameters are loaded from config/deduction_params.json at initialization.
+    If the config file is missing, hardcoded fallbacks matching the original
+    SOI 2022 values are used.
     """
-    
-    # SOI-based itemization rates by income
-    # REDUCED to match DOTax actual patterns (was causing 333% deduction overshoot)
-    ITEMIZATION_RATES = {
-        'under_50k': 0.05,      # 5% itemize (was 8%)
-        '50k_to_100k': 0.12,    # 12% itemize (was 25%)
-        '100k_to_200k': 0.20,   # 20% itemize (was 45%)
-        '200k_plus': 0.30,      # 30% itemize (was 65%)
-    }
-    
-    # Average deductions by income level (from SOI patterns)
-    # REDUCED by 40% to match DOTax actual deduction levels
-    AVG_DEDUCTIONS = {
-        'under_50k': 10800,     # was 18000
-        '50k_to_100k': 15600,   # was 26000
-        '100k_to_200k': 25200,  # was 42000
-        '200k_plus': 36000,     # was 60000
-    }
-    
-    def __init__(self):
-        """Initialize with SOI-based rates"""
-        self.overall_itemization_rate = 0.121  # 12.1% from SOI
-        self.avg_itemized_deduction = 34592
-    
+
+    def __init__(self, config_path: Optional[Path] = None):
+        """Initialize with parameters from config or fallbacks."""
+        params = _load_params(config_path or _CONFIG_PATH)
+
+        self.overall_itemization_rate = params["overall_itemization_rate"]
+        self.avg_itemized_deduction = params["avg_itemized_deduction"]
+        self.ITEMIZATION_RATES = params["itemization_rates"]
+        self.AVG_DEDUCTIONS = params["avg_deductions"]
+        self.filing_status_multipliers = params["filing_status_multipliers"]
+        self.max_itemization_rate = params["max_itemization_rate"]
+        self.homeownership = params["homeownership"]
+        self.mortgage_tiers = params["mortgage_interest_tiers"]
+        self.charitable = params["charitable_giving"]
+        self.medical = params["medical_expenses"]
+        self.real_estate = params["real_estate_taxes"]
+
     def get_income_bracket(self, agi: float) -> str:
-        """Determine income bracket for itemization estimation"""
+        """Determine income bracket for itemization estimation."""
         if agi < 50000:
             return 'under_50k'
         elif agi < 100000:
@@ -64,145 +161,118 @@ class ItemizedDeductionEstimator:
             return '100k_to_200k'
         else:
             return '200k_plus'
-    
+
     def will_itemize(self, agi: float, filing_status: str) -> bool:
         """
         Determine if filer will itemize based on income and filing status.
-        
+
         Higher income filers are more likely to itemize.
         Joint filers itemize more than singles due to higher deduction thresholds.
         """
         bracket = self.get_income_bracket(agi)
         base_rate = self.ITEMIZATION_RATES[bracket]
-        
-        # Adjust by filing status - joint filers itemize more
-        if filing_status in ['married_filing_jointly', 'qualifying_widow']:
-            rate = base_rate * 1.3  # 30% higher for joint filers
-        elif filing_status == 'head_of_household':
-            rate = base_rate * 1.1  # 10% higher for HoH
-        else:
-            rate = base_rate
-        
+
+        # Adjust by filing status
+        multiplier = self.filing_status_multipliers.get(filing_status, 1.0)
+        rate = base_rate * multiplier
+
         # Cap at reasonable maximum
-        rate = min(rate, 0.8)
-        
+        rate = min(rate, self.max_itemization_rate)
+
         # Random selection based on probability
         return np.random.random() < rate
-    
+
     def estimate_mortgage_interest(self, agi: float, filing_status: str) -> float:
         """
         Estimate home mortgage interest deduction.
-        
+
         Income-sensitive amounts that scale with AGI.
         Joint filers more likely to own homes and have larger mortgages.
         """
         # Homeownership probability by income and filing status
         if filing_status in ['married_filing_jointly', 'qualifying_widow']:
-            ownership_prob = min(0.8, 0.4 + (agi / 200000) * 0.4)  # 40-80%
+            ho = self.homeownership["joint"]
         elif filing_status == 'head_of_household':
-            ownership_prob = min(0.7, 0.3 + (agi / 200000) * 0.4)  # 30-70%
+            ho = self.homeownership["hoh"]
         else:
-            ownership_prob = min(0.6, 0.2 + (agi / 200000) * 0.4)  # 20-60%
-        
+            ho = self.homeownership["other"]
+
+        ownership_prob = min(ho["cap"], ho["base"] + (agi / ho["income_scale"]) * ho["slope"])
+
         if np.random.random() > ownership_prob:
             return 0
-        
-        # Moderate income-sensitive mortgage interest
-        if agi < 30000:
-            base_interest = 3000
-        elif agi < 50000:
-            base_interest = 6000
-        elif agi < 75000:
-            base_interest = 10000
-        elif agi < 100000:
-            base_interest = 15000
-        elif agi < 150000:
-            base_interest = 20000
-        elif agi < 200000:
-            base_interest = 25000
-        elif agi < 300000:
-            base_interest = 32000
-        else:
-            base_interest = 40000
-        
+
+        # Income-sensitive mortgage interest from tiers
+        base_interest = self.mortgage_tiers["default_base_interest"]
+        for tier in self.mortgage_tiers["tiers"]:
+            if agi < tier["max_agi"]:
+                base_interest = tier["base_interest"]
+                break
+
         # Filing status adjustment
         if filing_status in ['married_filing_jointly', 'qualifying_widow']:
-            return base_interest * 1.3  # Joint filers have larger mortgages
+            return base_interest * self.mortgage_tiers["joint_multiplier"]
         else:
             return base_interest
-    
+
     def estimate_charitable_contributions(self, agi: float, filing_status: str) -> float:
         """
         Estimate charitable contribution deduction.
-        
+
         From SOI: 72.7% of itemizers claim charitable, avg $8,488
         """
-        # Charitable giving as % of income
-        if agi < 75000:
-            giving_rate = 0.02   # 2%
-        elif agi < 150000:
-            giving_rate = 0.03   # 3%
-        elif agi < 300000:
-            giving_rate = 0.04   # 4%
-        else:
-            giving_rate = 0.05   # 5%
-        
-        # 72.7% of itemizers give
-        if np.random.random() < 0.727:
+        # Charitable giving as % of income from tiers
+        giving_rate = self.charitable["default_rate"]
+        for tier in self.charitable["rates_by_agi"]:
+            if agi < tier["max_agi"]:
+                giving_rate = tier["rate"]
+                break
+
+        # Claim rate from config
+        if np.random.random() < self.charitable["claim_rate"]:
             return agi * giving_rate
         return 0
-    
+
     def estimate_medical_deduction(self, agi: float, age: Optional[int] = None) -> float:
         """
         Estimate medical and dental expense deduction.
-        
+
         From SOI: 17.1% of itemizers claim medical, avg $24,371
         Only expenses > 7.5% of AGI are deductible
         """
-        # Medical deductions more common for elderly and lower income
-        if age and age >= 65:
-            claim_rate = 0.30
-        else:
-            claim_rate = 0.10
-        
+        med = self.medical
+        is_elderly = age is not None and age >= med["elderly_age"]
+
+        claim_rate = med["claim_rate_elderly"] if is_elderly else med["claim_rate_other"]
+
         if np.random.random() < claim_rate:
-            # Medical expenses need to exceed 7.5% of AGI
-            threshold = agi * 0.075
-            
-            # Estimate total medical expenses
-            if age and age >= 65:
-                medical_expenses = agi * 0.15  # 15% for elderly
-            else:
-                medical_expenses = agi * 0.10  # 10% for others
-            
-            # Only amount above threshold is deductible
+            threshold = agi * med["agi_threshold"]
+            expense_pct = med["expense_pct_elderly"] if is_elderly else med["expense_pct_other"]
+            medical_expenses = agi * expense_pct
             return max(0, medical_expenses - threshold)
-        
+
         return 0
-    
+
     def estimate_real_estate_taxes(self, agi: float, filing_status: str) -> float:
         """
         Estimate real estate tax deduction.
-        
+
         From SOI: 85.7% of itemizers claim real estate taxes, avg $3,638
         Note: This is separate from SALT income taxes
         """
-        # Property tax based on income (proxy for home value)
-        if agi < 75000:
-            return 3200
-        elif agi < 150000:
-            return 4800
-        elif agi < 300000:
-            return 7000
-        else:
-            return 9000
-    
-    def estimate_total_itemized_deductions(self, agi: float, 
+        amount = self.real_estate["default_amount"]
+        for tier in self.real_estate["tiers"]:
+            if agi < tier["max_agi"]:
+                amount = tier["amount"]
+                break
+        return amount
+
+    def estimate_total_itemized_deductions(self, agi: float,
                                           filing_status: str,
                                           age: Optional[int] = None) -> Dict[str, float]:
         """
         Estimate total itemized deductions.
-        
+
         Returns:
             Dictionary with individual deductions and total
         """
@@ -212,33 +282,33 @@ class ItemizedDeductionEstimator:
             'medical': self.estimate_medical_deduction(agi, age),
             'real_estate_taxes': self.estimate_real_estate_taxes(agi, filing_status),
         }
-        
+
         deductions['total'] = sum(deductions.values())
-        
+
         return deductions
-    
+
     def get_deduction(self, agi: float, filing_status: str,
                      standard_deduction: float,
                      age: Optional[int] = None) -> Dict[str, float]:
         """
         Determine whether to use standard or itemized deduction.
-        
+
         Args:
             agi: Adjusted Gross Income
             filing_status: Filing status
             standard_deduction: Standard deduction amount
             age: Age of primary filer
-            
+
         Returns:
             Dictionary with deduction info
         """
         # Determine if filer will itemize
         will_itemize = self.will_itemize(agi, filing_status)
-        
+
         if will_itemize:
             # Calculate itemized deductions
             itemized = self.estimate_total_itemized_deductions(agi, filing_status, age)
-            
+
             # Only itemize if it exceeds standard deduction
             if itemized['total'] > standard_deduction:
                 return {
@@ -248,7 +318,7 @@ class ItemizedDeductionEstimator:
                     'benefit_over_standard': itemized['total'] - standard_deduction,
                     'details': itemized
                 }
-        
+
         # Use standard deduction
         return {
             'type': 'standard',
@@ -264,13 +334,13 @@ def estimate_deduction(agi: float, filing_status: str,
                       age: Optional[int] = None) -> Dict[str, float]:
     """
     Convenience function to estimate deduction (standard or itemized).
-    
+
     Args:
         agi: Adjusted Gross Income
         filing_status: Filing status
         standard_deduction: Standard deduction amount
         age: Age of primary filer
-        
+
     Returns:
         Dictionary with deduction information
     """
@@ -281,7 +351,7 @@ def estimate_deduction(agi: float, filing_status: str,
 if __name__ == '__main__':
     # Example usage
     estimator = ItemizedDeductionEstimator()
-    
+
     # Test cases
     test_cases = [
         (40000, 'single', 4400, 30, "Low income single"),
@@ -289,24 +359,24 @@ if __name__ == '__main__':
         (150000, 'married_filing_jointly', 8800, 50, "High income joint"),
         (300000, 'married_filing_jointly', 8800, 55, "Very high income joint"),
     ]
-    
+
     print("Itemized Deduction Examples:")
     print("="*80)
-    
+
     for agi, status, std_ded, age, desc in test_cases:
         print(f"\n{desc}")
         print(f"  AGI: ${agi:,} | Status: {status} | Std Deduction: ${std_ded:,}")
-        
+
         # Run multiple times to show probability
         itemized_count = 0
         total_deduction = 0
-        
+
         for _ in range(100):
             result = estimator.get_deduction(agi, status, std_ded, age)
             if result['type'] == 'itemized':
                 itemized_count += 1
                 total_deduction += result['amount']
-        
+
         print(f"  Itemization Rate: {itemized_count}%")
         if itemized_count > 0:
             avg_itemized = total_deduction / itemized_count

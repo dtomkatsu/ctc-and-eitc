@@ -53,5 +53,17 @@ class PipelineConfig:
                     typical_release_month=9,
                     requires_api_key="BEA_API_KEY",
                 ),
+                "fred": SourceConfig(
+                    name="FRED Economic Data",
+                    freshness_days=30,
+                    typical_release_month=None,  # Continuous updates
+                    requires_api_key="FRED_API_KEY",
+                ),
+                "bls_cpi": SourceConfig(
+                    name="BLS CPI-U Honolulu",
+                    freshness_days=30,
+                    typical_release_month=None,  # Semi-annual releases
+                    requires_api_key=None,  # BLS API v1 requires no key
+                ),
             }
         )

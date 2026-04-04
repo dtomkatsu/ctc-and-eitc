@@ -134,13 +134,55 @@ NONRESIDENT_GROWTH = GrowthFactors(
 # HELPER FUNCTIONS
 # ============================================================================
 
+def build_growth_factors(project_root=None):
+    """Build growth factors using latest CPI data, with hardcoded fallbacks.
+
+    Returns (resident_growth, nonresident_growth) tuple of GrowthFactors.
+    If project_root is provided and FRED/BLS CPI data is available,
+    the inflation component is updated to reflect actual data.
+    """
+    if project_root is None:
+        return RESIDENT_GROWTH, NONRESIDENT_GROWTH
+
+    try:
+        from src.projection.growth_rate_loader import load_all_rates
+        from pathlib import Path
+
+        rates = load_all_rates(Path(project_root))
+
+        resident = GrowthFactors(
+            base_year=RESIDENT_GROWTH.base_year,
+            target_year=RESIDENT_GROWTH.target_year,
+            nominal_growth=RESIDENT_GROWTH.nominal_growth,
+            inflation=rates["inflation_resident"],
+            real_growth=RESIDENT_GROWTH.nominal_growth / rates["inflation_resident"],
+            description=f"Hawaii Resident Income Growth ({RESIDENT_GROWTH.base_year} PUMS → {RESIDENT_GROWTH.target_year}) [data-driven CPI]",
+        )
+
+        nonresident = GrowthFactors(
+            base_year=NONRESIDENT_GROWTH.base_year,
+            target_year=NONRESIDENT_GROWTH.target_year,
+            nominal_growth=NONRESIDENT_GROWTH.nominal_growth,
+            inflation=rates["inflation_nonresident"],
+            real_growth=NONRESIDENT_GROWTH.nominal_growth / rates["inflation_nonresident"],
+            description=f"Nonresident Income Growth ({NONRESIDENT_GROWTH.base_year} DOTAX → {NONRESIDENT_GROWTH.target_year}) [data-driven CPI]",
+        )
+
+        logger.info(f"Built data-driven growth factors: resident inflation={rates['inflation_resident']:.4f}, nonresident inflation={rates['inflation_nonresident']:.4f}")
+        return resident, nonresident
+
+    except Exception as e:
+        logger.warning(f"Failed to build data-driven growth factors: {e}. Using hardcoded defaults.")
+        return RESIDENT_GROWTH, NONRESIDENT_GROWTH
+
+
 def get_growth_factors(is_resident: bool) -> GrowthFactors:
     """
     Get appropriate growth factors based on residency status.
-    
+
     Args:
         is_resident: True for Hawaii residents, False for nonresidents
-        
+
     Returns:
         GrowthFactors object with appropriate adjustments
     """

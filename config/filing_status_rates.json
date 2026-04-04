@@ -1,0 +1,30 @@
+{
+  "_description": "Filing status probability parameters for tax unit construction",
+  "_source": "IRS SOI 2022 cross-tabulations (filing status x AGI x age)",
+  "_last_updated": "2026-04-03",
+
+  "income_based_joint_probability": {
+    "_note": "Probability of married couple filing jointly, by combined income bracket.",
+    "tiers": [
+      {"min_income": 100001, "max_income": null,   "probability": 0.92, "label": "High income ($100k+)"},
+      {"min_income":  50001, "max_income": 100000,  "probability": 0.85, "label": "Middle income ($50k-$100k)"},
+      {"min_income":      0, "max_income":  50000,  "dual_earner": 0.75, "single_earner": 0.40, "label": "Lower income (<$50k)"}
+    ]
+  },
+
+  "age_based_joint_probability": {
+    "_note": "Joint filing probability factor based on average age of couple.",
+    "tiers": [
+      {"min_age": 60, "probability": 0.95, "label": "Older couples (60+)"},
+      {"min_age": 40, "probability": 0.85, "label": "Middle-aged couples (40-59)"},
+      {"min_age": 25, "probability": 0.75, "label": "Young adult couples (25-39)"},
+      {"min_age":  0, "probability": 0.65, "label": "Very young couples (<25)"}
+    ]
+  },
+
+  "dependent_adjustments": {
+    "_note": "Adjustments to joint probability based on dependent children.",
+    "children_present_bonus": 0.10,
+    "max_bonus": 0.95
+  }
+}

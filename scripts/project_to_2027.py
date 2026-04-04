@@ -43,6 +43,7 @@ from src.tax.config.tax_system_config import (
     TaxSystemRegistry,
 )
 from src.projection.source_specific_growth import SourceSpecificGrowthProjector
+from src.projection.growth_rate_loader import load_all_rates
 from src.tax.adjustments.itemized_deductions import ItemizedDeductionEstimator
 from src.projection.timeseries import ACSIncomeForecaster, BLSTrendForecaster, DOTAXCollectionsForecaster
 from src.projection.backtester import ForecastBacktester
@@ -54,9 +55,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Population growth (annual, from DBEDT)
-POP_GROWTH_WORKING_AGE = -0.0083  # -0.83%/yr (18-64)
-POP_GROWTH_SENIOR = 0.050          # +5.0%/yr (65+)
+# Load data-driven growth rates (falls back to hardcoded defaults if data missing)
+PROJECT_ROOT = Path(__file__).parent.parent if Path(__file__).parent.name == "scripts" else Path(".")
+_RATES = load_all_rates(PROJECT_ROOT)
+
+# Population growth (annual, from data or DBEDT fallback)
+POP_GROWTH_WORKING_AGE = _RATES["pop_growth_working_age"]  # default: -0.83%/yr (18-64)
+POP_GROWTH_SENIOR = _RATES["pop_growth_senior"]              # default: +5.0%/yr (65+)
 YEARS_FORWARD = 5  # 2022 → 2027
 
 
@@ -277,6 +282,8 @@ def run_projection_scenario(
             moderation_factor=0.70,
             bls_annual_rates=wage_rates,
             growth_scale_factor=growth_scale_factor,
+            fixed_rates=_RATES["fixed_rates"],
+            cap_gains_rate=_RATES["cap_gains_rate"],
         )
         tax_units = projector.project_dataframe(tax_units)
     else:
