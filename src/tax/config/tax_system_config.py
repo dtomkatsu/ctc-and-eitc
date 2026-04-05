@@ -33,6 +33,10 @@ class TaxSystemConfig:
     # Leave None to use baseline rows (scenario == '')
     bracket_scenario: Optional[str] = None
 
+    # Optional: credit scenario tag (e.g. 'hb2306_hd1' for enhanced CDCC)
+    # Leave None to use current-law credit calculations
+    credit_scenario: Optional[str] = None
+
     # Optional: income surcharges
     surcharges: Optional[Dict[str, Dict[str, float]]] = None
     # Format: {'filing_status': {'threshold': 1000000, 'rate': 0.01}}
@@ -146,6 +150,28 @@ class TaxSystemRegistry:
             personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
             description="SB3125 SD1 (2026 session) — higher top bracket rates effective TY2027",
             bracket_scenario='sb3125_sd1',
+        )
+
+    @classmethod
+    def get_hb2306_hd1_2027_system(cls) -> TaxSystemConfig:
+        """HB2306 HD1 (2025 session) bracket schedule effective TY2027.
+
+        Changes vs Act 46 2025 baseline:
+          - Keeps all 12 brackets from Act 46 2025 schedule (same boundaries)
+          - Top 3 rates increase by 1pp: 9%→10%, 10%→11%, 11%→12%
+          - Repeals previously scheduled 2027 and 2029 bracket phase-ins
+        Also includes enhanced CDCC and sunset extension (Act 163 to 2032),
+        modeled separately via credit_scenario.
+        """
+        return TaxSystemConfig(
+            name="hb2306_hd1_2027",
+            year=2027,
+            bracket_year=2027,
+            standard_deduction_year=2025,
+            personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
+            description="HB2306 HD1 — top 3 rates +1pp, enhanced CDCC, sunset extension to 2032",
+            bracket_scenario='hb2306_hd1',
+            credit_scenario='hb2306_hd1',
         )
 
     @classmethod
@@ -368,7 +394,8 @@ class TaxCalculator:
         income_col: str = 'income',
         weight_col: str = 'weight',
         num_exemptions_col: str = 'num_exemptions',
-        deduction_col: Optional[str] = None
+        deduction_col: Optional[str] = None,
+        num_dependents_col: str = 'num_dependents',
     ) -> Dict[str, float]:
         """
         Calculate total revenue for a dataframe of tax units.
@@ -381,11 +408,13 @@ class TaxCalculator:
             weight_col: Column name for weights
             num_exemptions_col: Column name for number of exemptions
             deduction_col: Optional column with per-unit deduction overrides
-                (e.g., max of standard vs itemized deduction)
+            num_dependents_col: Column name for number of dependents
 
         Returns:
-            Dict with revenue statistics
+            Dict with revenue statistics (includes credit breakdown)
         """
+        from src.tax.adjustments.hawaii_credits import HawaiiTaxCredits
+
         liabilities = []
         weights = tax_units[weight_col].values
 
@@ -394,6 +423,12 @@ class TaxCalculator:
             num_exemptions = np.ones(len(tax_units))
         else:
             num_exemptions = tax_units[num_exemptions_col].values
+
+        # Set default dependents if column doesn't exist
+        if num_dependents_col not in tax_units.columns:
+            num_dependents = np.zeros(len(tax_units))
+        else:
+            num_dependents = tax_units[num_dependents_col].values
 
         # Deduction overrides (None if column not specified)
         deductions = tax_units[deduction_col].values if deduction_col and deduction_col in tax_units.columns else None
@@ -410,14 +445,46 @@ class TaxCalculator:
             except Exception as e:
                 logger.warning(f"Error calculating tax for income ${income:,.0f}, status {status}: {e}")
                 liabilities.append(0)
-        
+
         liabilities = np.array(liabilities)
-        total_revenue = float(np.sum(liabilities * weights)) / 1e6  # In millions
-        avg_tax = float(np.average(liabilities, weights=weights))
+
+        # Calculate credits
+        credit_calc = HawaiiTaxCredits(year=config.year)
+        total_credits = np.zeros(len(tax_units))
+        total_cdcc = np.zeros(len(tax_units))
+
+        for i, (income, status, tax_li, n_dep) in enumerate(zip(
+            tax_units[income_col],
+            tax_units[filing_status_col],
+            liabilities,
+            num_dependents
+        )):
+            try:
+                cr = credit_calc.calculate_total_credits(
+                    agi=income, filing_status=status,
+                    num_dependents=int(n_dep),
+                    tax_before_credits=tax_li,
+                    credit_scenario=config.credit_scenario,
+                )
+                total_credits[i] = cr['total']
+                total_cdcc[i] = cr['child_care']
+            except Exception:
+                pass
+
+        net_liabilities = liabilities - total_credits
+
+        total_revenue_before = float(np.sum(liabilities * weights)) / 1e6
+        total_credits_m = float(np.sum(total_credits * weights)) / 1e6
+        total_cdcc_m = float(np.sum(total_cdcc * weights)) / 1e6
+        total_revenue = float(np.sum(net_liabilities * weights)) / 1e6
+        avg_tax = float(np.average(net_liabilities, weights=weights))
         avg_income = float(np.average(tax_units[income_col], weights=weights))
-        
+
         return {
             'total_revenue_millions': total_revenue,
+            'total_revenue_before_credits_millions': total_revenue_before,
+            'total_credits_millions': total_credits_m,
+            'total_cdcc_millions': total_cdcc_m,
             'average_tax_per_filer': avg_tax,
             'average_income': avg_income,
             'effective_rate': (avg_tax / avg_income * 100) if avg_income > 0 else 0,
@@ -449,33 +516,36 @@ def compare_systems(
     baseline_revenue = calculator.calculate_revenue(tax_units, baseline_config)
     scenario_revenue = calculator.calculate_revenue(tax_units, scenario_config)
     
-    results = []
-    results.append({
-        'system': baseline_config.name,
-        'description': baseline_config.description,
-        'revenue_millions': baseline_revenue['total_revenue_millions'],
-        'avg_tax': baseline_revenue['average_tax_per_filer'],
-        'effective_rate': baseline_revenue['effective_rate']
-    })
-    
-    results.append({
-        'system': scenario_config.name,
-        'description': scenario_config.description,
-        'revenue_millions': scenario_revenue['total_revenue_millions'],
-        'avg_tax': scenario_revenue['average_tax_per_filer'],
-        'effective_rate': scenario_revenue['effective_rate']
-    })
-    
+    def _row(rev, cfg):
+        return {
+            'system': cfg.name,
+            'description': cfg.description,
+            'revenue_millions': rev['total_revenue_millions'],
+            'revenue_before_credits_millions': rev['total_revenue_before_credits_millions'],
+            'total_credits_millions': rev['total_credits_millions'],
+            'total_cdcc_millions': rev['total_cdcc_millions'],
+            'avg_tax': rev['average_tax_per_filer'],
+            'effective_rate': rev['effective_rate'],
+        }
+
+    results = [_row(baseline_revenue, baseline_config),
+               _row(scenario_revenue, scenario_config)]
+
     # Add comparison row
     revenue_diff = scenario_revenue['total_revenue_millions'] - baseline_revenue['total_revenue_millions']
-    pct_diff = (revenue_diff / baseline_revenue['total_revenue_millions']) * 100
-    
+
     results.append({
         'system': 'Difference',
         'description': f"{scenario_config.name} vs {baseline_config.name}",
         'revenue_millions': revenue_diff,
+        'revenue_before_credits_millions': (scenario_revenue['total_revenue_before_credits_millions']
+                                            - baseline_revenue['total_revenue_before_credits_millions']),
+        'total_credits_millions': (scenario_revenue['total_credits_millions']
+                                   - baseline_revenue['total_credits_millions']),
+        'total_cdcc_millions': (scenario_revenue['total_cdcc_millions']
+                                - baseline_revenue['total_cdcc_millions']),
         'avg_tax': scenario_revenue['average_tax_per_filer'] - baseline_revenue['average_tax_per_filer'],
-        'effective_rate': scenario_revenue['effective_rate'] - baseline_revenue['effective_rate']
+        'effective_rate': scenario_revenue['effective_rate'] - baseline_revenue['effective_rate'],
     })
-    
+
     return pd.DataFrame(results)

@@ -104,37 +104,72 @@ class HawaiiTaxCredits:
         return 0
     
     def child_dependent_care_credit(self, agi: float, filing_status: str,
-                                    num_dependents: int = 0) -> float:
+                                    num_dependents: int = 0,
+                                    enhanced: bool = False) -> float:
         """
-        Hawaii Child and Dependent Care Tax Credit.
-        
-        Based on federal credit but with Hawaii-specific rules.
-        Typically 20-35% of federal credit amount.
+        Hawaii Child and Dependent Care Tax Credit (HRS 235-55.6).
+
+        Current law: expense caps $3k/$6k, 25% down to 20%, non-refundable,
+                     phases out above $43k AGI.
+        HB2306 HD1 enhanced: expense caps $10k/$20k, 50% down to 5%, refundable,
+                     wider AGI schedule ($80k-$160k phase-down).
+
+        Args:
+            enhanced: If True, use HB2306 HD1 expanded parameters.
+
+        Note: PUMS has no childcare expense data. We estimate expenses using
+        Hawaii avg childcare cost (~$12k/yr/child). Most filers with qualifying
+        dependents will hit the expense cap.
         """
         if num_dependents == 0:
             return 0
-        
-        # Income thresholds
-        if agi > 100000:
-            return 0
-        
-        # Estimate based on number of dependents and income
-        if num_dependents >= 1:
-            # Average credit ranges from $200-$800
-            if agi < 30000:
-                base = 800
-            elif agi < 60000:
-                base = 500
+
+        if enhanced:
+            # HB2306 HD1 parameters (Section 235-55.6 as amended)
+            expense_cap = 10_000 if num_dependents == 1 else 20_000
+
+            # AGI-based percentage schedule
+            if agi <= 80_000:
+                pct = 0.50
+            elif agi <= 90_000:
+                pct = 0.45
+            elif agi <= 100_000:
+                pct = 0.40
+            elif agi <= 110_000:
+                pct = 0.35
+            elif agi <= 120_000:
+                pct = 0.30
+            elif agi <= 130_000:
+                pct = 0.25
+            elif agi <= 140_000:
+                pct = 0.20
+            elif agi <= 150_000:
+                pct = 0.15
+            elif agi <= 160_000:
+                pct = 0.10
             else:
-                base = 300
-            
-            # Additional for multiple dependents
-            if num_dependents >= 2:
-                base *= 1.5
-            
-            return base
-        
-        return 0
+                pct = 0.05
+        else:
+            # Current law parameters
+            expense_cap = 3_000 if num_dependents == 1 else 6_000
+
+            # Current law percentage schedule (HRS 235-55.6 pre-amendment)
+            if agi <= 25_000:
+                pct = 0.25
+            elif agi <= 43_000:
+                # Linear decrease from 25% to 20% over $25k-$43k
+                pct = 0.25 - 0.05 * (agi - 25_000) / 18_000
+            else:
+                pct = 0.20
+
+            # Current law phases out entirely above $100k
+            if agi > 100_000:
+                return 0
+
+        # Estimated qualifying expenses (Hawaii avg ~$12k/yr/child)
+        estimated_expenses = min(12_000 * num_dependents, expense_cap)
+
+        return estimated_expenses * pct
     
     def low_income_renters_credit(self, agi: float, filing_status: str) -> float:
         """
@@ -169,91 +204,106 @@ class HawaiiTaxCredits:
     
     def calculate_total_credits(self, agi: float, filing_status: str,
                                num_dependents: int = 0,
-                               tax_before_credits: float = 0) -> Dict[str, float]:
+                               tax_before_credits: float = 0,
+                               credit_scenario: Optional[str] = None) -> Dict[str, float]:
         """
         Calculate all Hawaii state tax credits.
-        
+
         Args:
             agi: Adjusted Gross Income
             filing_status: Filing status
             num_dependents: Number of dependents
             tax_before_credits: Tax liability before credits
-            
+            credit_scenario: If 'hb2306_hd1', use enhanced CDCC (refundable)
+
         Returns:
             Dictionary with individual credits and totals
         """
+        enhanced_cdcc = (credit_scenario == 'hb2306_hd1')
+
         credits = {
             'food_excise': self.food_excise_tax_credit(agi, filing_status, num_dependents),
             'renewable_energy': self.renewable_energy_credit(agi, filing_status),
-            'child_care': self.child_dependent_care_credit(agi, filing_status, num_dependents),
+            'child_care': self.child_dependent_care_credit(agi, filing_status, num_dependents,
+                                                           enhanced=enhanced_cdcc),
             'renters': self.low_income_renters_credit(agi, filing_status),
         }
-        
+
         # Separate refundable and non-refundable
-        refundable_credits = credits['food_excise'] + credits['renters']
-        nonrefundable_credits = credits['renewable_energy'] + credits['child_care']
-        
+        # Under HB2306 HD1, CDCC becomes refundable
+        if enhanced_cdcc:
+            refundable_credits = credits['food_excise'] + credits['renters'] + credits['child_care']
+            nonrefundable_credits = credits['renewable_energy']
+        else:
+            refundable_credits = credits['food_excise'] + credits['renters']
+            nonrefundable_credits = credits['renewable_energy'] + credits['child_care']
+
         # Non-refundable credits limited to tax liability
         nonrefundable_credits = min(nonrefundable_credits, tax_before_credits)
-        
+
         credits['total_refundable'] = refundable_credits
         credits['total_nonrefundable'] = nonrefundable_credits
         credits['total'] = refundable_credits + nonrefundable_credits
-        
+
         return credits
 
 
 def calculate_hawaii_credits(agi: float, filing_status: str,
                              num_dependents: int = 0,
                              tax_before_credits: float = 0,
-                             year: int = 2024) -> Dict[str, float]:
+                             year: int = 2024,
+                             credit_scenario: Optional[str] = None) -> Dict[str, float]:
     """
     Convenience function to calculate Hawaii state tax credits.
-    
+
     Args:
         agi: Adjusted Gross Income
         filing_status: Filing status
         num_dependents: Number of dependents
         tax_before_credits: Tax liability before credits
         year: Tax year
-        
+        credit_scenario: If 'hb2306_hd1', use enhanced CDCC
+
     Returns:
         Dictionary with credit amounts
     """
     calculator = HawaiiTaxCredits(year)
-    return calculator.calculate_total_credits(agi, filing_status, num_dependents, tax_before_credits)
+    return calculator.calculate_total_credits(agi, filing_status, num_dependents,
+                                              tax_before_credits, credit_scenario)
 
 
 def apply_credits_to_dataframe(df: pd.DataFrame,
                                agi_col: str = 'agi',
                                filing_status_col: str = 'filing_status',
                                dependents_col: str = 'num_dependents',
-                               tax_col: str = 'tax_liability') -> pd.DataFrame:
+                               tax_col: str = 'tax_liability',
+                               credit_scenario: Optional[str] = None) -> pd.DataFrame:
     """
     Apply Hawaii tax credits to a DataFrame of tax units.
-    
+
     Args:
         df: DataFrame with tax units
         agi_col: Name of AGI column
         filing_status_col: Name of filing status column
         dependents_col: Name of dependents column
         tax_col: Name of tax liability column
-        
+        credit_scenario: If 'hb2306_hd1', use enhanced CDCC
+
     Returns:
         DataFrame with added credit columns
     """
     result_df = df.copy()
     calculator = HawaiiTaxCredits()
-    
+
     credits_list = []
     for _, row in df.iterrows():
         agi = row[agi_col]
         filing_status = row[filing_status_col]
         num_dependents = row.get(dependents_col, 0)
         tax_before_credits = row[tax_col]
-        
+
         credits = calculator.calculate_total_credits(
-            agi, filing_status, num_dependents, tax_before_credits
+            agi, filing_status, num_dependents, tax_before_credits, credit_scenario
         )
         credits_list.append(credits)
     
