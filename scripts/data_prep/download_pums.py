@@ -106,52 +106,61 @@ class PUMSDownloader:
                  for i in range(0, len(variables), MAX_VARS_PER_REQUEST)]
         
         result_df = None
-        
+        failed_chunks = []
+
         for i, chunk in enumerate(chunks, 1):
             logger.info(f"Fetching {dataset_type} data chunk {i}/{len(chunks)} with {len(chunk)} variables...")
-            
+
             params = {
                 'get': ','.join(chunk),
                 'for': f'state:{self.state}',
                 'key': self.api_key
             }
-            
+
             try:
                 response = requests.get(self.base_url, params=params, timeout=30)
                 response.raise_for_status()
-                
+
                 # Parse JSON response
                 data = response.json()
                 headers = data[0]
                 rows = data[1:]
-                
+
                 # Create DataFrame for this chunk
                 chunk_df = pd.DataFrame(rows, columns=headers)
-                
+
                 # Convert numeric columns
                 for col in chunk_df.columns:
                     if col != 'SERIALNO':
                         try:
                             chunk_df[col] = pd.to_numeric(chunk_df[col], errors='ignore')
-                        except:
+                        except (ValueError, TypeError):
                             pass
-                
+
                 # Merge with previous chunks
                 if result_df is None:
                     result_df = chunk_df
                 else:
                     # Merge on SERIALNO only
                     result_df = pd.merge(result_df, chunk_df, on='SERIALNO', how='outer')
-                
+
                 logger.info(f"Retrieved {len(chunk_df)} records")
-                
+
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error fetching data: {e}")
                 if hasattr(e, 'response') and e.response is not None:
                     logger.error(f"Status code: {e.response.status_code}")
                     logger.error(f"Response: {e.response.text[:500]}")
+                failed_chunks.append(i)
                 continue
-        
+
+        if failed_chunks:
+            logger.error(
+                f"Failed {len(failed_chunks)}/{len(chunks)} chunks for {dataset_type}. "
+                f"Returning None to avoid incomplete data."
+            )
+            return None
+
         return result_df
     
     def download_person_data(self) -> Optional[pd.DataFrame]:

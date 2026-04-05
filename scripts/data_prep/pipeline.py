@@ -294,8 +294,8 @@ class DataPipeline:
             results = downloader.download_all_tables(start_year=2015, end_year=2024)
             n_tables = sum(len(years) for years in results.values())
             files = list(output_dir.rglob("*.csv"))
-            self.manifest.record(source, files[:5])  # Record a sample
-            return StepResult(True, f"Downloaded {n_tables} table-year combos", files[:5])
+            self.manifest.record(source, files)
+            return StepResult(True, f"Downloaded {n_tables} table-year combos", files)
         except Exception as e:
             return StepResult(False, f"ACS download failed: {e}")
 
@@ -330,9 +330,9 @@ class DataPipeline:
                     fetched.append(year)
 
             files = list(output_dir.glob("state_M*"))
-            self.manifest.record(source, files[:3])
+            self.manifest.record(source, files)
             msg = f"BLS OES up to date. New years fetched: {fetched or 'none'}"
-            return StepResult(True, msg, [output_dir / f"state_M{y}_dl.xlsx" for y in fetched])
+            return StepResult(True, msg, files)
         except Exception as e:
             return StepResult(False, f"BLS OES download failed: {e}")
 
@@ -576,16 +576,20 @@ class DataPipeline:
                 False, "Skipped — BLS OES fetch did not succeed", skipped=True
             )
 
-        # Regenerate tax units if requested
+        # Regenerate tax units if requested.
+        # Only proceed if PUMS data is known-good: either a fresh fetch
+        # succeeded this run, or PUMS wasn't in the fetch list (meaning
+        # existing on-disk data is being used as-is).
         if regenerate or self.config.auto_regenerate:
+            pums_was_fetched = "census_pums" in (sources or [])
             pums_ok = results.get("census_pums", StepResult(False, "")).success
-            if pums_ok or not sources or "census_pums" not in (sources or []):
+            if not pums_was_fetched or pums_ok:
                 logger.info("\nRegenerating tax units...")
                 results["regenerate"] = self.regenerate_tax_units()
                 logger.info(f"  [regenerate] {results['regenerate'].message}")
             else:
                 results["regenerate"] = StepResult(
-                    False, "Skipped — PUMS data not available", skipped=True
+                    False, "Skipped — PUMS fetch failed", skipped=True
                 )
 
         manual_warnings = check_manual_sources(self.root)
