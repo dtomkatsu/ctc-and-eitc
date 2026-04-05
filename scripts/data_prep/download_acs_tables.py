@@ -165,28 +165,47 @@ class ACSTableDownloader:
         
         all_data = []
         
+        max_retries = 3
         for i, chunk in enumerate(var_chunks):
             logger.info(f"Downloading chunk {i+1}/{len(var_chunks)} ({len(chunk)} variables)")
-            
+
             params = {
                 'get': ','.join(chunk + ['NAME']),
                 'for': 'state:15',  # Hawaii
                 'key': self.api_key
             }
-            
+
             try:
-                response = requests.get(url, params=params)
+                # Retry loop for 429 rate-limiting
+                response = None
+                for attempt in range(max_retries + 1):
+                    response = requests.get(url, params=params)
+                    if response.status_code == 429:
+                        if attempt < max_retries:
+                            retry_after = int(response.headers.get('Retry-After', 2 * (2 ** attempt)))
+                            wait = min(retry_after, 60)
+                            logger.warning(
+                                f"Rate limited (429) on {table_code} chunk {i+1}, "
+                                f"attempt {attempt + 1}/{max_retries + 1}. Retrying in {wait}s..."
+                            )
+                            time.sleep(wait)
+                            continue
+                        else:
+                            logger.error(f"Rate limited on {table_code} chunk {i+1} after {max_retries + 1} attempts")
+                            break
+                    break  # Not 429 — proceed to normal handling
+
                 response.raise_for_status()
                 data = response.json()
-                
+
                 # Convert to DataFrame
                 df = pd.DataFrame(data[1:], columns=data[0])
                 all_data.append(df)
-                
+
                 # Rate limiting - longer for problematic tables
                 sleep_time = 1.0 if table_code == 'B07001' else 0.5
                 time.sleep(sleep_time)
-                
+
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 404:
                     logger.warning(f"Table {table_code} not available for {year}")

@@ -63,6 +63,9 @@ SERIES = {
     },
 }
 
+# Series whose absence degrades model accuracy (used by growth_rate_loader)
+CRITICAL_SERIES = {"hawaii_cpi", "hawaii_hpi"}
+
 
 class FREDFetcher:
     """Fetch economic time-series from the FRED API."""
@@ -135,7 +138,7 @@ class FREDFetcher:
         self,
         series_names: Optional[list[str]] = None,
         start_date: str = "2010-01-01",
-    ) -> dict[str, pd.DataFrame]:
+    ) -> tuple[dict[str, pd.DataFrame], list[str]]:
         """Fetch multiple FRED series.
 
         Args:
@@ -144,12 +147,14 @@ class FREDFetcher:
             start_date: Start date for all series.
 
         Returns:
-            Dict mapping friendly name to DataFrame.
+            Tuple of (dict mapping friendly name to DataFrame,
+                      list of failed series names).
         """
         if series_names is None:
             series_names = list(SERIES.keys())
 
         results = {}
+        failed = []
         for name in series_names:
             if name not in SERIES:
                 logger.warning(f"Unknown series name: {name}. Skipping.")
@@ -160,8 +165,11 @@ class FREDFetcher:
             df = self.fetch_series(info["series_id"], start_date=start_date)
             if not df.empty:
                 results[name] = df
+            else:
+                failed.append(name)
+                logger.warning(f"Failed to fetch {name} ({info['series_id']})")
 
-        return results
+        return results, failed
 
     def save(self, dataframes: dict[str, pd.DataFrame]) -> list[Path]:
         """Save all fetched series to CSV files.
@@ -232,7 +240,14 @@ def main():
     output_dir = project_root / "data" / "external" / "fred"
 
     fetcher = FREDFetcher(api_key=args.api_key, output_dir=output_dir)
-    dataframes = fetcher.fetch_all(series_names=args.series, start_date=args.start)
+    dataframes, failed = fetcher.fetch_all(series_names=args.series, start_date=args.start)
+
+    if failed:
+        critical_failed = [s for s in failed if s in CRITICAL_SERIES]
+        if critical_failed:
+            logger.error(f"Critical series failed: {critical_failed}")
+        else:
+            logger.warning(f"Optional series failed: {failed}")
 
     if dataframes:
         paths = fetcher.save(dataframes)

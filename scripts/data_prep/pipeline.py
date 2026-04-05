@@ -321,7 +321,7 @@ class DataPipeline:
             )
 
             fetched = []
-            for year in range(2014, 2025):
+            for year in range(2014, datetime.now().year + 1):
                 existing = list(output_dir.glob(f"state*{year}*"))
                 if existing and not force:
                     continue
@@ -384,23 +384,36 @@ class DataPipeline:
             )
 
         try:
-            from scripts.data_prep.fetch_fred import FREDFetcher
+            from scripts.data_prep.fetch_fred import FREDFetcher, CRITICAL_SERIES
 
             fetcher = FREDFetcher(
                 api_key=api_key,
                 output_dir=self.root / "data" / "external" / "fred",
             )
-            dataframes = fetcher.fetch_all(start_date="2010-01-01")
+            dataframes, failed = fetcher.fetch_all(start_date="2010-01-01")
             if not dataframes:
-                return StepResult(False, "FRED API returned no data")
+                return StepResult(False, "FRED: all series failed")
+
             paths = fetcher.save(dataframes)
             self.manifest.record(source, paths)
             series_names = list(dataframes.keys())
-            return StepResult(
-                True,
-                f"Fetched {len(dataframes)} FRED series: {', '.join(series_names)}",
-                paths,
-            )
+
+            # Check if any critical series failed
+            critical_failed = [s for s in failed if s in CRITICAL_SERIES]
+            optional_failed = [s for s in failed if s not in CRITICAL_SERIES]
+
+            if critical_failed:
+                return StepResult(
+                    False,
+                    f"Critical FRED series failed: {', '.join(critical_failed)}. "
+                    f"Succeeded: {', '.join(series_names)}",
+                    paths,
+                )
+
+            msg = f"Fetched {len(dataframes)} FRED series: {', '.join(series_names)}"
+            if optional_failed:
+                msg += f" (optional unavailable: {', '.join(optional_failed)})"
+            return StepResult(True, msg, paths)
         except Exception as e:
             return StepResult(False, f"FRED fetch failed: {e}")
 

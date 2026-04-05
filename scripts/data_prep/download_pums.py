@@ -15,6 +15,7 @@ Example:
 
 import os
 import sys
+import time
 import argparse
 import logging
 import requests
@@ -107,6 +108,7 @@ class PUMSDownloader:
         
         result_df = None
         failed_chunks = []
+        max_retries = 3
 
         for i, chunk in enumerate(chunks, 1):
             logger.info(f"Fetching {dataset_type} data chunk {i}/{len(chunks)} with {len(chunk)} variables...")
@@ -117,42 +119,63 @@ class PUMSDownloader:
                 'key': self.api_key
             }
 
-            try:
-                response = requests.get(self.base_url, params=params, timeout=30)
-                response.raise_for_status()
+            chunk_success = False
+            for attempt in range(max_retries + 1):
+                try:
+                    response = requests.get(self.base_url, params=params, timeout=30)
 
-                # Parse JSON response
-                data = response.json()
-                headers = data[0]
-                rows = data[1:]
+                    # Handle 429 rate-limit before raise_for_status
+                    if response.status_code == 429:
+                        if attempt < max_retries:
+                            retry_after = int(response.headers.get('Retry-After', 2 * (2 ** attempt)))
+                            wait = min(retry_after, 60)
+                            logger.warning(
+                                f"Rate limited (429) on chunk {i}, attempt {attempt + 1}/{max_retries + 1}. "
+                                f"Retrying in {wait}s..."
+                            )
+                            time.sleep(wait)
+                            continue
+                        else:
+                            logger.error(f"Rate limited on chunk {i} after {max_retries + 1} attempts")
+                            break
 
-                # Create DataFrame for this chunk
-                chunk_df = pd.DataFrame(rows, columns=headers)
+                    response.raise_for_status()
 
-                # Convert numeric columns
-                for col in chunk_df.columns:
-                    if col != 'SERIALNO':
-                        try:
-                            chunk_df[col] = pd.to_numeric(chunk_df[col], errors='ignore')
-                        except (ValueError, TypeError):
-                            pass
+                    # Parse JSON response
+                    data = response.json()
+                    headers = data[0]
+                    rows = data[1:]
 
-                # Merge with previous chunks
-                if result_df is None:
-                    result_df = chunk_df
-                else:
-                    # Merge on SERIALNO only
-                    result_df = pd.merge(result_df, chunk_df, on='SERIALNO', how='outer')
+                    # Create DataFrame for this chunk
+                    chunk_df = pd.DataFrame(rows, columns=headers)
 
-                logger.info(f"Retrieved {len(chunk_df)} records")
+                    # Convert numeric columns
+                    for col in chunk_df.columns:
+                        if col != 'SERIALNO':
+                            try:
+                                chunk_df[col] = pd.to_numeric(chunk_df[col], errors='ignore')
+                            except (ValueError, TypeError):
+                                pass
 
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error fetching data: {e}")
-                if hasattr(e, 'response') and e.response is not None:
-                    logger.error(f"Status code: {e.response.status_code}")
-                    logger.error(f"Response: {e.response.text[:500]}")
+                    # Merge with previous chunks
+                    if result_df is None:
+                        result_df = chunk_df
+                    else:
+                        result_df = pd.merge(result_df, chunk_df, on='SERIALNO', how='outer')
+
+                    logger.info(f"Retrieved {len(chunk_df)} records")
+                    chunk_success = True
+                    break  # Success — exit retry loop
+
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"Error fetching data: {e}")
+                    if hasattr(e, 'response') and e.response is not None:
+                        logger.error(f"Status code: {e.response.status_code}")
+                        logger.error(f"Response: {e.response.text[:500]}")
+                    break  # Non-429 errors: don't retry
+
+            if not chunk_success:
                 failed_chunks.append(i)
-                continue
 
         if failed_chunks:
             logger.error(
@@ -192,33 +215,74 @@ class PUMSDownloader:
         logger.info(f"Saved {len(df)} records to {filepath}")
         return filepath
     
+    def _validate_download(self, df: pd.DataFrame, dataset_type: str) -> bool:
+        """Validate that a downloaded DataFrame has the required schema.
+
+        Args:
+            df: DataFrame to validate
+            dataset_type: 'person' or 'household'
+
+        Returns:
+            True if validation passes, False otherwise
+        """
+        if dataset_type == 'person':
+            required_cols = {'SERIALNO', 'AGEP', 'WAGP', 'PINCP', 'RELSHIPP', 'SPORDER'}
+            min_rows = 1000
+        elif dataset_type == 'household':
+            required_cols = {'SERIALNO', 'HINCP', 'WGTP', 'NP'}
+            min_rows = 500
+        else:
+            logger.warning(f"Unknown dataset_type '{dataset_type}', skipping validation")
+            return True
+
+        missing = required_cols - set(df.columns)
+        if missing:
+            logger.error(
+                f"PUMS {dataset_type} validation failed: missing columns {missing}. "
+                f"Got columns: {sorted(df.columns)}"
+            )
+            return False
+
+        if len(df) < min_rows:
+            logger.error(
+                f"PUMS {dataset_type} validation failed: only {len(df)} rows "
+                f"(expected >= {min_rows} for Hawaii)"
+            )
+            return False
+
+        logger.info(
+            f"PUMS {dataset_type} validation passed: {len(df)} rows, "
+            f"all {len(required_cols)} required columns present"
+        )
+        return True
+
     def download_all(self) -> bool:
         """Download both person and household data.
-        
+
         Returns:
             True if both downloads were successful, False otherwise
         """
         if not self.api_key:
             logger.warning("No Census API key provided. Using public access which has rate limits.")
-        
+
         success = True
-        
+
         # Download person data
         person_df = self.download_person_data()
-        if person_df is not None:
+        if person_df is not None and self._validate_download(person_df, 'person'):
             self.save_data(person_df, f"psam_p{self.state}.csv")
         else:
             success = False
-            logger.error("Failed to download person data")
-        
+            logger.error("Failed to download or validate person data")
+
         # Download household data
         household_df = self.download_household_data()
-        if household_df is not None:
+        if household_df is not None and self._validate_download(household_df, 'household'):
             self.save_data(household_df, f"psam_h{self.state}.csv")
         else:
             success = False
-            logger.error("Failed to download household data")
-        
+            logger.error("Failed to download or validate household data")
+
         return success
 
 def parse_args():
