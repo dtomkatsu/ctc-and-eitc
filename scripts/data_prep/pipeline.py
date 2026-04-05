@@ -216,19 +216,12 @@ class DataPipeline:
     # ------------------------------------------------------------------
 
     def fetch_census_pums(self, force: bool = False) -> StepResult:
-        """Download Census PUMS person + household files for Hawaii.
+        """Download Census PUMS person + household files for Hawaii via FTP.
 
-        IMPORTANT: The committed PUMS data (290 columns from the Census FTP)
-        contains far more variables than the Census API can return per request
-        (the download script fetches only 24 columns).  Overwriting the FTP
-        files with API-fetched files silently drops columns that the rest of
-        the codebase depends on (DIV, SCH, WGTP, CIT, HINS1, SOCP, …),
-        causing catastrophic zero-income results.
-
-        To protect against this, we skip the download when full PUMS files
-        already exist on disk with more columns than the API would provide.
-        Use --force to override (e.g. after manually replacing the FTP files
-        with a new vintage).
+        Uses the Census FTP bulk download (all ~290 columns) by default.
+        The column guard only blocks API-method downloads from overwriting
+        full FTP data; FTP downloads always proceed since they provide
+        the complete column set.
         """
         source = "census_pums"
         cfg = self.config.sources.get(source)
@@ -237,39 +230,25 @@ class DataPipeline:
         if not force and self.manifest.is_fresh(source, cfg.freshness_days if cfg else 180):
             return StepResult(True, "Data is fresh, skipping", skipped=True)
 
-        # Guard: do not overwrite full FTP-sourced PUMS with the limited
-        # column set that the Census API returns.
         data_dir = self.root / "data" / "raw" / "pums"
-        person_file = data_dir / "psam_p15.csv"
-        if not force and person_file.exists():
-            import csv
-            with open(person_file) as f:
-                existing_cols = len(next(csv.reader(f)))
-            if existing_cols > 50:
-                return StepResult(
-                    True,
-                    f"Skipping — existing PUMS has {existing_cols} columns "
-                    f"(full FTP data); API download would reduce to ~24. "
-                    f"Use --force to override.",
-                    skipped=True,
-                )
 
-        api_key = os.getenv("CENSUS_API_KEY", "")
-        if not api_key or api_key == "YOUR_CENSUS_API_KEY":
-            return StepResult(False, "CENSUS_API_KEY not set in .env")
+        # Determine the PUMS year: use config if set, otherwise latest available
+        pums_year = int(os.getenv("PUMS_YEAR", "2024"))
 
         try:
             from scripts.data_prep.download_pums import PUMSDownloader
 
             downloader = PUMSDownloader(
-                year=2023, state="15", data_dir=data_dir, api_key=api_key
+                year=pums_year, state="15", data_dir=data_dir,
+                api_key=os.getenv("CENSUS_API_KEY", ""),
+                method="ftp",
             )
             ok = downloader.download_all()
             if ok:
                 files = list(data_dir.glob("psam_*.csv"))
                 self.manifest.record(source, files)
-                return StepResult(True, "Downloaded PUMS 2023", files)
-            return StepResult(False, "PUMS download returned errors")
+                return StepResult(True, f"Downloaded PUMS {pums_year} via FTP", files)
+            return StepResult(False, f"PUMS {pums_year} FTP download returned errors")
         except Exception as e:
             return StepResult(False, f"PUMS download failed: {e}")
 

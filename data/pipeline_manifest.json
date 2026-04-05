@@ -6,7 +6,42 @@
       "files": [
         "/Users/devinthomas/ctc-and-eitc/data/raw/bea_hawaii_sainc5n.csv"
       ]
+    },
+    "bls_cpi": {
+      "last_fetched": "2026-04-03T20:45:00.659380",
+      "files": [
+        "/Users/devinthomas/ctc-and-eitc/data/external/bls_cpi/honolulu_cpi.csv"
+      ]
+    },
+    "fred": {
+      "last_fetched": "2026-04-04T23:31:32.829515",
+      "files": [
+        "data/external/fred/CUUSA426SA0_hawaii_cpi.csv",
+        "data/external/fred/HISTHPI_hawaii_hpi.csv",
+        "data/external/fred/HIURN_hawaii_unemployment.csv",
+        "data/external/fred/QTAXTOTALQTAXCAT3HINO_hawaii_tax_collections.csv",
+        "data/external/fred/STTMINWGHI_hawaii_min_wage.csv"
+      ]
+    },
+    "bls_oes": {
+      "last_fetched": "2026-04-04T23:28:23.095717",
+      "files": [
+        "data/external/bls_oes/state_M2022_dl.xlsx",
+        "data/external/bls_oes/state_M2014_dl.xlsx",
+        "data/external/bls_oes/state_M2015_dl.xlsx",
+        "data/external/bls_oes/state_M2023_dl.xlsx",
+        "data/external/bls_oes/state_M2017_dl.xlsx",
+        "data/external/bls_oes/state_M2011_dl.xls",
+        "data/external/bls_oes/state_M2021_dl.xlsx",
+        "data/external/bls_oes/state_M2013_dl.xls",
+        "data/external/bls_oes/state_M2020_dl.xlsx",
+        "data/external/bls_oes/state_M2016_dl.xlsx",
+        "data/external/bls_oes/state_M2010_dl.xls",
+        "data/external/bls_oes/state_M2019_dl.xlsx",
+        "data/external/bls_oes/state_M2018_dl.xlsx",
+        "data/external/bls_oes/state_M2012_dl.xls"
+      ]
     }
   },
-  "last_run": "2026-04-02T13:53:31.042986"
+  "last_run": "2026-04-04T23:31:32.829527"
 }

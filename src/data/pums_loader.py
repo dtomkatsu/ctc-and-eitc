@@ -37,8 +37,13 @@ class PUMSDataLoader:
         self._total_households = None
         
         # Define required columns for person and household data
+        # Column renames between PUMS vintages (2022 → 2024)
+        self._column_renames = {
+            'STATE': 'ST',      # 2024 renamed ST → STATE
+        }
+
         self.person_columns = {
-            'SERIALNO': str, 'SPORDER': int, 'PUMA': str, 'ST': str,
+            'SERIALNO': str, 'SPORDER': int, 'PUMA': str, 'ST': str, 'STATE': str,
             'AGEP': int, 'SEX': int, 'HISP': int, 'RAC1P': int,
             'SCHL': int, 'DIS': int, 'MIL': int, 'MILITARY': int,
             'WAGP': float, 'SEMP': float, 'INTP': float, 'RETP': float,
@@ -50,7 +55,7 @@ class PUMSDataLoader:
         }
         
         self.household_columns = {
-            'SERIALNO': str, 'PUMA': str, 'ST': str, 'HINCP': float,
+            'SERIALNO': str, 'PUMA': str, 'ST': str, 'STATE': str, 'HINCP': float,
             'ADJINC': float, 'WGTP': int, 'NP': int, 'TEN': int,
             'HHT': int, 'NOC': int, 'NRC': int, 'BLD': int,
             'ACCESS': int, 'BROADBND': int, 'COMPOTHX': int, 'HFL': int,
@@ -130,12 +135,13 @@ class PUMSDataLoader:
         
         if hh_df.empty:
             return pd.DataFrame()
-        
+
         # Update offset for next batch
         self._batch_offset += len(hh_df)
         logger.debug(f"Updated batch offset to {self._batch_offset}")
-            
-        # Apply income adjustments and filters
+
+        # Normalize column names across PUMS vintages and apply income adjustments
+        hh_df = self._normalize_columns(hh_df)
         hh_df = self._adjust_income(hh_df)
         if 'ST' in hh_df.columns:
             hh_df = hh_df[hh_df['ST'] == state].copy()
@@ -188,8 +194,9 @@ class PUMSDataLoader:
         if not chunks:
             return pd.DataFrame()
             
-        # Combine chunks and process
+        # Combine chunks, normalize columns, and process
         person_df = pd.concat(chunks, ignore_index=True)
+        person_df = self._normalize_columns(person_df)
         person_df = self._adjust_income(person_df)
         
         if 'ST' in person_df.columns:
@@ -255,6 +262,13 @@ class PUMSDataLoader:
             
         return person_df, hh_df
     
+    def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Rename columns for cross-vintage compatibility (e.g. STATE→ST in 2024 PUMS)."""
+        rename_map = {old: new for old, new in self._column_renames.items() if old in df.columns and new not in df.columns}
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        return df
+
     def _adjust_income(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare income columns by filling NA values with 0.
         

@@ -13,11 +13,13 @@ Example:
     python scripts/download_pums.py --year 2022 --state 15 --api-key YOUR_CENSUS_API_KEY
 """
 
+import io
 import os
 import sys
 import time
 import argparse
 import logging
+import zipfile
 import requests
 import pandas as pd
 from pathlib import Path
@@ -35,7 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Default configuration
-DEFAULT_YEAR = 2023  # 2023 5-year PUMS data
+DEFAULT_YEAR = 2024  # 2024 5-year PUMS data (released Dec 2025)
 DEFAULT_STATE = '15'  # Hawaii FIPS code
 DEFAULT_DATA_DIR = Path("data/raw/pums")
 DEFAULT_API_KEY = os.getenv('CENSUS_API_KEY')
@@ -44,28 +46,47 @@ DEFAULT_API_KEY = os.getenv('CENSUS_API_KEY')
 MAX_VARS_PER_REQUEST = 45
 
 class PUMSDownloader:
-    """Handles downloading PUMS data from the Census API."""
-    
-    def __init__(self, year: int = DEFAULT_YEAR, 
+    """Handles downloading PUMS data from the Census Bureau.
+
+    Supports two download methods:
+    - 'ftp': Download full PUMS files from Census FTP (all ~290 columns).
+             This is the recommended method as the model requires columns
+             not available through the API.
+    - 'api': Download a subset of variables via the Census API (~24 columns).
+             Only useful for quick checks; insufficient for the full model.
+    """
+
+    # Census FTP base URL for PUMS files
+    FTP_BASE_URL = "https://www2.census.gov/programs-surveys/acs/data/pums"
+
+    # FIPS code to lowercase state abbreviation (used in FTP filenames)
+    FIPS_TO_ABBREV = {
+        '15': 'hi',   # Hawaii
+    }
+
+    def __init__(self, year: int = DEFAULT_YEAR,
                  state: str = DEFAULT_STATE,
                  data_dir: Path = DEFAULT_DATA_DIR,
-                 api_key: Optional[str] = DEFAULT_API_KEY):
+                 api_key: Optional[str] = DEFAULT_API_KEY,
+                 method: str = 'ftp'):
         """Initialize the PUMS downloader.
-        
+
         Args:
             year: Year of data to download
             state: State FIPS code
             data_dir: Directory to save downloaded files
-            api_key: Census API key (or None to use environment variable)
+            api_key: Census API key (required for 'api' method)
+            method: Download method — 'ftp' (full data) or 'api' (subset)
         """
         self.year = year
         self.state = state
         self.data_dir = Path(data_dir)
         self.api_key = api_key
-        
+        self.method = method
+
         # Create data directory if it doesn't exist
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Base URL for the Census PUMS API
         self.base_url = f"https://api.census.gov/data/{self.year}/acs/acs5/pums"
         
@@ -185,15 +206,82 @@ class PUMSDownloader:
             return None
 
         return result_df
-    
+
+    def _download_ftp(self, file_type: str) -> Optional[pd.DataFrame]:
+        """Download full PUMS file from Census FTP (all columns).
+
+        Args:
+            file_type: 'person' or 'household'
+
+        Returns:
+            DataFrame with all PUMS columns, or None on failure.
+        """
+        state_abbr = self.FIPS_TO_ABBREV.get(self.state)
+        if not state_abbr:
+            logger.error(
+                f"No state abbreviation mapping for FIPS '{self.state}'. "
+                f"Supported: {self.FIPS_TO_ABBREV}"
+            )
+            return None
+
+        prefix = 'p' if file_type == 'person' else 'h'
+        zip_name = f"csv_{prefix}{state_abbr}.zip"
+        url = f"{self.FTP_BASE_URL}/{self.year}/5-Year/{zip_name}"
+
+        logger.info(f"Downloading {file_type} PUMS from {url} ...")
+
+        try:
+            response = requests.get(url, stream=True, timeout=300)
+            response.raise_for_status()
+
+            total_bytes = len(response.content)
+            logger.info(f"Downloaded {total_bytes / 1_048_576:.1f} MB")
+
+            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                csv_files = [f for f in zf.namelist() if f.lower().endswith('.csv')]
+                if not csv_files:
+                    logger.error(f"No CSV files found in {zip_name}")
+                    return None
+
+                csv_name = csv_files[0]
+                logger.info(f"Extracting {csv_name} from {zip_name}")
+
+                with zf.open(csv_name) as csv_file:
+                    df = pd.read_csv(csv_file, dtype={'SERIALNO': str})
+
+            logger.info(
+                f"Loaded {file_type} PUMS: {len(df)} rows, {len(df.columns)} columns"
+            )
+            return df
+
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                logger.error(
+                    f"{file_type} PUMS not found at {url}. "
+                    f"The {self.year} 5-Year ACS may not be published yet."
+                )
+            else:
+                logger.error(f"HTTP error downloading {file_type} PUMS: {e}")
+            return None
+        except zipfile.BadZipFile:
+            logger.error(f"Downloaded file from {url} is not a valid ZIP archive")
+            return None
+        except Exception as e:
+            logger.error(f"Error downloading {file_type} PUMS from FTP: {e}")
+            return None
+
     def download_person_data(self) -> Optional[pd.DataFrame]:
         """Download person-level PUMS data."""
-        logger.info(f"Downloading person data for {self.state} ({self.year})...")
+        logger.info(f"Downloading person data for {self.state} ({self.year}) via {self.method}...")
+        if self.method == 'ftp':
+            return self._download_ftp('person')
         return self._make_api_request('person', self.person_vars)
-    
+
     def download_household_data(self) -> Optional[pd.DataFrame]:
         """Download household-level PUMS data."""
-        logger.info(f"Downloading household data for {self.state} ({self.year})...")
+        logger.info(f"Downloading household data for {self.state} ({self.year}) via {self.method}...")
+        if self.method == 'ftp':
+            return self._download_ftp('household')
         return self._make_api_request('household', self.household_vars)
     
     def save_data(self, df: pd.DataFrame, filename: str) -> Path:
@@ -262,7 +350,7 @@ class PUMSDownloader:
         Returns:
             True if both downloads were successful, False otherwise
         """
-        if not self.api_key:
+        if self.method == 'api' and not self.api_key:
             logger.warning("No Census API key provided. Using public access which has rate limits.")
 
         success = True
@@ -296,21 +384,25 @@ def parse_args():
                        help=f'Directory to save data (default: {DEFAULT_DATA_DIR})')
     parser.add_argument('--api-key', type=str, default=DEFAULT_API_KEY,
                        help='Census API key (default: CENSUS_API_KEY environment variable)')
+    parser.add_argument('--method', choices=['ftp', 'api'], default='ftp',
+                       help='Download method: ftp (full data, ~290 cols) or api (subset, ~24 cols)')
     return parser.parse_args()
 
 def main():
     """Main function to run the script."""
     args = parse_args()
-    
+
     downloader = PUMSDownloader(
         year=args.year,
         state=args.state,
         data_dir=args.data_dir,
-        api_key=args.api_key or DEFAULT_API_KEY
+        api_key=args.api_key or DEFAULT_API_KEY,
+        method=args.method,
     )
-    
+
+    logger.info(f"Method: {args.method.upper()}, Year: {args.year}, State: {args.state}")
     success = downloader.download_all()
-    
+
     if success:
         logger.info("\nDownload completed successfully!")
         logger.info(f"Files saved to: {args.data_dir}")
