@@ -29,12 +29,13 @@ def identify_dependents(household: pd.DataFrame) -> Dict[str, List[str]]:
     # For tax purposes, students under 24 can still be dependents
     # In PUMS, SCHL is the education level, where 1-24 indicates various levels of education
     # We'll consider someone a student if they are enrolled in school (SCHL >= 15 for college)
+    # However, householders (RELSHIPP=20) and spouses (RELSHIPP=21) are always filers,
+    # even if they are students under 24.
+    is_adult_age = (household['AGEP'] >= 18)
+    is_young_student = (household['AGEP'] < 24) & (household['SCHL'] >= 15)
+    is_householder_or_spouse = household['RELSHIPP'].isin([20, 21, 1, 2])
     adults = household[
-        (household['AGEP'] >= 18) &  # 18 or older
-        ~(  # But not students under 24
-            (household['AGEP'] < 24) & 
-            (household['SCHL'] >= 15)  # Enrolled in college or higher
-        )
+        is_adult_age & (~is_young_student | is_householder_or_spouse)
     ].copy()
     
     # Get all children and students in the household
@@ -53,6 +54,8 @@ def identify_dependents(household: pd.DataFrame) -> Dict[str, List[str]]:
 
         # Find potential parents/guardians
         potential_guardians = _find_potential_guardians(child, adults, household)
+        # Safety: only keep guardians that exist in the adults DataFrame
+        potential_guardians = [g for g in potential_guardians if g in adults.index]
 
         if potential_guardians:
             # Prioritize guardians to maximize credit benefit:
@@ -134,9 +137,13 @@ def _find_potential_guardians(
             potential.append(guardian_id)
             continue
 
-    # If no guardians found and this is a student, default to the primary filer if they live together
+    # If no guardians found and this is a student, default to the primary filer if they live together.
+    # Search potential_guardians (adults) first; fall back to full household only if found there too.
     if not potential and _is_student(child):
-        primary_filer = household[household['RELSHIPP'].isin([20, 1])]
+        primary_filer = potential_guardians[potential_guardians['RELSHIPP'].isin([20, 1])]
+        if primary_filer.empty:
+            # Householder might not be in adults (shouldn't happen now, but be safe)
+            primary_filer = household[household['RELSHIPP'].isin([20, 1])]
         if not primary_filer.empty and _lived_with_all_year(child, primary_filer.iloc[0], household):
             potential.append(primary_filer.index[0])
     

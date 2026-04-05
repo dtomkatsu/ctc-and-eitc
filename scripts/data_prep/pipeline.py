@@ -216,13 +216,43 @@ class DataPipeline:
     # ------------------------------------------------------------------
 
     def fetch_census_pums(self, force: bool = False) -> StepResult:
-        """Download Census PUMS person + household files for Hawaii."""
+        """Download Census PUMS person + household files for Hawaii.
+
+        IMPORTANT: The committed PUMS data (290 columns from the Census FTP)
+        contains far more variables than the Census API can return per request
+        (the download script fetches only 24 columns).  Overwriting the FTP
+        files with API-fetched files silently drops columns that the rest of
+        the codebase depends on (DIV, SCH, WGTP, CIT, HINS1, SOCP, …),
+        causing catastrophic zero-income results.
+
+        To protect against this, we skip the download when full PUMS files
+        already exist on disk with more columns than the API would provide.
+        Use --force to override (e.g. after manually replacing the FTP files
+        with a new vintage).
+        """
         source = "census_pums"
         cfg = self.config.sources.get(source)
         if cfg and not cfg.enabled:
             return StepResult(True, "Disabled in config", skipped=True)
         if not force and self.manifest.is_fresh(source, cfg.freshness_days if cfg else 180):
             return StepResult(True, "Data is fresh, skipping", skipped=True)
+
+        # Guard: do not overwrite full FTP-sourced PUMS with the limited
+        # column set that the Census API returns.
+        data_dir = self.root / "data" / "raw" / "pums"
+        person_file = data_dir / "psam_p15.csv"
+        if not force and person_file.exists():
+            import csv
+            with open(person_file) as f:
+                existing_cols = len(next(csv.reader(f)))
+            if existing_cols > 50:
+                return StepResult(
+                    True,
+                    f"Skipping — existing PUMS has {existing_cols} columns "
+                    f"(full FTP data); API download would reduce to ~24. "
+                    f"Use --force to override.",
+                    skipped=True,
+                )
 
         api_key = os.getenv("CENSUS_API_KEY", "")
         if not api_key or api_key == "YOUR_CENSUS_API_KEY":
@@ -231,7 +261,6 @@ class DataPipeline:
         try:
             from scripts.data_prep.download_pums import PUMSDownloader
 
-            data_dir = self.root / "data" / "raw" / "pums"
             downloader = PUMSDownloader(
                 year=2023, state="15", data_dir=data_dir, api_key=api_key
             )
