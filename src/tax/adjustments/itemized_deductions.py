@@ -267,14 +267,47 @@ class ItemizedDeductionEstimator:
                 break
         return amount
 
+    def apply_pease_limitation(self, total_itemized: float, agi: float,
+                               filing_status: str) -> float:
+        """
+        Apply Hawaii's Pease limitation (HRS § 235-2.4(f)).
+
+        Hawaii did not adopt the TCJA suspension of IRC § 68 (Pease), so the
+        overall limitation on itemized deductions still applies using the AGI
+        thresholds that were operative for federal tax year 2009 (not
+        inflation-adjusted). Reduces itemized deductions by 3% of excess AGI
+        above the threshold, capped at 80% of total itemized deductions.
+
+        2009 thresholds (IRS Rev. Proc. 2008-66):
+          - $166,800: single, MFJ, head of household, qualifying widow
+          - $83,400: married filing separately
+        """
+        if filing_status == 'married_filing_separately':
+            threshold = 83_400
+        else:
+            threshold = 166_800
+
+        if agi <= threshold:
+            return total_itemized
+
+        reduction = 0.03 * (agi - threshold)
+        max_reduction = 0.80 * total_itemized
+        return total_itemized - min(reduction, max_reduction)
+
     def estimate_total_itemized_deductions(self, agi: float,
                                           filing_status: str,
                                           age: Optional[int] = None) -> Dict[str, float]:
         """
-        Estimate total itemized deductions.
+        Estimate total itemized deductions after Hawaii's Pease limitation.
+
+        Categories modeled: mortgage interest, charitable contributions,
+        medical expenses, real estate taxes. Hawaii has no mortgage interest
+        dollar cap (did not adopt TCJA $750k limit) and no SALT cap (did not
+        adopt TCJA $10k limit). Pease limitation applied per HRS § 235-2.4(f).
 
         Returns:
-            Dictionary with individual deductions and total
+            Dictionary with individual deductions, pre-Pease total, and
+            post-Pease total.
         """
         deductions = {
             'mortgage_interest': self.estimate_mortgage_interest(agi, filing_status),
@@ -283,7 +316,11 @@ class ItemizedDeductionEstimator:
             'real_estate_taxes': self.estimate_real_estate_taxes(agi, filing_status),
         }
 
-        deductions['total'] = sum(deductions.values())
+        pre_pease_total = sum(deductions.values())
+        post_pease_total = self.apply_pease_limitation(pre_pease_total, agi, filing_status)
+
+        deductions['pre_pease_total'] = pre_pease_total
+        deductions['total'] = post_pease_total
 
         return deductions
 
@@ -296,7 +333,7 @@ class ItemizedDeductionEstimator:
         Args:
             agi: Adjusted Gross Income
             filing_status: Filing status
-            standard_deduction: Standard deduction amount
+            standard_deduction: Standard deduction amount for this filer
             age: Age of primary filer
 
         Returns:
@@ -306,10 +343,10 @@ class ItemizedDeductionEstimator:
         will_itemize = self.will_itemize(agi, filing_status)
 
         if will_itemize:
-            # Calculate itemized deductions
+            # Calculate itemized deductions (includes Pease limitation)
             itemized = self.estimate_total_itemized_deductions(agi, filing_status, age)
 
-            # Only itemize if it exceeds standard deduction
+            # Only itemize if post-Pease total exceeds standard deduction
             if itemized['total'] > standard_deduction:
                 return {
                     'type': 'itemized',

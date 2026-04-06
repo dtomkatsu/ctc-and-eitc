@@ -9,6 +9,7 @@ Major credits include:
 - Low-Income Household Renters Credit
 """
 
+import math
 import pandas as pd
 import numpy as np
 from typing import Dict, Optional
@@ -105,7 +106,7 @@ class HawaiiTaxCredits:
     
     def child_dependent_care_credit(self, agi: float, filing_status: str,
                                     num_dependents: int = 0,
-                                    enhanced: bool = False) -> float:
+                                    credit_scenario: Optional[str] = None) -> float:
         """
         Hawaii Child and Dependent Care Tax Credit (HRS 235-55.6).
 
@@ -113,9 +114,10 @@ class HawaiiTaxCredits:
                      phases out above $43k AGI.
         HB2306 HD1 enhanced: expense caps $10k/$20k, 50% down to 5%, refundable,
                      wider AGI schedule ($80k-$160k phase-down).
-
-        Args:
-            enhanced: If True, use HB2306 HD1 expanded parameters.
+        SB3125 SD1 enhanced: expense caps $10k/$20k, formula-based (35% at $43k,
+                     -1pp per $3k, floor 15%), refundable.
+                     NOTE: Bill has blanks for starting % and AGI threshold.
+                     Assumed: 35% starting at $43,000 AGI.
 
         Note: PUMS has no childcare expense data. We estimate expenses using
         Hawaii avg childcare cost (~$12k/yr/child). Most filers with qualifying
@@ -124,7 +126,7 @@ class HawaiiTaxCredits:
         if num_dependents == 0:
             return 0
 
-        if enhanced:
+        if credit_scenario == 'hb2306_hd1':
             # HB2306 HD1 parameters (Section 235-55.6 as amended)
             expense_cap = 10_000 if num_dependents == 1 else 20_000
 
@@ -149,6 +151,16 @@ class HawaiiTaxCredits:
                 pct = 0.10
             else:
                 pct = 0.05
+
+        elif credit_scenario == 'sb3125_sd1':
+            # SB3125 SD1 §235-55.6: formula-based, refundable, $10k/$20k caps
+            # Bill blanks assumed: 35% starting at $43,000 AGI, -1pp per $3k, floor 15%
+            expense_cap = 10_000 if num_dependents == 1 else 20_000
+            threshold = 43_000
+            starting_pct = 0.35
+            steps = math.ceil(max(0, agi - threshold) / 3_000)
+            pct = max(0.15, starting_pct - 0.01 * steps)
+
         else:
             # Current law parameters
             expense_cap = 3_000 if num_dependents == 1 else 6_000
@@ -219,18 +231,18 @@ class HawaiiTaxCredits:
         Returns:
             Dictionary with individual credits and totals
         """
-        enhanced_cdcc = (credit_scenario == 'hb2306_hd1')
+        enhanced_cdcc = credit_scenario in ('hb2306_hd1', 'sb3125_sd1')
 
         credits = {
             'food_excise': self.food_excise_tax_credit(agi, filing_status, num_dependents),
             'renewable_energy': self.renewable_energy_credit(agi, filing_status),
             'child_care': self.child_dependent_care_credit(agi, filing_status, num_dependents,
-                                                           enhanced=enhanced_cdcc),
+                                                           credit_scenario=credit_scenario),
             'renters': self.low_income_renters_credit(agi, filing_status),
         }
 
         # Separate refundable and non-refundable
-        # Under HB2306 HD1, CDCC becomes refundable
+        # Under HB2306 HD1 and SB3125 SD1, CDCC becomes refundable
         if enhanced_cdcc:
             refundable_credits = credits['food_excise'] + credits['renters'] + credits['child_care']
             nonrefundable_credits = credits['renewable_energy']

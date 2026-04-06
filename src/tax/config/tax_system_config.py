@@ -82,16 +82,17 @@ class TaxSystemRegistry:
     def get_act46_2027_system(cls) -> TaxSystemConfig:
         """Act 46 tax system for 2027 tax year.
 
-        Act 46 (2024) has a FIXED bracket schedule for all years 2025+.
-        There is no phase-in to 2027 — the brackets are identical to 2025.
+        Act 46 (2024) includes a scheduled bracket phase-in for 2027+.
+        Brackets expand (e.g., first bracket widens from 0-9,600 to 0-14,400) to match
+        the increased standard deduction ($4,400/$8,800 in 2025 → $8,000/$16,000 in 2027).
         """
         return TaxSystemConfig(
             name="act46_2027",
             year=2027,
-            bracket_year=2025,  # Act 46 brackets (fixed for 2025+, no phase-in)
-            standard_deduction_year=2025,
-            personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2025, 1200),
-            description="Act 46 (2024) — fixed brackets for 2025+ (applies to TY2027)"
+            bracket_year=2027,  # Act 46 2027 bracket schedule (includes phase-in)
+            standard_deduction_year=2027,  # Act 46 scheduled phase-in: $8k single / $16k joint
+            personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
+            description="Act 46 (2024) — 2027 bracket phase-in and standard deduction phase-in"
         )
     
     @classmethod
@@ -150,6 +151,7 @@ class TaxSystemRegistry:
             personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
             description="SB3125 SD1 (2026 session) — higher top bracket rates effective TY2027",
             bracket_scenario='sb3125_sd1',
+            credit_scenario='sb3125_sd1',
         )
 
     @classmethod
@@ -167,7 +169,7 @@ class TaxSystemRegistry:
             name="hb2306_hd1_2027",
             year=2027,
             bracket_year=2027,
-            standard_deduction_year=2025,
+            standard_deduction_year=2027,  # Same Act 46 phase-in as baseline
             personal_exemption=cls.PERSONAL_EXEMPTIONS.get(2027, 1200),
             description="HB2306 HD1 — top 3 rates +1pp, enhanced CDCC, sunset extension to 2032",
             bracket_scenario='hb2306_hd1',

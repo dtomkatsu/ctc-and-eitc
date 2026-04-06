@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hawaii Income Tax Calculator</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  /* ── Reset & base ──────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --act46:  #2563eb;
+    --hb2306: #dc2626;
+    --sb3125: #16a34a;
+    --bg:     #ffffff;
+    --surface:#f8f8f6;
+    --border: #e5e5e0;
+    --text:   #1a1a18;
+    --muted:  #6b6b63;
+    --radius: 6px;
+    --font:   -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    font-family: var(--font);
+    color: var(--text);
+    background: var(--bg);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  /* ── Layout ────────────────────────────────────────────────────────────── */
+  .calc-wrap {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 24px 64px;
+  }
+
+  .calc-header { margin-bottom: 36px; }
+  .calc-header h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+  }
+  .calc-header p { color: var(--muted); font-size: 0.9rem; }
+
+  /* ── Inputs ────────────────────────────────────────────────────────────── */
+  .inputs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px 32px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 36px;
+  }
+  @media (max-width: 560px) { .inputs-grid { grid-template-columns: 1fr; } }
+
+  .field label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .field input[type="number"],
+  .field select {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: var(--font);
+    font-size: 0.95rem;
+    color: var(--text);
+    background: var(--bg);
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input[type="number"]:focus,
+  .field select:focus { border-color: #999; }
+
+  .field-income { grid-column: span 2; }
+  @media (max-width: 560px) { .field-income { grid-column: span 1; } }
+
+  .income-row { display: flex; gap: 12px; align-items: center; }
+  .income-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--act46);
+    cursor: pointer;
+  }
+  .income-row input[type="number"] { width: 130px; flex-shrink: 0; }
+
+  .dep-row { display: flex; align-items: center; gap: 10px; }
+  .dep-btn {
+    width: 32px; height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--bg);
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.12s;
+  }
+  .dep-btn:hover { background: var(--border); }
+  .dep-count { font-size: 1rem; font-weight: 600; min-width: 20px; text-align: center; }
+
+  /* ── Summary cards ─────────────────────────────────────────────────────── */
+  .cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 36px; }
+  @media (max-width: 600px) { .cards { grid-template-columns: 1fr; } }
+
+  .card {
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 20px 20px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .card.act46::before  { background: var(--act46); }
+  .card.hb2306::before { background: var(--hb2306); }
+  .card.sb3125::before { background: var(--sb3125); }
+
+  .card-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .card-tax {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .card.act46  .card-tax { color: var(--act46); }
+  .card.hb2306 .card-tax { color: var(--hb2306); }
+  .card.sb3125 .card-tax { color: var(--sb3125); }
+
+  .card-sub { font-size: 0.8rem; color: var(--muted); }
+  .card-diff { margin-top: 8px; font-size: 0.82rem; font-weight: 600; }
+  .card-diff.pos { color: var(--hb2306); }
+  .card-diff.neg { color: var(--sb3125); }
+  .card-diff.neutral { color: var(--muted); }
+
+  /* ── Section titles ────────────────────────────────────────────────────── */
+  .section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Table ─────────────────────────────────────────────────────────────── */
+  .section { margin-bottom: 40px; }
+
+  .calc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .calc-table th {
+    text-align: right;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .calc-table th:first-child { text-align: left; }
+  .calc-table td {
+    padding: 7px 10px;
+    text-align: right;
+    border-bottom: 1px solid #f0f0ec;
+  }
+  .calc-table td:first-child { text-align: left; color: var(--muted); }
+  .calc-table tr.bold td { font-weight: 700; color: var(--text); }
+  .calc-table tr.bold td:first-child { color: var(--text); }
+  .calc-table tr.spacer td { border-bottom: none; padding: 2px; }
+  .calc-table .col-act46  { color: var(--act46); }
+  .calc-table .col-hb2306 { color: var(--hb2306); }
+  .calc-table .col-sb3125 { color: var(--sb3125); }
+  .calc-table .col-diff-hb { color: var(--hb2306); font-weight: 600; }
+  .calc-table .col-diff-sb { color: var(--sb3125); font-weight: 600; }
+
+  /* ── Chart ─────────────────────────────────────────────────────────────── */
+  .chart-wrap { position: relative; height: 300px; margin-bottom: 40px; }
+
+  /* ── CDCC section ──────────────────────────────────────────────────────── */
+  .cdcc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 40px;
+  }
+  @media (max-width: 600px) { .cdcc-grid { grid-template-columns: 1fr; } }
+
+  .cdcc-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-size: 0.85rem;
+  }
+  .cdcc-card-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .cdcc-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .cdcc-row span:first-child { color: var(--muted); }
+  .cdcc-amount { font-size: 1.1rem; font-weight: 700; margin-top: 8px; }
+  .cdcc-card.act46  .cdcc-amount { color: var(--act46); }
+  .cdcc-card.hb2306 .cdcc-amount { color: var(--hb2306); }
+  .cdcc-card.sb3125 .cdcc-amount { color: var(--sb3125); }
+
+  /* ── Footer ────────────────────────────────────────────────────────────── */
+  .footnote {
+    font-size: 0.78rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+    line-height: 1.7;
+  }
+  .footnote strong { color: var(--text); }
+
+  /* ── Hidden ────────────────────────────────────────────────────────────── */
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="calc-wrap">
+
+  <!-- Header -->
+  <div class="calc-header">
+    <h1>Hawaii Income Tax Calculator</h1>
+    <p>Compare Act 46 (current law), HB 2306 HD1, and SB 3125 SD1 side by side — Tax Year 2027</p>
+  </div>
+
+  <!-- Inputs -->
+  <div class="inputs-grid">
+    <div class="field field-income">
+      <label>Annual Income (AGI)</label>
+      <div class="income-row">
+        <input type="range" id="income-slider" min="0" max="500000" step="1000" value="75000">
+        <input type="number" id="income-input" min="0" max="5000000" step="1000" value="75000">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Filing Status</label>
+      <select id="filing-status">
+        <option value="single">Single</option>
+        <option value="married_filing_jointly">Married Filing Jointly</option>
+        <option value="head_of_household">Head of Household</option>
+        <option value="married_filing_separately">Married Filing Separately</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Dependents</label>
+      <div class="dep-row">
+        <button class="dep-btn" id="dep-minus">−</button>
+        <span class="dep-count" id="dep-count">0</span>
+        <button class="dep-btn" id="dep-plus">+</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="cards">
+    <div class="card act46">
+      <div class="card-label">Act 46 — Current Law</div>
+      <div class="card-tax" id="card-tax-act46">—</div>
+      <div class="card-sub" id="card-rate-act46">—</div>
+      <div class="card-diff neutral">Baseline</div>
+    </div>
+    <div class="card hb2306">
+      <div class="card-label">HB 2306 HD1</div>
+      <div class="card-tax" id="card-tax-hb2306">—</div>
+      <div class="card-sub" id="card-rate-hb2306">—</div>
+      <div class="card-diff" id="card-diff-hb2306">—</div>
+    </div>
+    <div class="card sb3125">
+      <div class="card-label">SB 3125 SD1</div>
+      <div class="card-tax" id="card-tax-sb3125">—</div>
+      <div class="card-sub" id="card-rate-sb3125">—</div>
+      <div class="card-diff" id="card-diff-sb3125">—</div>
+    </div>
+  </div>
+
+  <!-- Detail table -->
+  <div class="section">
+    <div class="section-title">Detailed Breakdown</div>
+    <table class="calc-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th class="col-act46">Act 46</th>
+          <th class="col-hb2306">HB 2306</th>
+          <th class="col-sb3125">SB 3125</th>
+          <th>HB vs Act 46</th>
+          <th>SB vs Act 46</th>
+        </tr>
+      </thead>
+      <tbody id="detail-table-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Income sweep chart -->
+  <div class="section">
+    <div class="section-title">Net Tax by Income</div>
+    <div class="chart-wrap">
+      <canvas id="sweep-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- CDCC detail -->
+  <div class="section" id="cdcc-section" class="hidden">
+    <div class="section-title">Child &amp; Dependent Care Credit (CDCC)</div>
+    <div class="cdcc-grid">
+      <div class="cdcc-card act46" id="cdcc-act46"></div>
+      <div class="cdcc-card hb2306" id="cdcc-hb2306"></div>
+      <div class="cdcc-card sb3125" id="cdcc-sb3125"></div>
+    </div>
+  </div>
+
+  <!-- Footnotes -->
+  <div class="footnote">
+    <strong>Assumptions:</strong>
+    Standard deduction taken (no itemizing).
+    Childcare expenses estimated at $12,000/child/year (Hawaii avg).
+    Act 46 modeled at TY 2025; HB 2306 HD1 and SB 3125 SD1 modeled at TY 2027.
+    Food/Excise Tax Credit included; Renewable Energy and Renters credits excluded (highly situational).
+    <br>
+    * <strong>SB 3125 CDCC:</strong> The enrolled bill contains blank values for the applicable starting percentage and AGI threshold in §235-55.6.
+    This calculator assumes <strong>35% starting at $43,000 AGI</strong>, reduced 1pp per $3,000, floor 15%. Enacted values may differ.
+    <br><br>
+    For policy questions, contact <a href="https://www.capitol.hawaii.gov" target="_blank" rel="noopener">Hawaii State Legislature</a>.
+  </div>
+
+</div>
+
+<script>
+// ── Tax data ──────────────────────────────────────────────────────────────────
+
+const STD_DEDUCTIONS = {
+  single:                   4400,
+  married_filing_jointly:   8800,
+  head_of_household:        6424,
+  married_filing_separately:4400,
+};
+
+const PERSONAL_EXEMPTION = 1200;
+
+// Bracket format: [min, max_or_null, rate_pct]
+// max=null means top bracket (infinity)
+const BRACKETS = {
+  act46: {
+    Single_Married_Separate: [
+      [0,       9600,   1.4],
+      [9600,    14400,  3.2],
+      [14400,   19200,  5.5],
+      [19200,   24000,  6.4],
+      [24000,   36000,  6.8],
+      [36000,   48000,  7.2],
+      [48000,   125000, 7.6],
+      [125000,  175000, 7.9],
+      [175000,  225000, 8.25],
+      [225000,  275000, 9.0],
+      [275000,  325000, 10.0],
+      [325000,  null,   11.0],
+    ],
+    Joint_Surviving_Spouse: [
+      [0,       19200,  1.4],
+      [19200,   28800,  3.2],
+      [28800,   38400,  5.5],
+      [38400,   48000,  6.4],
+      [48000,   72000,  6.8],
+      [72000,   96000,  7.2],
+      [96000,   250000, 7.6],
+      [250000,  350000, 7.9],
+      [350000,  450000, 8.25],
+      [450000,  550000, 9.0],
+      [550000,  650000, 10.0],
+      [650000,  null,   11.0],
+    ],
+    Head_of_Household: [
+      [0,       14400,  1.4],
+      [14400,   21600,  3.2],
+      [21600,   28800,  5.5],
+      [28800,   36000,  6.4],
+      [36000,   54000,  6.8],
+      [54000,   72000,  7.2],
+      [72000,   187500, 7.6],
+      [187500,  262500, 7.9],
+      [262500,  337500, 8.25],
+      [337500,  412500, 9.0],
+      [412500,  487500, 10.0],
+      [487500,  null,   11.0],
+    ],
+  },
+  hb2306: {
+    Single_Married_Separate: [
+      [0,       9600,   1.4],
+      [9600,    14400,  3.2],
+      [14400,   19200,  5.5],
+      [19200,   24000,  6.4],
+      [24000,   36000,  6.8],
+      [36000,   48000,  7.2],
+      [48000,   125000, 7.6],
+      [125000,  175000, 7.9],
+      [175000,  225000, 8.25],
+      [225000,  275000, 10.0],
+      [275000,  325000, 11.0],
+      [325000,  null,   12.0],
+    ],
+    Joint_Surviving_Spouse: [
+      [0,       19200,  1.4],
+      [19200,   28800,  3.2],
+      [28800,   38400,  5.5],
+      [38400,   48000,  6.4],
+      [48000,   72000,  6.8],
+      [72000,   96000,  7.2],
+      [96000,   250000, 7.6],
+      [250000,  350000, 7.9],
+      [350000,  450000, 8.25],
+      [450000,  550000, 10.0],
+      [550000,  650000, 11.0],
+      [650000,  null,   12.0],
+    ],
+    Head_of_Household: [
+      [0,       14400,  1.4],
+      [14400,   21600,  3.2],
+      [21600,   28800,  5.5],
+      [28800,   36000,  6.4],
+      [36000,   54000,  6.8],
+      [54000,   72000,  7.2],
+      [72000,   187500, 7.6],
+      [187500,  262500, 7.9],
+      [262500,  337500, 8.25],
+      [337500,  412500, 10.0],
+      [412500,  487500, 11.0],
+      [487500,  null,   12.0],
+    ],
+  },
+  sb3125: {
+    Single_Married_Separate: [
+      [0,       14400,  1.4],
+      [14400,   19200,  3.2],
+      [19200,   24000,  5.5],
+      [24000,   36000,  6.4],
+      [36000,   48000,  6.8],
+      [48000,   125000, 7.2],
+      [125000,  175000, 7.6],
+      [175000,  225000, 8.25],
+      [225000,  275000, 9.0],
+      [275000,  325000, 10.0],
+      [325000,  null,   11.0],
+    ],
+    Joint_Surviving_Spouse: [
+      [0,       28800,  1.4],
+      [28800,   38400,  3.2],
+      [38400,   48000,  5.5],
+      [48000,   72000,  6.4],
+      [72000,   96000,  6.8],
+      [96000,   250000, 7.2],
+      [250000,  350000, 7.6],
+      [350000,  450000, 8.25],
+      [450000,  550000, 9.0],
+      [550000,  650000, 10.0],
+      [650000,  null,   11.0],
+    ],
+    Head_of_Household: [
+      [0,       21600,  1.4],
+      [21600,   28800,  3.2],
+      [28800,   36000,  5.5],
+      [36000,   54000,  6.4],
+      [54000,   72000,  6.8],
+      [72000,   187500, 7.2],
+      [187500,  262500, 7.6],
+      [262500,  337500, 8.25],
+      [337500,  412500, 9.0],
+      [412500,  487500, 10.0],
+      [487500,  null,   11.0],
+    ],
+  },
+};
+
+// Map UI filing status to bracket key
+function bracketKey(status) {
+  if (status === 'married_filing_jointly') return 'Joint_Surviving_Spouse';
+  if (status === 'head_of_household')      return 'Head_of_Household';
+  return 'Single_Married_Separate';
+}
+
+// ── Tax calculation ───────────────────────────────────────────────────────────
+
+function calcTax(agi, scenario, filingStatus, numDependents) {
+  const stdDed = STD_DEDUCTIONS[filingStatus] || 4400;
+  const numExemptions = (filingStatus === 'married_filing_jointly' ? 2 : 1) + numDependents;
+  const personalExemptions = numExemptions * PERSONAL_EXEMPTION;
+  const taxableIncome = Math.max(0, agi - stdDed - personalExemptions);
+
+  const bKey = bracketKey(filingStatus);
+  const brackets = BRACKETS[scenario][bKey];
+
+  let tax = 0;
+  let marginalRate = 0;
+  for (const [bMin, bMax, rate] of brackets) {
+    if (taxableIncome > bMin) {
+      const top = bMax === null ? Infinity : bMax;
+      const taxableInBracket = Math.min(taxableIncome, top) - bMin;
+      tax += taxableInBracket * (rate / 100);
+      marginalRate = rate;
+      if (taxableIncome <= top) break;
+    }
+  }
+
+  return { taxableIncome, stdDed, personalExemptions, taxBeforeCredits: tax, marginalRate };
+}
+
+// ── Credits ───────────────────────────────────────────────────────────────────
+
+function foodExciseCredit(agi, filingStatus, numDependents) {
+  const starts = { single: 30000, married_filing_jointly: 50000, head_of_household: 40000, married_filing_separately: 25000 };
+  const ends   = { single: 50000, married_filing_jointly: 70000, head_of_household: 60000, married_filing_separately: 35000 };
+  const start = starts[filingStatus] || 30000;
+  const end   = ends[filingStatus]   || 50000;
+
+  let numExemptions = (filingStatus === 'married_filing_jointly' ? 2 : 1) + numDependents;
+  const base = 110 * numExemptions;
+
+  if (agi <= start) return base;
+  if (agi >= end)   return 0;
+  return base * (1 - (agi - start) / (end - start));
+}
+
+function cdcc(agi, numDependents, creditScenario) {
+  if (numDependents === 0) return 0;
+
+  let expenseCap, pct;
+
+  if (creditScenario === 'hb2306_hd1') {
+    expenseCap = numDependents === 1 ? 10000 : 20000;
+    if      (agi <= 80000)  pct = 0.50;
+    else if (agi <= 90000)  pct = 0.45;
+    else if (agi <= 100000) pct = 0.40;
+    else if (agi <= 110000) pct = 0.35;
+    else if (agi <= 120000) pct = 0.30;
+    else if (agi <= 130000) pct = 0.25;
+    else if (agi <= 140000) pct = 0.20;
+    else if (agi <= 150000) pct = 0.15;
+    else if (agi <= 160000) pct = 0.10;
+    else                    pct = 0.05;
+  } else if (creditScenario === 'sb3125_sd1') {
+    expenseCap = numDependents === 1 ? 10000 : 20000;
+    const steps = Math.ceil(Math.max(0, agi - 43000) / 3000);
+    pct = Math.max(0.15, 0.35 - 0.01 * steps);
+  } else {
+    // Current law
+    expenseCap = numDependents === 1 ? 3000 : 6000;
+    if (agi > 100000) return 0;
+    if (agi <= 25000) pct = 0.25;
+    else if (agi <= 43000) pct = 0.25 - 0.05 * (agi - 25000) / 18000;
+    else pct = 0.20;
+  }
+
+  const estimatedExpenses = Math.min(12000 * numDependents, expenseCap);
+  return estimatedExpenses * pct;
+}
+
+function calcCredits(agi, filingStatus, numDependents, taxBefore, creditScenario) {
+  const foodExcise = foodExciseCredit(agi, filingStatus, numDependents);
+  const childCare  = cdcc(agi, numDependents, creditScenario);
+  const enhanced   = (creditScenario === 'hb2306_hd1' || creditScenario === 'sb3125_sd1');
+
+  let refundable, nonrefundable;
+  if (enhanced) {
+    refundable    = foodExcise + childCare;
+    nonrefundable = 0;
+  } else {
+    refundable    = foodExcise;
+    nonrefundable = Math.min(childCare, taxBefore);
+  }
+
+  return { foodExcise, childCare, refundable, nonrefundable, total: refundable + nonrefundable };
+}
+
+// ── Full scenario calc ────────────────────────────────────────────────────────
+
+const SCENARIO_KEYS = [
+  { id: 'act46',  scenario: 'act46',  creditScenario: null,          label: 'Act 46 (2025 Law)' },
+  { id: 'hb2306', scenario: 'hb2306', creditScenario: 'hb2306_hd1',  label: 'HB 2306 HD1' },
+  { id: 'sb3125', scenario: 'sb3125', creditScenario: 'sb3125_sd1',  label: 'SB 3125 SD1' },
+];
+
+function computeAll(agi, filingStatus, numDependents) {
+  return SCENARIO_KEYS.map(({ id, scenario, creditScenario, label }) => {
+    const tax = calcTax(agi, scenario, filingStatus, numDependents);
+    const credits = calcCredits(agi, filingStatus, numDependents, tax.taxBeforeCredits, creditScenario);
+    const netTax = tax.taxBeforeCredits - credits.total;
+    const netEffRate = agi > 0 ? (netTax / agi * 100) : 0;
+    return { id, label, ...tax, credits, netTax, netEffRate };
+  });
+}
+
+// ── Formatting ────────────────────────────────────────────────────────────────
+
+function fmt(v, opts = {}) {
+  const abs = Math.abs(v);
+  const str = '$' + abs.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (opts.sign && v !== 0) return (v > 0 ? '+' : '−') + str;
+  if (v < 0) return '(' + str + ')';
+  return str;
+}
+function fmtPct(v) { return v.toFixed(2) + '%'; }
+
+function cdccPctLabel(agi, numDependents, creditScenario) {
+  if (numDependents === 0) return '—';
+  if (creditScenario === 'hb2306_hd1') {
+    let pct;
+    if      (agi <= 80000)  pct = 50;
+    else if (agi <= 90000)  pct = 45;
+    else if (agi <= 100000) pct = 40;
+    else if (agi <= 110000) pct = 35;
+    else if (agi <= 120000) pct = 30;
+    else if (agi <= 130000) pct = 25;
+    else if (agi <= 140000) pct = 20;
+    else if (agi <= 150000) pct = 15;
+    else if (agi <= 160000) pct = 10;
+    else pct = 5;
+    return pct + '%';
+  }
+  if (creditScenario === 'sb3125_sd1') {
+    const steps = Math.ceil(Math.max(0, agi - 43000) / 3000);
+    const pct = Math.max(15, 35 - steps);
+    return pct + '% (assumed*)';
+  }
+  if (agi > 100000) return '0% (phased out)';
+  if (agi <= 25000) return '25%';
+  if (agi <= 43000) return Math.round(25 - 5 * (agi - 25000) / 18000) + '%';
+  return '20%';
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+let sweepChart = null;
+
+function render() {
+  const agi = Math.max(0, parseInt(document.getElementById('income-input').value) || 0);
+  const filingStatus = document.getElementById('filing-status').value;
+  const numDependents = parseInt(document.getElementById('dep-count').textContent) || 0;
+
+  const results = computeAll(agi, filingStatus, numDependents);
+  const [r0, r1, r2] = results;
+  const baseline = r0.netTax;
+
+  // Cards
+  const cardIds = ['act46', 'hb2306', 'sb3125'];
+  results.forEach((r, i) => {
+    document.getElementById(`card-tax-${cardIds[i]}`).textContent = fmt(r.netTax);
+    document.getElementById(`card-rate-${cardIds[i]}`).textContent =
+      `Net effective rate: ${fmtPct(r.netEffRate)}`;
+  });
+
+  // Diff cards for non-baseline
+  const diffEl1 = document.getElementById('card-diff-hb2306');
+  const diff1 = r1.netTax - baseline;
+  diffEl1.textContent = (diff1 === 0 ? 'No change vs Act 46' : `${fmt(diff1, {sign:true})} vs Act 46`);
+  diffEl1.className = 'card-diff ' + (diff1 > 0 ? 'pos' : diff1 < 0 ? 'neg' : 'neutral');
+
+  const diffEl2 = document.getElementById('card-diff-sb3125');
+  const diff2 = r2.netTax - baseline;
+  diffEl2.textContent = (diff2 === 0 ? 'No change vs Act 46' : `${fmt(diff2, {sign:true})} vs Act 46`);
+  diffEl2.className = 'card-diff ' + (diff2 > 0 ? 'pos' : diff2 < 0 ? 'neg' : 'neutral');
+
+  // Detail table
+  const tbody = document.getElementById('detail-table-body');
+  const rows = [
+    { label: 'Gross Income (AGI)',    v: [agi, agi, agi], cls: '' },
+    { label: 'Standard Deduction',   v: [r0.stdDed, r1.stdDed, r2.stdDed], cls: '' },
+    { label: 'Personal Exemptions',  v: [r0.personalExemptions, r1.personalExemptions, r2.personalExemptions], cls: '' },
+    { label: 'Taxable Income',       v: [r0.taxableIncome, r1.taxableIncome, r2.taxableIncome], cls: 'bold' },
+    { label: '', spacer: true },
+    { label: 'Tax Before Credits',   v: [r0.taxBeforeCredits, r1.taxBeforeCredits, r2.taxBeforeCredits], cls: 'bold' },
+    { label: '  Food/Excise Credit', v: [r0.credits.foodExcise, r1.credits.foodExcise, r2.credits.foodExcise], negate: true, cls: '' },
+    { label: '  CDCC',               v: [r0.credits.childCare, r1.credits.childCare, r2.credits.childCare], negate: true, cls: '' },
+    { label: 'Total Credits',        v: [r0.credits.total, r1.credits.total, r2.credits.total], negate: true, cls: 'bold' },
+    { label: '', spacer: true },
+    { label: 'Net Tax',              v: [r0.netTax, r1.netTax, r2.netTax], cls: 'bold' },
+    { label: 'Marginal Rate',        pct: [r0.marginalRate, r1.marginalRate, r2.marginalRate], cls: '' },
+    { label: 'Net Effective Rate',   pct: [r0.netEffRate, r1.netEffRate, r2.netEffRate], cls: '' },
+  ];
+
+  tbody.innerHTML = rows.map(row => {
+    if (row.spacer) return '<tr class="spacer"><td colspan="6" style="height:6px"></td></tr>';
+    const vals = (row.pct ? row.pct.map(v => fmtPct(v)) : row.v.map(v => fmt(row.negate ? -v : v)));
+    const d1 = row.v ? fmt(r1.netTax - r0.netTax, {sign:true}) : '—';
+    const d2 = row.v ? fmt(r2.netTax - r0.netTax, {sign:true}) : '—';
+    let diffHtml = '', diffSbHtml = '';
+    if (!row.pct && row.label === 'Net Tax') {
+      const dv1 = r1.netTax - r0.netTax, dv2 = r2.netTax - r0.netTax;
+      diffHtml   = `<td class="col-diff-hb">${fmt(dv1, {sign:true})}</td>`;
+      diffSbHtml = `<td class="col-diff-sb">${fmt(dv2, {sign:true})}</td>`;
+    } else {
+      diffHtml   = `<td style="color:#aaa">—</td>`;
+      diffSbHtml = `<td style="color:#aaa">—</td>`;
+    }
+    return `<tr class="${row.cls || ''}">
+      <td>${row.label}</td>
+      <td class="col-act46">${vals[0]}</td>
+      <td class="col-hb2306">${vals[1]}</td>
+      <td class="col-sb3125">${vals[2]}</td>
+      ${diffHtml}${diffSbHtml}
+    </tr>`;
+  }).join('');
+
+  // CDCC section
+  const cdccSection = document.getElementById('cdcc-section');
+  if (numDependents > 0) {
+    cdccSection.classList.remove('hidden');
+    cdccSection.style.display = '';
+    const cdccScenarios = [
+      { id: 'act46',  cs: null,          label: 'Act 46 — Current Law' },
+      { id: 'hb2306', cs: 'hb2306_hd1',  label: 'HB 2306 HD1' },
+      { id: 'sb3125', cs: 'sb3125_sd1',  label: 'SB 3125 SD1' },
+    ];
+    cdccScenarios.forEach(({ id, cs, label }, i) => {
+      const r = results[i];
+      const cap = (cs === 'hb2306_hd1' || cs === 'sb3125_sd1')
+        ? (numDependents === 1 ? '$10,000' : '$20,000')
+        : (numDependents === 1 ? '$3,000' : '$6,000');
+      const refundable = (cs === 'hb2306_hd1' || cs === 'sb3125_sd1') ? 'Yes' : 'No';
+      const pctLabel = cdccPctLabel(agi, numDependents, cs);
+      document.getElementById(`cdcc-${id}`).innerHTML = `
+        <div class="cdcc-card-title">${label}</div>
+        <div class="cdcc-row"><span>Expense cap</span><span>${cap}</span></div>
+        <div class="cdcc-row"><span>Applicable %</span><span>${pctLabel}</span></div>
+        <div class="cdcc-row"><span>Refundable</span><span>${refundable}</span></div>
+        <div class="cdcc-amount">${fmt(r.credits.childCare)}</div>
+      `;
+    });
+  } else {
+    cdccSection.style.display = 'none';
+  }
+
+  // Chart
+  renderChart(filingStatus, numDependents);
+}
+
+function renderChart(filingStatus, numDependents) {
+  // Build income sweep
+  const points = [];
+  for (let i = 0; i <= 100; i++) points.push(i * 5000);
+  for (let i = 1; i <= 40; i++) points.push(500000 + i * 12500);
+
+  const datasets = SCENARIO_KEYS.map(({ id, scenario, creditScenario, label }, idx) => {
+    const colors = ['#2563eb', '#dc2626', '#16a34a'];
+    const data = points.map(inc => {
+      const tax = calcTax(inc, scenario, filingStatus, numDependents);
+      const credits = calcCredits(inc, filingStatus, numDependents, tax.taxBeforeCredits, creditScenario);
+      return { x: inc, y: tax.taxBeforeCredits - credits.total };
+    });
+    return {
+      label,
+      data,
+      borderColor: colors[idx],
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.3,
+    };
+  });
+
+  const currentAgi = Math.max(0, parseInt(document.getElementById('income-input').value) || 0);
+
+  if (sweepChart) sweepChart.destroy();
+  sweepChart = new Chart(document.getElementById('sweep-chart'), {
+    type: 'line',
+    data: { datasets },
+    options: {
+      parsing: false,
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 12 }, boxWidth: 20 } },
+        tooltip: {
+          callbacks: {
+            title: items => '$' + parseInt(items[0].raw.x).toLocaleString() + ' income',
+            label: item => ` ${item.dataset.label}: ${fmt(item.raw.y)} net tax`,
+          }
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          ticks: {
+            callback: v => '$' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v),
+            maxTicksLimit: 8,
+            font: { size: 11 },
+          },
+          grid: { color: '#f0f0ec' },
+        },
+        y: {
+          ticks: {
+            callback: v => '$' + (Math.abs(v) >= 1000 ? (v/1000).toFixed(0) + 'k' : v),
+            maxTicksLimit: 7,
+            font: { size: 11 },
+          },
+          grid: { color: '#f0f0ec' },
+        },
+      },
+    },
+  });
+}
+
+// ── Wiring ────────────────────────────────────────────────────────────────────
+
+const incomeSlider = document.getElementById('income-slider');
+const incomeInput  = document.getElementById('income-input');
+const depMinus     = document.getElementById('dep-minus');
+const depPlus      = document.getElementById('dep-plus');
+const depCountEl   = document.getElementById('dep-count');
+
+let depCount = 0;
+
+incomeSlider.addEventListener('input', () => {
+  incomeInput.value = incomeSlider.value;
+  render();
+});
+
+incomeInput.addEventListener('input', () => {
+  const v = Math.min(500000, Math.max(0, parseInt(incomeInput.value) || 0));
+  incomeSlider.value = Math.min(v, 500000);
+  render();
+});
+
+document.getElementById('filing-status').addEventListener('change', render);
+
+depMinus.addEventListener('click', () => {
+  if (depCount > 0) { depCount--; depCountEl.textContent = depCount; render(); }
+});
+depPlus.addEventListener('click', () => {
+  if (depCount < 10) { depCount++; depCountEl.textContent = depCount; render(); }
+});
+
+// Initial render
+render();
+</script>
+</body>
+</html>
