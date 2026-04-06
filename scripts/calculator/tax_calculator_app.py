@@ -2,18 +2,18 @@
 """
 Hawaii State Income Tax Calculator
 
-Compares three scenarios side by side:
-  - Act 46 (2025 baseline): current law
-  - HB 2306 HD1: top 3 rates +1pp, enhanced refundable CDCC ($10k/$20k caps, 50%→5%)
-  - SB 3125 SD1: expanded bracket structure, enhanced refundable CDCC ($10k/$20k, formula*)
+Compares three scenarios side by side at Tax Year 2027:
+  - Act 46 (2027 baseline): scheduled bracket phase-in (first single bracket 0–$14,400),
+    standard deduction $8,000/$16,000
+  - HB 2306 HD1: blocks bracket expansion, top 3 rates +1pp, std ded $8k/$16k
+  - SB 3125 SD1: same brackets as Act 46 2027 + higher rates above $175k single,
+    std ded $8k/$16k
 
-* SB 3125 CDCC applicable percentage has blanks in the enrolled bill.
-  This calculator assumes 35% starting at $43,000 AGI, reduced 1pp per $3,000, floor 15%.
+CDCC not modeled — eligibility model under refinement.
 """
 
 import sys
 from pathlib import Path
-import math
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -36,7 +36,7 @@ st.set_page_config(
 
 st.title("🌺 Hawaii State Income Tax Calculator")
 st.caption(
-    "Compares Act 46 (current law) vs HB 2306 HD1 vs SB 3125 SD1 — Tax Year 2025/2027"
+    "Compares Act 46 (2027 baseline) vs HB 2306 HD1 vs SB 3125 SD1 — all at Tax Year 2027"
 )
 
 # ── Scenarios ─────────────────────────────────────────────────────────────────
@@ -47,10 +47,10 @@ def get_calculator():
 @st.cache_resource
 def get_scenarios():
     return {
-        "Act 46 (2025 Law)": {
-            "config": TaxSystemRegistry.get_act46_2025_system(),
+        "Act 46 (2027 baseline)": {
+            "config": TaxSystemRegistry.get_act46_2027_system(),
             "credit_scenario": None,
-            "year": 2025,
+            "year": 2027,
             "color": "#1f77b4",
         },
         "HB 2306 HD1": {
@@ -104,32 +104,10 @@ with st.sidebar:
         "Number of Dependents", min_value=0, max_value=10, value=0, step=1
     )
 
-    st.divider()
-    st.subheader("Childcare Expenses")
-    use_actual_expenses = st.checkbox(
-        "Enter actual childcare expenses",
-        value=False,
-        disabled=(num_dependents == 0),
-    )
-    actual_expenses = None
-    if use_actual_expenses and num_dependents > 0:
-        actual_expenses = st.number_input(
-            "Annual childcare expenses ($)",
-            min_value=0,
-            max_value=50_000,
-            value=min(12_000 * num_dependents, 20_000),
-            step=500,
-        )
-
-    st.divider()
-    st.caption(
-        "**Note:** SB 3125 CDCC applicable percentage uses assumed values — "
-        "the enacted bill has blanks. See footnote in results."
-    )
 
 
 # ── Calculation helper ────────────────────────────────────────────────────────
-def compute(scenario_name: str, agi: float, fs: str, deps: int, exp_override=None):
+def compute(scenario_name: str, agi: float, fs: str, deps: int):
     s = scenarios[scenario_name]
     config = s["config"]
     credit_scenario = s["credit_scenario"]
@@ -141,30 +119,13 @@ def compute(scenario_name: str, agi: float, fs: str, deps: int, exp_override=Non
     tax = result["tax_liability"]
 
     credit_calc = HawaiiTaxCredits(year)
+    credits = credit_calc.calculate_total_credits(agi, fs, deps, tax, credit_scenario)
 
-    # Override childcare expense if user supplied one
-    if exp_override is not None and deps > 0:
-        # Temporarily monkey-patch expense estimate — compute CDCC manually
-        cdcc = _cdcc_with_expenses(credit_calc, agi, fs, deps, credit_scenario, exp_override)
-        credits_raw = credit_calc.calculate_total_credits(agi, fs, deps, tax, credit_scenario)
-        # Replace child_care with overridden value
-        old_cc = credits_raw["child_care"]
-        credits_raw["child_care"] = cdcc
-
-        enhanced_cdcc = credit_scenario in ("hb2306_hd1", "sb3125_sd1")
-        refundable = credits_raw["food_excise"] + credits_raw["renters"]
-        nonrefundable = credits_raw["renewable_energy"]
-        if enhanced_cdcc:
-            refundable += cdcc
-        else:
-            nonrefundable = min(nonrefundable + cdcc, tax)
-
-        credits_raw["total_refundable"] = refundable
-        credits_raw["total_nonrefundable"] = nonrefundable
-        credits_raw["total"] = refundable + nonrefundable
-        credits = credits_raw
-    else:
-        credits = credit_calc.calculate_total_credits(agi, fs, deps, tax, credit_scenario)
+    # CDCC excluded — eligibility model under refinement
+    credits["child_care"] = 0.0
+    credits["total_refundable"] = credits["food_excise"] + credits["renters"]
+    credits["total_nonrefundable"] = min(credits["renewable_energy"], tax)
+    credits["total"] = credits["total_refundable"] + credits["total_nonrefundable"]
 
     net_tax = tax - credits["total"]
     effective_rate = (net_tax / agi * 100) if agi > 0 else 0
@@ -177,59 +138,13 @@ def compute(scenario_name: str, agi: float, fs: str, deps: int, exp_override=Non
     }
 
 
-def _cdcc_with_expenses(credit_calc, agi, fs, deps, credit_scenario, expenses):
-    """Compute CDCC using caller-supplied expense amount instead of the Hawaii estimate."""
-    if deps == 0:
-        return 0.0
-
-    if credit_scenario == "hb2306_hd1":
-        expense_cap = 10_000 if deps == 1 else 20_000
-        if agi <= 80_000:
-            pct = 0.50
-        elif agi <= 90_000:
-            pct = 0.45
-        elif agi <= 100_000:
-            pct = 0.40
-        elif agi <= 110_000:
-            pct = 0.35
-        elif agi <= 120_000:
-            pct = 0.30
-        elif agi <= 130_000:
-            pct = 0.25
-        elif agi <= 140_000:
-            pct = 0.20
-        elif agi <= 150_000:
-            pct = 0.15
-        elif agi <= 160_000:
-            pct = 0.10
-        else:
-            pct = 0.05
-    elif credit_scenario == "sb3125_sd1":
-        expense_cap = 10_000 if deps == 1 else 20_000
-        threshold = 43_000
-        steps = math.ceil(max(0, agi - threshold) / 3_000)
-        pct = max(0.15, 0.35 - 0.01 * steps)
-    else:
-        expense_cap = 3_000 if deps == 1 else 6_000
-        if agi > 100_000:
-            return 0.0
-        if agi <= 25_000:
-            pct = 0.25
-        elif agi <= 43_000:
-            pct = 0.25 - 0.05 * (agi - 25_000) / 18_000
-        else:
-            pct = 0.20
-
-    return min(expenses, expense_cap) * pct
-
-
 # ── Compute all scenarios ─────────────────────────────────────────────────────
 results = {
-    name: compute(name, income, filing_status, num_dependents, actual_expenses)
+    name: compute(name, income, filing_status, num_dependents)
     for name in scenarios
 }
 
-baseline_net = results["Act 46 (2025 Law)"]["net_tax"]
+baseline_net = results["Act 46 (2027 baseline)"]["net_tax"]
 
 
 # ── Section 1: Summary cards ──────────────────────────────────────────────────
@@ -238,8 +153,8 @@ cols = st.columns(3)
 for col, (name, r) in zip(cols, results.items()):
     color = scenarios[name]["color"]
     diff = r["net_tax"] - baseline_net
-    diff_str = f"{diff:+,.0f}" if name != "Act 46 (2025 Law)" else ""
-    diff_label = f"vs Act 46: **${diff_str}**" if diff_str else "Baseline"
+    diff_str = f"{diff:+,.0f}" if name != "Act 46 (2027 baseline)" else ""
+    diff_label = f"vs Act 46 2027: **${diff_str}**" if diff_str else "Baseline"
 
     col.markdown(
         f"""
@@ -270,7 +185,6 @@ table_rows = [
     ("Taxable Income", r0["taxable_income"], r1["taxable_income"], r2["taxable_income"]),
     ("Tax Before Credits", r0["tax_liability"], r1["tax_liability"], r2["tax_liability"]),
     ("— Food/Excise Credit", r0["credits"]["food_excise"], r1["credits"]["food_excise"], r2["credits"]["food_excise"]),
-    ("— CDCC", r0["credits"]["child_care"], r1["credits"]["child_care"], r2["credits"]["child_care"]),
     ("— Renters Credit", r0["credits"]["renters"], r1["credits"]["renters"], r2["credits"]["renters"]),
     ("Total Credits", r0["credits"]["total"], r1["credits"]["total"], r2["credits"]["total"]),
     ("Net Tax", r0["net_tax"], r1["net_tax"], r2["net_tax"]),
@@ -296,7 +210,7 @@ rate_rows = [
     ("Marginal Rate", f"{r0['marginal_rate']:.1f}%", f"{r1['marginal_rate']:.1f}%", f"{r2['marginal_rate']:.1f}%"),
     ("Effective Rate (pre-credits)", f"{r0['effective_rate']:.2f}%", f"{r1['effective_rate']:.2f}%", f"{r2['effective_rate']:.2f}%"),
     ("Net Effective Rate", f"{r0['net_effective_rate']:.2f}%", f"{r1['net_effective_rate']:.2f}%", f"{r2['net_effective_rate']:.2f}%"),
-    ("vs Act 46 (net tax)", "—",
+    ("vs Act 46 2027 (net tax)", "—",
      f"${r1['net_tax']-baseline_net:+,.0f}",
      f"${r2['net_tax']-baseline_net:+,.0f}"),
 ]
@@ -313,16 +227,16 @@ st.dataframe(df_rates, use_container_width=True, hide_index=True)
 st.header("Net Tax vs Income")
 
 @st.cache_data
-def build_sweep(fs, deps, exp_override=None):
+def build_sweep(fs, deps):
     incomes = list(range(0, 100_001, 2_000)) + list(range(100_000, 500_001, 5_000))
     sweep = {name: [] for name in scenarios}
     for inc in incomes:
         for name in scenarios:
-            r = compute(name, inc, fs, deps, exp_override)
+            r = compute(name, inc, fs, deps)
             sweep[name].append(r["net_tax"])
     return incomes, sweep
 
-incomes, sweep = build_sweep(filing_status, num_dependents, actual_expenses)
+incomes, sweep = build_sweep(filing_status, num_dependents)
 
 fig_sweep = go.Figure()
 for name, color_info in scenarios.items():
@@ -353,9 +267,9 @@ st.plotly_chart(fig_sweep, use_container_width=True)
 st.header("Tax Breakdown by Scenario")
 
 fig_bar = go.Figure()
-credit_labels = ["Food/Excise Credit", "CDCC", "Renters Credit"]
-credit_keys = ["food_excise", "child_care", "renters"]
-credit_colors = ["#aec7e8", "#98df8a", "#c5b0d5"]
+credit_labels = ["Food/Excise Credit", "Renters Credit"]
+credit_keys = ["food_excise", "renters"]
+credit_colors = ["#aec7e8", "#c5b0d5"]
 
 for name, r in results.items():
     color = scenarios[name]["color"]
@@ -376,7 +290,7 @@ for label, key, cc in zip(credit_labels, credit_keys, credit_colors):
             y=[-r["credits"][key]],
             marker_color=cc,
             hovertemplate=f"{label}: $%{{y:,.0f}}<extra>{name}</extra>",
-            showlegend=(name == "Act 46 (2025 Law)"),
+            showlegend=(name == "Act 46 (2027 baseline)"),
         ))
 
 fig_bar.update_layout(
@@ -389,80 +303,14 @@ fig_bar.update_layout(
 st.plotly_chart(fig_bar, use_container_width=True)
 
 
-# ── Section 5: CDCC detail (only if dependents > 0) ──────────────────────────
-if num_dependents > 0:
-    st.header("CDCC Detail")
-    st.caption(
-        "Child and Dependent Care Credit — Hawaii HRS §235-55.6. "
-        "Childcare expenses estimated at $12,000/child/year (Hawaii average) unless you entered actual expenses above."
-    )
-
-    def cdcc_pct_label(name, agi, deps):
-        cs = scenarios[name]["credit_scenario"]
-        if cs == "hb2306_hd1":
-            if agi <= 80_000: pct = 50
-            elif agi <= 90_000: pct = 45
-            elif agi <= 100_000: pct = 40
-            elif agi <= 110_000: pct = 35
-            elif agi <= 120_000: pct = 30
-            elif agi <= 130_000: pct = 25
-            elif agi <= 140_000: pct = 20
-            elif agi <= 150_000: pct = 15
-            elif agi <= 160_000: pct = 10
-            else: pct = 5
-            return f"{pct}%"
-        elif cs == "sb3125_sd1":
-            steps = math.ceil(max(0, agi - 43_000) / 3_000)
-            pct = max(15, 35 - steps)
-            return f"{pct}% (assumed*)"
-        else:
-            if agi > 100_000: return "0% (phased out)"
-            if agi <= 25_000: pct = 25
-            elif agi <= 43_000:
-                pct = round(25 - 5 * (agi - 25_000) / 18_000, 1)
-            else: pct = 20
-            return f"{pct}%"
-
-    def expense_cap_label(name, deps):
-        cs = scenarios[name]["credit_scenario"]
-        if cs in ("hb2306_hd1", "sb3125_sd1"):
-            cap = 10_000 if deps == 1 else 20_000
-        else:
-            cap = 3_000 if deps == 1 else 6_000
-        return f"${cap:,.0f}"
-
-    exp_used = actual_expenses if actual_expenses is not None else min(12_000 * num_dependents, 20_000)
-
-    cdcc_rows = []
-    for name, r in results.items():
-        cs = scenarios[name]["credit_scenario"]
-        refundable = cs in ("hb2306_hd1", "sb3125_sd1")
-        cdcc_rows.append({
-            "Scenario": name,
-            "Applicable %": cdcc_pct_label(name, income, num_dependents),
-            "Expense Cap": expense_cap_label(name, num_dependents),
-            "Estimated Expenses": f"${exp_used:,.0f}",
-            "CDCC Amount": f"${r['credits']['child_care']:,.0f}",
-            "Refundable?": "Yes" if refundable else "No",
-        })
-
-    st.dataframe(pd.DataFrame(cdcc_rows), use_container_width=True, hide_index=True)
-
-    st.caption(
-        "\\* **SB 3125 SD1 assumption**: The enacted bill has blank values for the starting percentage and "
-        "AGI threshold in §235-55.6. This calculator uses **35% starting at $43,000 AGI**, reduced by "
-        "1 percentage point per $3,000 of AGI above that threshold, with a floor of **15%**. "
-        "Actual enacted values may differ."
-    )
-
-
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.divider()
 st.caption(
     "**Assumptions**: (1) All income is wages/earned income. "
     "(2) Standard deduction taken (no itemizing). "
-    "(3) Childcare expenses estimated at $12,000/child/year unless overridden. "
-    "(4) Act 46 modeled at TY2025; HB 2306 HD1 and SB 3125 SD1 modeled at TY2027. "
+    "(3) All three scenarios modeled at TY2027. Act 46 2027 reflects the scheduled bracket "
+    "phase-in (first single bracket 0–$14,400; standard deduction $8,000 single / $16,000 joint). "
+    "(4) CDCC not modeled — eligibility model under refinement. "
     "(5) Renewable energy credit not modeled (highly variable; affects ~2% of filers). "
-    "(6) SB 3125 Part II business credit repeals (effective 1/1/2029) not modeled in individual calculator."
+    "(6) SB 3125 Part II business credit repeals (effective 1/1/2029) not modeled."
 )
