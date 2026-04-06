@@ -23,6 +23,12 @@ from src.tax.config import TaxSystemConfig, TaxSystemRegistry, TaxCalculator
 from src.tax.adjustments.hawaii_credits import HawaiiTaxCredits
 from src.tax.adjustments.itemized_deductions import ItemizedDeductionEstimator
 from src.tax.adjustments.ultra_high_income_synthesizer_v2 import apply_ultra_high_income_synthesis_v2
+from src.projection.source_specific_growth import (
+    SourceSpecificGrowthProjector,
+    _BLS_ANNUAL_RATES,
+    _compute_growth_factor,
+)
+from src.projection.growth_rate_loader import load_all_rates
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -50,6 +56,95 @@ def load_tax_units() -> pd.DataFrame:
     logger.info(f"  Filers with dependents: {(df['num_dependents'] > 0).sum():,} "
                 f"({df.loc[df['num_dependents']>0, 'weight'].sum():,.0f} weighted)")
     return df
+
+
+def project_incomes_to_2027(tax_units: pd.DataFrame) -> pd.DataFrame:
+    """
+    Project income and filer weights from the 2022 calibrated baseline to TY 2027.
+
+    Income growth:
+      - If income components (primary_wagp, etc.) are present: use SourceSpecificGrowthProjector
+        with bracket-differentiated BLS wage rates and source-specific fixed rates.
+      - Otherwise: apply bracket-level AGI multipliers directly (fallback).
+      Either path produces nominal 2027 AGI values, which is what we want — Hawaii's
+      brackets are not inflation-indexed, so nominal growth drives bracket creep naturally.
+
+    Population / weight adjustment:
+      - Working-age (18-64): DBEDT -0.83%/yr
+      - Seniors (65+):       DBEDT +5.0%/yr
+    """
+    logger.info("=" * 80)
+    logger.info("STEP: PROJECT INCOMES AND WEIGHTS 2022 → 2027")
+    logger.info("=" * 80)
+
+    result = tax_units.copy()
+
+    # --- 1. Income growth ---
+    has_components = 'primary_wagp' in result.columns
+    logger.info(f"  Income components available: {has_components}")
+
+    agi_before = np.average(result['agi'], weights=result['weight'])
+    total_agi_before = (result['agi'] * result['weight']).sum() / 1e9
+
+    if has_components:
+        projector = SourceSpecificGrowthProjector(
+            years_observed=2,
+            years_projected=3,
+            moderation_factor=0.70,
+        )
+        result = projector.project_dataframe(result)
+    else:
+        logger.info("  Fallback: bracket-level AGI growth (no income component columns)")
+        result['agi_2022'] = result['agi'].copy()
+        agi = result['agi'].values.astype(float)
+        grown_agi = agi.copy()
+        for (lo, hi), annual_rate in _BLS_ANNUAL_RATES.items():
+            mask = (agi >= lo) & (agi < hi)
+            if not mask.any():
+                continue
+            factor = _compute_growth_factor(annual_rate, years_observed=2,
+                                            years_projected=3, moderation=0.70)
+            grown_agi[mask] *= factor
+            n = int(mask.sum())
+            logger.info(f"    ${lo/1e3:.0f}k–${hi/1e3 if hi < 1e9 else 'inf'}k  "
+                        f"rate={annual_rate:.1%}/yr  factor={factor:.3f}x  n={n:,} units")
+        result['agi'] = grown_agi
+
+    agi_after = np.average(result['agi'], weights=result['weight'])
+    total_agi_after = (result['agi'] * result['weight']).sum() / 1e9
+    logger.info(f"\n  AGI: ${agi_before:,.0f} → ${agi_after:,.0f} (weighted avg)")
+    logger.info(f"  Total AGI: ${total_agi_before:.2f}B → ${total_agi_after:.2f}B")
+
+    # --- 2. Population / weight adjustment ---
+    rates = load_all_rates(PROJECT_ROOT)
+    pop_working = rates.get("pop_growth_working_age", -0.0083)
+    pop_senior  = rates.get("pop_growth_senior",      0.050)
+    years = 5  # 2022 → 2027
+
+    if 'primary_agep' in result.columns:
+        age = result['primary_agep'].values
+        working_mask = (age >= 18) & (age < 65)
+        senior_mask  = age >= 65
+
+        working_factor = (1 + pop_working) ** years
+        senior_factor  = (1 + pop_senior) ** years
+
+        weights = result['weight'].values.copy()
+        weights[working_mask] *= working_factor
+        weights[senior_mask]  *= senior_factor
+        result['weight'] = weights
+
+        logger.info(f"\n  Population adjustment:")
+        logger.info(f"    Working-age (18-64): {pop_working:.2%}/yr → ×{working_factor:.4f}  "
+                    f"({working_mask.sum():,} units)")
+        logger.info(f"    Seniors (65+):       {pop_senior:.2%}/yr → ×{senior_factor:.4f}  "
+                    f"({senior_mask.sum():,} units)")
+        logger.info(f"    Total weighted filers: {tax_units['weight'].sum():,.0f} → {result['weight'].sum():,.0f}")
+    else:
+        logger.info("  No primary_agep column — skipping age-stratified weight adjustment")
+
+    logger.info("=" * 80)
+    return result
 
 
 def precompute_deductions(tax_units: pd.DataFrame, calculator: TaxCalculator,
@@ -208,38 +303,15 @@ def apply_synthesis(tax_units: pd.DataFrame) -> pd.DataFrame:
             tax_units = tax_units.loc[~prev_synth].copy()
         tax_units['is_synthetic_ultra_high'] = False
 
-    # --- Project 2027 $1M+ filer count (bracket creep from income growth) ---
-    # The parquet is calibrated to DOTAX 2022 bracket counts; income has since
-    # grown, pushing some $750k–$1M filers across the $1M threshold by 2027.
-    # We project that creep here so the synthesis uses a 2027-appropriate count.
-    #
-    # High-income annual nominal growth rate (BLS OES top-bracket rate, 2022→2027):
-    HIGH_INCOME_GROWTH_RATE = 0.036   # 3.6%/yr nominal
-    DOTAX_BASE_YEAR = 2022
-    TARGET_YEAR = 2027
-    years = TARGET_YEAR - DOTAX_BASE_YEAR  # 5 years
-    growth_factor = (1 + HIGH_INCOME_GROWTH_RATE) ** years  # ~1.193×
+    # --- Use the natural $1M+ count after income growth ---
+    # Income growth has already been applied before apply_synthesis() is called,
+    # so the $1M+ count already reflects 2027 bracket creep (filers who were
+    # sub-$1M in 2022 and crossed the threshold after nominal income growth).
+    # No manual estimation is needed here.
+    projected_1m_count = int(round(tax_units.loc[mask_1m, 'weight'].sum()))
+    logger.info(f"  $1M+ count after income growth: {projected_1m_count:,} (natural, no manual projection)")
 
-    base_count_1m = tax_units.loc[mask_1m, 'weight'].sum()
-    mask_750k_1m = (tax_units[income_col] >= 750_000) & (tax_units[income_col] < 1_000_000)
-    base_count_750k_1m = tax_units.loc[mask_750k_1m, 'weight'].sum()
-
-    # A filer at income X in 2022 earns X × growth_factor in 2027.
-    # They cross $1M if X >= $1M / growth_factor.
-    threshold_2022 = 1_000_000 / growth_factor
-    frac_crossing = max(0.0, min(1.0,
-        (1_000_000 - threshold_2022) / (1_000_000 - 750_000)
-    ))
-    new_entrants = base_count_750k_1m * frac_crossing
-    projected_1m_count = int(round(base_count_1m + new_entrants))
-
-    logger.info(f"  Growth factor (2022→2027 @ {HIGH_INCOME_GROWTH_RATE:.1%}/yr): {growth_factor:.3f}×")
-    logger.info(f"  $750k–$1M filers crossing $1M threshold: ~{new_entrants:.0f} "
-                f"({frac_crossing:.1%} of {base_count_750k_1m:.0f})")
-    logger.info(f"  Projected 2027 $1M+ count: {projected_1m_count:,} "
-                f"(was {int(base_count_1m):,} in DOTAX 2022)")
-
-    # --- Apply synthesis with projected filer count ---
+    # --- Apply synthesis ---
     tax_units = apply_ultra_high_income_synthesis_v2(
         tax_units, target_tax_m=663.0, pareto_alpha=1.5,
         total_1m_filers=projected_1m_count,
@@ -299,8 +371,13 @@ def main():
     tax_units = load_tax_units()
     calculator = TaxCalculator(PROJECT_ROOT)
 
-    # Apply Pareto synthesis BEFORE precompute_deductions so synthetic rows are
-    # covered by the deduction pass along with every other filer.
+    # Project incomes and weights from 2022 calibrated baseline to TY 2027.
+    # Must run BEFORE synthesis so that bracket creep is captured in the
+    # natural $1M+ count rather than estimated via a separate formula.
+    tax_units = project_incomes_to_2027(tax_units)
+
+    # Apply Pareto synthesis AFTER income growth (uses natural post-growth $1M+ count)
+    # and BEFORE precompute_deductions so synthetic rows are covered by the deduction pass.
     tax_units = apply_synthesis(tax_units)
 
     # Pre-compute effective deductions once (same for all scenarios — all use 2027 std ded)
