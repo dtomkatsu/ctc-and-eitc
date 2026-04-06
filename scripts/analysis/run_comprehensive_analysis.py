@@ -22,6 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.tax.config import TaxSystemConfig, TaxSystemRegistry, TaxCalculator
 from src.tax.adjustments.hawaii_credits import HawaiiTaxCredits
 from src.tax.adjustments.itemized_deductions import ItemizedDeductionEstimator
+from src.tax.adjustments.ultra_high_income_synthesizer_v2 import apply_ultra_high_income_synthesis_v2
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -103,6 +104,43 @@ def precompute_deductions(tax_units: pd.DataFrame, calculator: TaxCalculator,
     return tax_units
 
 
+def compute_cg_tax(tax_units: pd.DataFrame) -> float:
+    """
+    Compute capital gains tax for synthetic $1M+ filers.
+
+    Hawaii taxes CG at the lesser of the marginal rate or 7.25% (HRS § 235-7.5).
+    For all $1M+ filers the marginal rate exceeds 7.25%, so the cap always applies.
+
+    Uses synthetic_total_income × synthetic_cg_share × 0.0725 × weight for
+    synthetic rows. Non-synthetic filers' CG is already captured in the bracket
+    calculator (their agi includes ordinary income; CG is a separate line item
+    handled by apply_capital_gains_to_dataframe if it was run, or ignored if not
+    since PUMS top-coded $75.9M filers have negligible CG relative to synthetics).
+
+    Returns total CG tax in millions.
+    """
+    is_synthetic = tax_units.get(
+        'is_synthetic_ultra_high', pd.Series(False, index=tax_units.index)
+    ).fillna(False)
+
+    if not is_synthetic.any():
+        logger.info("  No synthetic rows — CG tax: $0.0M")
+        return 0.0
+
+    synth = tax_units.loc[is_synthetic]
+    if 'synthetic_total_income' not in synth.columns or 'synthetic_cg_share' not in synth.columns:
+        logger.warning("  Synthetic rows missing total_income/cg_share — CG tax: $0.0M")
+        return 0.0
+
+    cg_income = synth['synthetic_total_income'] * synth['synthetic_cg_share']
+    cg_tax_total = (cg_income * 0.0725 * synth['weight']).sum()
+    cg_tax_m = cg_tax_total / 1e6
+
+    logger.info(f"  CG tax (synthetic $1M+ filers @ 7.25% cap): ${cg_tax_m:.1f}M")
+    logger.info(f"    Total synthetic CG income: ${(cg_income * synth['weight']).sum()/1e9:.2f}B")
+    return cg_tax_m
+
+
 def compute_scenario(tax_units: pd.DataFrame, config: TaxSystemConfig,
                     calculator: TaxCalculator, scenario_name: str) -> dict:
     """Compute revenue for a single scenario.
@@ -131,6 +169,127 @@ def compute_scenario(tax_units: pd.DataFrame, config: TaxSystemConfig,
     return result
 
 
+def apply_synthesis(tax_units: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply Pareto-based ultra-high-income synthesis ($1M+ filers).
+
+    Logs before/after summary for the $1M+ bracket, then delegates to
+    apply_ultra_high_income_synthesis_v2.  After synthesis the synthetic rows
+    have num_dependents but no num_exemptions, so we recompute that column for
+    the new rows here.
+    """
+    income_col = 'agi' if 'agi' in tax_units.columns else 'income'
+    mask_1m = tax_units[income_col] >= 1_000_000
+
+    # --- Before summary ---
+    before_count  = tax_units.loc[mask_1m, 'weight'].sum()
+    before_avg_agi = (
+        (tax_units.loc[mask_1m, income_col] * tax_units.loc[mask_1m, 'weight']).sum()
+        / tax_units.loc[mask_1m, 'weight'].sum()
+        if before_count > 0 else 0.0
+    )
+    before_total_agi = (
+        (tax_units.loc[mask_1m, income_col] * tax_units.loc[mask_1m, 'weight']).sum() / 1e9
+    )
+
+    logger.info("=" * 80)
+    logger.info("PARETO SYNTHESIS — BEFORE")
+    logger.info(f"  $1M+ weighted filers : {before_count:,.0f}")
+    logger.info(f"  $1M+ avg AGI         : ${before_avg_agi:,.0f}")
+    logger.info(f"  $1M+ total AGI       : ${before_total_agi:.2f}B")
+    logger.info("=" * 80)
+
+    # --- Clean up any leftover synthetic rows from a previous run ---
+    if 'is_synthetic_ultra_high' in tax_units.columns:
+        prev_synth = tax_units['is_synthetic_ultra_high'] == True  # noqa: E712
+        if prev_synth.any():
+            n_old = int(prev_synth.sum())
+            logger.info(f"  Stripping {n_old} residual synthetic rows from previous run")
+            tax_units = tax_units.loc[~prev_synth].copy()
+        tax_units['is_synthetic_ultra_high'] = False
+
+    # --- Project 2027 $1M+ filer count (bracket creep from income growth) ---
+    # The parquet is calibrated to DOTAX 2022 bracket counts; income has since
+    # grown, pushing some $750k–$1M filers across the $1M threshold by 2027.
+    # We project that creep here so the synthesis uses a 2027-appropriate count.
+    #
+    # High-income annual nominal growth rate (BLS OES top-bracket rate, 2022→2027):
+    HIGH_INCOME_GROWTH_RATE = 0.036   # 3.6%/yr nominal
+    DOTAX_BASE_YEAR = 2022
+    TARGET_YEAR = 2027
+    years = TARGET_YEAR - DOTAX_BASE_YEAR  # 5 years
+    growth_factor = (1 + HIGH_INCOME_GROWTH_RATE) ** years  # ~1.193×
+
+    base_count_1m = tax_units.loc[mask_1m, 'weight'].sum()
+    mask_750k_1m = (tax_units[income_col] >= 750_000) & (tax_units[income_col] < 1_000_000)
+    base_count_750k_1m = tax_units.loc[mask_750k_1m, 'weight'].sum()
+
+    # A filer at income X in 2022 earns X × growth_factor in 2027.
+    # They cross $1M if X >= $1M / growth_factor.
+    threshold_2022 = 1_000_000 / growth_factor
+    frac_crossing = max(0.0, min(1.0,
+        (1_000_000 - threshold_2022) / (1_000_000 - 750_000)
+    ))
+    new_entrants = base_count_750k_1m * frac_crossing
+    projected_1m_count = int(round(base_count_1m + new_entrants))
+
+    logger.info(f"  Growth factor (2022→2027 @ {HIGH_INCOME_GROWTH_RATE:.1%}/yr): {growth_factor:.3f}×")
+    logger.info(f"  $750k–$1M filers crossing $1M threshold: ~{new_entrants:.0f} "
+                f"({frac_crossing:.1%} of {base_count_750k_1m:.0f})")
+    logger.info(f"  Projected 2027 $1M+ count: {projected_1m_count:,} "
+                f"(was {int(base_count_1m):,} in DOTAX 2022)")
+
+    # --- Apply synthesis with projected filer count ---
+    tax_units = apply_ultra_high_income_synthesis_v2(
+        tax_units, target_tax_m=663.0, pareto_alpha=1.5,
+        total_1m_filers=projected_1m_count,
+    )
+
+    # --- Recompute num_exemptions for all rows (synthetic rows lack it) ---
+    tax_units['num_exemptions'] = tax_units.apply(
+        lambda r: (2 if r['filing_status'] == 'married_filing_jointly' else 1)
+                  + int(r.get('num_dependents') or 0),
+        axis=1,
+    )
+
+    # --- After summary (use synthetic_total_income for $1M+ gate on synthetics) ---
+    # Synthetic rows have agi = ordinary income only; use synthetic_total_income if present
+    total_income_col = (
+        'synthetic_total_income'
+        if 'synthetic_total_income' in tax_units.columns
+        else income_col
+    )
+    is_synthetic = tax_units.get(
+        'is_synthetic_ultra_high', pd.Series(False, index=tax_units.index)
+    ).fillna(False)
+
+    # For non-synthetic rows keep agi; for synthetic rows use synthetic_total_income
+    representative_income = np.where(
+        is_synthetic,
+        tax_units[total_income_col].fillna(tax_units[income_col]),
+        tax_units[income_col],
+    )
+    after_mask_1m = representative_income >= 1_000_000
+    after_weights  = tax_units['weight'].values
+    after_count    = after_weights[after_mask_1m].sum()
+    after_avg_agi  = (
+        np.average(representative_income[after_mask_1m], weights=after_weights[after_mask_1m])
+        if after_count > 0 else 0.0
+    )
+    after_total_agi = (
+        (representative_income[after_mask_1m] * after_weights[after_mask_1m]).sum() / 1e9
+    )
+
+    logger.info("=" * 80)
+    logger.info("PARETO SYNTHESIS — AFTER")
+    logger.info(f"  $1M+ weighted filers : {after_count:,.0f}")
+    logger.info(f"  $1M+ avg AGI         : ${after_avg_agi:,.0f}")
+    logger.info(f"  $1M+ total AGI       : ${after_total_agi:.2f}B")
+    logger.info("=" * 80)
+
+    return tax_units
+
+
 def main():
     print("\n" + "=" * 100)
     print("COMPREHENSIVE TAX SCENARIO ANALYSIS")
@@ -140,7 +299,12 @@ def main():
     tax_units = load_tax_units()
     calculator = TaxCalculator(PROJECT_ROOT)
 
+    # Apply Pareto synthesis BEFORE precompute_deductions so synthetic rows are
+    # covered by the deduction pass along with every other filer.
+    tax_units = apply_synthesis(tax_units)
+
     # Pre-compute effective deductions once (same for all scenarios — all use 2027 std ded)
+    # Must run after synthesis so synthetic rows receive an effective_deduction.
     tax_units = precompute_deductions(tax_units, calculator, standard_deduction_year=2027)
 
     # Define scenarios (all modeled at TY 2027 for apples-to-apples comparison)
@@ -149,6 +313,10 @@ def main():
         'HB 2306 HD1 (2027)': TaxSystemRegistry.get_hb2306_hd1_2027_system(),
         'SB 3125 SD1 (2027)': TaxSystemRegistry.get_sb3125_sd1_2027_system(),
     }
+
+    # Compute capital gains tax once (same for all scenarios — CG taxed at capped rate)
+    logger.info("Computing capital gains tax for synthetic $1M+ filers...")
+    cg_tax_m = compute_cg_tax(tax_units)
 
     # Compute all scenarios
     results = {}
@@ -163,19 +331,26 @@ def main():
     print("\n" + "=" * 100)
     print("SUMMARY: Pre-Credit Revenue Comparison (millions)")
     print("Note: CDCC excluded from net — eligibility model under refinement")
+    print("Note: CG tax applies to synthetic $1M+ filers only (all at 7.25% cap)")
     print("=" * 100)
 
     act46_pre = results['Act 46 (2027 baseline)']['total_revenue_before_credits_millions']
     hb_pre    = results['HB 2306 HD1 (2027)']['total_revenue_before_credits_millions']
     sb_pre    = results['SB 3125 SD1 (2027)']['total_revenue_before_credits_millions']
 
-    print(f"\nAct 46 (2027 baseline):              ${act46_pre:>10,.1f}M  (pre-credit)")
-    print(f"HB 2306 HD1 (2027):                  ${hb_pre:>10,.1f}M  {hb_pre-act46_pre:+>8,.1f}M vs Act 46")
-    print(f"SB 3125 SD1 (2027):                  ${sb_pre:>10,.1f}M  {sb_pre-act46_pre:+>8,.1f}M vs Act 46")
+    act46_total = act46_pre + cg_tax_m
+    hb_total    = hb_pre    + cg_tax_m
+    sb_total    = sb_pre    + cg_tax_m
+
+    print(f"\n{'Scenario':<40} {'Bracket':<12} {'CG Tax':<10} {'Total':<12} {'vs Act 46'}")
+    print("-" * 95)
+    print(f"{'Act 46 (2027 baseline)':<40} ${act46_pre:>9,.1f}M  ${cg_tax_m:>7,.1f}M  ${act46_total:>9,.1f}M")
+    print(f"{'HB 2306 HD1 (2027)':<40} ${hb_pre:>9,.1f}M  ${cg_tax_m:>7,.1f}M  ${hb_total:>9,.1f}M  {hb_total-act46_total:+>8,.1f}M")
+    print(f"{'SB 3125 SD1 (2027)':<40} ${sb_pre:>9,.1f}M  ${cg_tax_m:>7,.1f}M  ${sb_total:>9,.1f}M  {sb_total-act46_total:+>8,.1f}M")
 
     # Bracket impact breakdown
     print("\n" + "=" * 100)
-    print("BRACKET IMPACT DETAIL")
+    print("BRACKET IMPACT DETAIL (bracket revenue only, CG identical across scenarios)")
     print("=" * 100)
 
     for name in ['HB 2306 HD1 (2027)', 'SB 3125 SD1 (2027)']:

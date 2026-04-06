@@ -301,7 +301,8 @@ def apply_ultra_high_income_synthesis_v2(
     df: pd.DataFrame,
     target_tax_m: float = 663.0,
     pareto_alpha: float = 1.5,
+    total_1m_filers: int = 1_824,
 ) -> pd.DataFrame:
     """Convenience function for pipeline use."""
-    synthesizer = UltraHighIncomeSynthesizerV2(pareto_alpha=pareto_alpha)
+    synthesizer = UltraHighIncomeSynthesizerV2(pareto_alpha=pareto_alpha, total_1m_filers=total_1m_filers)
     return synthesizer.calibrate(df, target_tax_m=target_tax_m)
