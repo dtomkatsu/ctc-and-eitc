@@ -143,6 +143,17 @@ def project_incomes_to_2027(tax_units: pd.DataFrame) -> pd.DataFrame:
     else:
         logger.info("  No primary_agep column — skipping age-stratified weight adjustment")
 
+    # --- 3. Bracket-level reweighting to IRS Historic Table 2 targets ---
+    try:
+        from src.projection.bracket_reweighter import apply_bracket_reweighting
+        result = apply_bracket_reweighting(
+            result,
+            target_year=2027,
+            cache_dir=PROJECT_ROOT / "data/external/irs_hist2",
+        )
+    except Exception as _rw_exc:
+        logger.warning(f"Bracket reweighting unavailable ({_rw_exc}) — skipping")
+
     logger.info("=" * 80)
     return result
 
